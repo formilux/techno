@@ -38,13 +38,13 @@ fi
 mkdir -p $TMPDIR
 
 basearch=$1
-if grep -q '^CONFIG_SMP=y' .config; then
-    arch=smp-$basearch
-    EXTRAVERSION=${VERSIONRADIX}-smp
-else
+#if grep -q '^CONFIG_SMP=y' .config; then
+#    arch=smp-$basearch
+#    EXTRAVERSION=${VERSIONRADIX}-smp
+#else
     EXTRAVERSION=${VERSIONRADIX}
     arch=$basearch
-fi
+#fi
 export EXTRAVERSION
 
 destdir=$TMPDIR/$arch
@@ -72,7 +72,7 @@ fi
  cd ../.. ; mv lib/modules boot ; rmdir lib
  echo "Archiving package..."
  find boot -xdev \( -not -type d -o -empty \) | tar -T - -vcf - \
-   |gzip -9 >$TMPDIR/kernel-${VERSION}${BUILDVERSION}-$basearch.tar.gz
+   |gzip -9 >$TMPDIR/kernel-${VERSION}${BUILDVERSION}-$basearch.tgz
  signfs `find boot -xdev \( -not -type d -o -empty \)` >$TMPDIR/kernel-${VERSION}${BUILDVERSION}-$basearch.lst
  echo "$arch installed"
 )
