@@ -23,8 +23,8 @@
 
 TMPDIR=/tmp/willy/build-$$
 CC=gcc
-PARALLELDEP=20
-PARALLELCC=4
+PARALLELDEP=8
+PARALLELCC=2
 
 if [ $# -lt 1 ]; then
    echo "Usage: $0 [ -d <diff_file> ] [ -v <extraversion> ] [ -b <build_version> ] <config_file>..."
