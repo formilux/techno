@@ -1,0 +1,121 @@
+#!/bin/sh
+# ------------------------------------------------------------------------
+# make-kernels v0.5 - 2002/04/29 - Willy Tarreau - willy@ant-computing.com
+# ------------------------------------------------------------------------
+# This script successively applies a set of kernel configuration files to a
+# source tree, then builds the kernel with the options in these files.
+# A make oldconfig is passed on each config file. All unspecified options
+# will be left to their default behaviour.
+# Thus, it is HIGHLY RECOMMENDED that the configuration files are correct.
+# The resulting kernels are archived into /tmp/build-$$
+# The name of the configuration files specify the architecture, and final
+# repository :
+#   - config-.*-i586mmx will result in "kernel-xxx-i586mmx"
+#   - config-.*smp-i686 will result in "kernel-xxx-smp-i686", and the
+#     "smp" suffix to be appended to EXTRAVERSION.
+#
+# If a standard diff file is specified (parameter "-d"), then it will be
+# applied to configuration files before compilation.
+# must be executed from the "linux" directory.
+#
+# don't forget to run as root if you want to build standard packages !
+#
+
+TMPDIR=/tmp/willy/build-$$
+CC=gcc
+PARALLELDEP=20
+PARALLELCC=4
+
+if [ $# -lt 1 ]; then
+   echo "Usage: $0 [ -d <diff_file> ] [ -v <extraversion> ] [ -b <build_version> ] <config_file>..."
+   exit 1
+fi
+
+if [ "$1" = "-d" ]; then
+    diff="$2"
+    shift 2
+fi
+
+eval `grep EXTRAVERSION.*= Makefile|tr -d ' \011'`
+VERSIONRADIX=$EXTRAVERSION
+if [ "$1" = "-v" ]; then
+    VERSIONRADIX="$2"
+    shift 2
+fi
+
+if [ "$1" = "-b" ]; then
+    BUILDVERSION="$2"
+    shift 2
+fi
+
+mkdir -p $TMPDIR
+
+for config in $*; do
+    if [ ! -e $config ]; then
+	echo "$arch failed (missing config file)" >> $TMPDIR/compile.log
+	continue
+    fi
+
+    # reset build counters and delete version.h
+    make mrproper HOSTCC=$CC CC=$CC
+
+    name=`basename $config`
+    basearch=`echo $name|sed -e 's/\(.*-\)\([^-]*\)/\2/'`
+    if [ -z "${name%%*smp*}" ]; then
+	arch=smp-$basearch
+	EXTRAVERSION=${VERSIONRADIX}-smp
+	smp=1
+	
+    else
+	EXTRAVERSION=${VERSIONRADIX}
+	arch=$basearch
+	smp=0
+    fi
+    export EXTRAVERSION
+
+    destdir=$TMPDIR/$arch
+    echo $arch
+    rm -rf $destdir/lib $destdir/boot
+    rm -f .config
+
+    if [ "$diff" ]; then
+	grep -v `cat $diff | grep '^[<>].*CONFIG_' | sed -e 's/^\([^C]*\)\(CONFIG_[^ =]*\)\(.*\)/\2/' | sort -u | tr '\012' ' ' | sed -e 's/\([ ]*\)\(.*\)\([ ]\+\)$/\2/' -e 's/ /\\\\)\\\\|\\\\(/g' -e 's/^/\\\\(/' -e 's/$/\\\\)/'` $config > .config
+	cat $diff | grep '^>' | sed -e 's/^> //' >> .config
+    else
+	cp $config .config
+    fi
+
+    yes "" | make oldconfig EXTRAVERSION=$EXTRAVERSION HOSTCC=$CC CC=$CC
+    make clean EXTRAVERSION=$EXTRAVERSION HOSTCC=$CC CC=$CC
+    (make -j $PARALLELDEP  dep EXTRAVERSION=$EXTRAVERSION HOSTCC=$CC CC=$CC && \
+     make -j $PARALLELCC bzImage modules EXTRAVERSION=$EXTRAVERSION HOSTCC=$CC CC=$CC && \
+     make modules_install EXTRAVERSION=$EXTRAVERSION INSTALL_MOD_PATH=$destdir HOSTCC=$CC CC=$CC && \
+     cp arch/i386/boot/bzImage .config System.map $destdir/lib/modules/* )
+
+    if [ $? -ne 0 -o "`echo $destdir/lib/modules/*.*.*`" = "$destdir/lib/modules/*.*.*" ]; then
+    	echo "$arch failed" >> $TMPDIR/compile.log
+	continue
+    fi
+
+    (cd $destdir/lib/modules ;
+     VERSION=`echo *.*.*`
+     cp $VERSION/.config $TMPDIR/config-${VERSION}${BUILDVERSION}-$basearch
+     gzip -9 $VERSION/.config
+     rm -f $VERSION/build
+     for i in `find . -type f -name '*.o'`; do
+       echo "Compressing $i -> $i.gz"
+       strip -S $i && gzip -c9 < $i > $i.gz && mv $i.gz $i
+     done
+     ln -s $VERSION/System.map System.map-$VERSION
+     cd ../.. ; mv lib/modules boot ; rmdir lib
+     echo "Archiving package..."
+     find boot -xdev \( -not -type d -o -empty \) | tar -T - -vcf - \
+	| gzip -9 >$TMPDIR/kernel-${VERSION}${BUILDVERSION}-$basearch.tar.gz
+     signfs `find boot -xdev \( -not -type d -o -empty \)` >$TMPDIR/kernel-${VERSION}${BUILDVERSION}-$basearch.lst
+     echo "$arch compiled" >> $TMPDIR/compile.log
+    )
+done
+
+echo "Kernels are installed in $TMPDIR"
+cat $TMPDIR/compile.log
+
