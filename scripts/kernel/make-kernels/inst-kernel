@@ -1,6 +1,6 @@
 #!/bin/sh
 # ------------------------------------------------------------------------
-# inst-kernel v0.6 - 2003/01/13 - Willy Tarreau - willy@ant-computing.com
+# inst-kernel v0.7 - 2003/08/25 - Willy Tarreau - willy@ant-computing.com
 # ------------------------------------------------------------------------
 # This script installs and packages the kernel compiled in the current dir
 # nto /tmp/build-$$.
@@ -65,15 +65,20 @@ fi
  gzip -9 $VERSION/.config
  rm -f $VERSION/build
  for i in `find . -type f -name '*.o'`; do
-   echo "Compressing $i -> $i.gz"
-   strip -S $i && gzip -c9 < $i > $i.gz && mv $i.gz $i
+   strip -S $i
  done
  ln -s $VERSION/System.map System.map-$VERSION
  cd ../.. ; mv lib/modules boot ; rmdir lib
  echo "Archiving package..."
- find boot -xdev \( -not -type d -o -empty \) | tar -T - -vcf - \
+ chown -R root:adm boot
+ chmod -R g-w,o-rwx boot
+ # system.map is used by 'ps' to display the syscall being used (ps -o wchan)
+ chmod ugo+r boot/$VERSION/System.map
+ #find boot -xdev \( -not -type d -o -empty \) | tar -T - -vcf - \
+ #signfs `find boot -xdev \( -not -type d -o -empty \)` >$TMPDIR/kernel-${VERSION}${BUILDVERSION}-$basearch.lst
+ find boot -xdev -not -path boot | xargs flx sign --ignore-dot --no-depth >$TMPDIR/kernel-${VERSION}${BUILDVERSION}-$basearch.lst
+ find boot -xdev -not -path boot | tar --no-recursion -T - -vcf - \
    |gzip -9 >$TMPDIR/kernel-${VERSION}${BUILDVERSION}-$basearch.tgz
- signfs `find boot -xdev \( -not -type d -o -empty \)` >$TMPDIR/kernel-${VERSION}${BUILDVERSION}-$basearch.lst
  echo "$arch installed"
 )
 
