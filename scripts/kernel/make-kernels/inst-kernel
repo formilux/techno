@@ -65,7 +65,8 @@ fi
  gzip -9 $VERSION/.config
  rm -f $VERSION/build
  for i in `find . -type f -name '*.o'`; do
-   strip -S $i
+   echo "Compressing $i -> $i.gz"
+   strip -S $i && gzip -c9 < $i > $i.gz && mv $i.gz $i
  done
  ln -s $VERSION/System.map System.map-$VERSION
  cd ../.. ; mv lib/modules boot ; rmdir lib
@@ -79,6 +80,7 @@ fi
  find boot -xdev -not -path boot | xargs flx sign --ignore-dot --no-depth >$TMPDIR/kernel-${VERSION}${BUILDVERSION}-$basearch.lst
  find boot -xdev -not -path boot | tar --no-recursion -T - -vcf - \
    |gzip -9 >$TMPDIR/kernel-${VERSION}${BUILDVERSION}-$basearch.tgz
+ cd $TMPDIR && rm -rf $arch
  echo "$arch installed"
 )
 
