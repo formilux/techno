@@ -1,0 +1,46 @@
+Kernel builder tool v0.5
+========================
+
+Arguments
+=========
+  Rem: Must be specified in this order for now !
+  -d config.diff
+     The changes in config.diff will be applied to every config.
+  -v force-version
+     The "extraversion" of the kernel will be forced to this
+     version, possibly suffixed with "-smp" if one of the configs
+     has the "smp" letters in its file name. Don't forget the
+     leading "-" (eg: "-flx3").
+  -b build-version
+     this adds a name between the version and the arch in the kernel
+     and configuration file names (eg: "-flx.1").
+
+Basic usage
+===========
+# su -
+# cd /usr/src/linux
+# make-kernels -v -flx3 /data/projets/ant-computing/src/kernels/configs/config-*
+.../...
+>> Kernels are installed in /tmp/build-1234
+
+All kernels are available under /tmp/build-1234/kernel-*, and their configs are
+/tmp/build-1234/config-*.
+
+If there's something to change in the config to update the kernel :
+===================================================================
+# su -
+# cd /usr/src/linux
+# cp /data/projets/ant-computing/src/kernels/configs/config-flx2-i586 .config
+# make oldconfig ; make menuconfig
+.../...
+# diff .config.old .config > /tmp/config.diff
+# make-kernels -d /tmp/config.diff -v -flx3 /data/projets/ant-computing/src/kernels/configs/config-*
+
+
+TODO
+====
+  - allow arguments in any order
+  - add an argument to force the destination directory instead of /tmp/build-$$
+  - finer error handling.
+  - better documentation
+
