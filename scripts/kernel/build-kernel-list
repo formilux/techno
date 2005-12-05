@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# build-kernel-list - build a list of kernels - version 0.0.3 - 2005-12-05
+# build-kernel-list - build a list of kernels - version 0.0.4 - 2006-03-18
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
-# Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
+# Copyright (C) 2001-2006 Benoit Dolez & Willy Tarreau
 #       mailto: benoit@ant-computing.com,willy@ant-computing.com
 #
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
@@ -38,13 +38,15 @@ die() {
 }
 
 usage() {
-    echo "Formilux Linux Kernel packager - (C) 2004 EXOSEC"
+    echo "Formilux Linux Kernel packager - (C) 2004-2006 EXOSEC"
     echo "Usage:"
-    echo "    ${0##*/} [ -h, --help ] [ -i,--install,--no-compile ] config_file..."
+    echo "    ${0##*/} [ -h, --help ] [ -i,--install,--no-compile ]"
+    echo "             [ -s, --suffix ] config_file..."
     echo
     echo "Output will be sent to \$OUTPUTDIR=$OUTPUTDIR"
     echo "Using: CC=$CC HOSTCC=$HOSTCC PARALLELCC=$PARALLELCC"
     echo "Note: this script needs sudo during the install phase."
+    echo "Use --suffix to automatically suffix the build version to the EXTRAVERSION."
     echo
 }
 
@@ -58,6 +60,7 @@ SUDO=${SUDO-sudo}
 mkdir -p $OUTPUTDIR || die 1 "Cannot create directory : $OUTPUTDIR"
 
 do_compile=1
+do_suffix=0
 while [ $# -gt 0 ]; do
     case "$1" in
     -h|--help)
@@ -66,6 +69,10 @@ while [ $# -gt 0 ]; do
 	;;
     -i|--no-compile|--install-only)
 	do_compile=0
+	shift
+	;;
+    -s|--suffix)
+	do_suffix=1
 	shift
 	;;
     *)
@@ -115,10 +122,20 @@ for cfg in "$@"; do
 	continue
     fi
 
+    # The kernel version appearing in the package name can be a subset of
+    # the full kernel version.
+
+    KPKG="${major}.${minor}.${sub}${extra}"
+    if [ "$do_suffix" = "1" ]; then
+        extra="${extra}-${build}"
+        KVER="${major}.${minor}.${sub}${extra}"
+    else
+        KVER="${major}.${minor}.${sub}${extra}"
+    fi
+
     VERSTR="VERSION=$major PATCHLEVEL=$minor SUBLEVEL=$sub EXTRAVERSION='$extra' CC=$CC HOSTCC=$HOSTCC"
     MAKE="make $VERSTR"
     MAKEINST="sudo make $VERSTR"
-    KVER="${major}.${minor}.${sub}${extra}"
 
     if [ $do_compile -eq 1 ]; then
 	$MAKE distclean >/dev/null 2>&1
@@ -214,14 +231,14 @@ for cfg in "$@"; do
 	    # let's build the signature file
 	    $SUDO find $archdir/ -xdev -not -path $archdir/boot -printf "%P\n" | grep -v '^$' | \
 		sh -c "( cd $archdir && xargs flx sign --ignore-dot --no-depth)" \
-		>$OUTPUTDIR/kernel-${KVER}-${BUILDVERSION}-$arch.lst
+		>$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-$arch.lst
 
 	    # let's build the tar.gz
 	    $SUDO find $archdir -xdev -not -path $archdir/boot -printf "%P\n" | \
 		grep -v '^$' | $SUDO tar -C $archdir --no-recursion -T - -vcf - 2>>$OUTPUTDIR/$log | \
-		gzip -c9 >$OUTPUTDIR/kernel-${KVER}-${BUILDVERSION}-$arch.tgz
+		gzip -c9 >$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-$arch.tgz
 
-	    cp .config $OUTPUTDIR/config-${KVER}-${BUILDVERSION}-$arch
+	    cp .config $OUTPUTDIR/config-${KPKG}-${BUILDVERSION}-$arch
 	    ;;
 	rh*)
 	    $SUDO mkdir -p $archdir/boot
@@ -250,9 +267,9 @@ for cfg in "$@"; do
 	    $SUDO find $archdir -xdev -not -path $archdir/boot -not -path $archdir/lib \
 		-not -path $archdir/lib/modules -printf "%P\n" | \
 		grep -v '^$' | $SUDO tar -C $archdir --no-recursion -T - -vcf - 2>>$OUTPUTDIR/$log | \
-		gzip -c9 >$OUTPUTDIR/kernel-${KVER}-${BUILDVERSION}-$arch.tgz
+		gzip -c9 >$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-$arch.tgz
 
-	    cp .config $OUTPUTDIR/config-$KVER-$BUILDVERSION-$arch
+	    cp .config $OUTPUTDIR/config-$KPKG-$BUILDVERSION-$arch
 	    ;;
 	*)
 	    echo "######## unknown packaging method for distribution $curdist #######" | tee -a $OUTPUTDIR/$log
@@ -267,3 +284,4 @@ done
 echo
 date
 echo "Done !"
+
