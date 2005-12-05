@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# build-kernel-list - build a list of kernels - version 0.0.2 - 2005-05-10
+# build-kernel-list - build a list of kernels - version 0.0.3 - 2005-12-05
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
 # Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
@@ -44,6 +44,7 @@ usage() {
     echo
     echo "Output will be sent to \$OUTPUTDIR=$OUTPUTDIR"
     echo "Using: CC=$CC HOSTCC=$HOSTCC PARALLELCC=$PARALLELCC"
+    echo "Note: this script needs sudo during the install phase."
     echo
 }
 
@@ -52,6 +53,8 @@ PARALLELDEP=${PARALLELDEP:-10}
 PARALLELCC=${PARALLELCC:-3}
 CC=${CC:-gcc}
 HOSTCC=${HOSTCC:-$CC}
+SUDO=${SUDO-sudo}
+
 mkdir -p $OUTPUTDIR || die 1 "Cannot create directory : $OUTPUTDIR"
 
 do_compile=1
@@ -114,6 +117,7 @@ for cfg in "$@"; do
 
     VERSTR="VERSION=$major PATCHLEVEL=$minor SUBLEVEL=$sub EXTRAVERSION='$extra' CC=$CC HOSTCC=$HOSTCC"
     MAKE="make $VERSTR"
+    MAKEINST="sudo make $VERSTR"
     KVER="${major}.${minor}.${sub}${extra}"
 
     if [ $do_compile -eq 1 ]; then
@@ -162,19 +166,19 @@ for cfg in "$@"; do
 	    exit 2
 	fi
 
-	rm -rf $destdir ; mkdir -p $archdir
+	$SUDO rm -rf $destdir ; $SUDO mkdir -p $archdir
 
 	echo "Installing modules" >> $OUTPUTDIR/$log
-	$MAKE INSTALL_MOD_PATH=$archdir modules_install </dev/null >> $OUTPUTDIR/$log 2>&1; err=$?
+	$SUDO $MAKE INSTALL_MOD_PATH=$archdir modules_install </dev/null >> $OUTPUTDIR/$log 2>&1; err=$?
 	if [ $err -ne 0 ]; then
 	    echo "######### make modules_install returned error code $err #########" | tee -a $OUTPUTDIR/$log
-	    rm -rf $destdir
+	    $SUDO rm -rf $destdir
 	    continue
 	fi
 
 	if [ ! -d "$libmoddir" ]; then
 	    echo "######### make modules_install failed to create $libmoddir #########" | tee -a $OUTPUTDIR/$log
-	    rm -rf $destdir
+	    $SUDO rm -rf $destdir
 	    continue
 	fi
 
@@ -182,70 +186,70 @@ for cfg in "$@"; do
 	case $curdist in
 	flx*)
 
-	    mv $archdir/lib/modules $archdir/boot && rmdir $archdir/lib
+	    $SUDO mv $archdir/lib/modules $archdir/boot && $SUDO rmdir $archdir/lib
 	    # now everything is under $bootdir
 
-	    cp arch/i386/boot/bzImage .config System.map $bootdir >> $OUTPUTDIR/$log 2>&1; err=$?
+	    $SUDO cp arch/i386/boot/bzImage .config System.map $bootdir >> $OUTPUTDIR/$log 2>&1; err=$?
 	    if [ $err -ne 0 ]; then
 		echo "######### cp bzImage .config System.map ... returned error code $err #########" | tee -a $OUTPUTDIR/$log
-		rm -rf $destdir
+		$SUDO rm -rf $destdir
 		continue
 	    fi
 
-	    ln -s $KVER/System.map $archdir/boot/System.map-$KVER
-	    gzip -c9 < $bootdir/.config > $bootdir/.config.gz && rm -f $bootdir/.config
-	    rm -f $bootdir/build
+	    $SUDO ln -s $KVER/System.map $archdir/boot/System.map-$KVER
+	    $SUDO sh -c "gzip -c9 < $bootdir/.config > $bootdir/.config.gz && rm -f $bootdir/.config"
+	    $SUDO rm -f $bootdir/build
 
 	    for i in $(find $bootdir -type f -name '*.o'); do
 		echo "Compressing $i -> $i.gz"
-		strip -S $i && gzip -c9 < $i > $i.gz && mv $i.gz $i
+		$SUDO sh -c "strip -S $i && gzip -c9 < $i > $i.gz && mv $i.gz $i"
 	    done >> $OUTPUTDIR/$log 2>&1
 
-	    chown -R root:adm $archdir/boot
-	    chmod -R g-w,o-rwx $archdir/boot
+	    $SUDO chown -R root:adm $archdir/boot
+	    $SUDO chmod -R g-w,o-rwx $archdir/boot
 
 	    # system.map is used by 'ps' to display the syscall being used (ps -o wchan)
-	    chmod ugo+r $bootdir/System.map
+	    $SUDO chmod ugo+r $bootdir/System.map
 
 	    # let's build the signature file
-	    find $archdir/ -xdev -not -path $archdir/boot -printf "%P\n" | grep -v '^$' | \
-		( cd $archdir && xargs flx sign --ignore-dot --no-depth) \
+	    $SUDO find $archdir/ -xdev -not -path $archdir/boot -printf "%P\n" | grep -v '^$' | \
+		sh -c "( cd $archdir && xargs flx sign --ignore-dot --no-depth)" \
 		>$OUTPUTDIR/kernel-${KVER}-${BUILDVERSION}-$arch.lst
 
 	    # let's build the tar.gz
-	    find $archdir -xdev -not -path $archdir/boot -printf "%P\n" | \
-		grep -v '^$' | tar -C $archdir --no-recursion -T - -vcf - 2>>$OUTPUTDIR/$log | \
+	    $SUDO find $archdir -xdev -not -path $archdir/boot -printf "%P\n" | \
+		grep -v '^$' | $SUDO tar -C $archdir --no-recursion -T - -vcf - 2>>$OUTPUTDIR/$log | \
 		gzip -c9 >$OUTPUTDIR/kernel-${KVER}-${BUILDVERSION}-$arch.tgz
 
 	    cp .config $OUTPUTDIR/config-${KVER}-${BUILDVERSION}-$arch
 	    ;;
 	rh*)
-	    mkdir -p $archdir/boot
-	    cp arch/i386/boot/bzImage $archdir/boot/vmlinuz-$KVER >> $OUTPUTDIR/$log 2>&1 && \
-	        cp .config $archdir/boot/config-$KVER >> $OUTPUTDIR/$log 2>&1 && \
-	        cp System.map $archdir/boot/System.map-$KVER >> $OUTPUTDIR/$log 2>&1; err=$?
+	    $SUDO mkdir -p $archdir/boot
+	    $SUDO cp arch/i386/boot/bzImage $archdir/boot/vmlinuz-$KVER >> $OUTPUTDIR/$log 2>&1 && \
+	        $SUDO cp .config $archdir/boot/config-$KVER >> $OUTPUTDIR/$log 2>&1 && \
+	        $SUDO cp System.map $archdir/boot/System.map-$KVER >> $OUTPUTDIR/$log 2>&1; err=$?
 	    if [ $err -ne 0 ]; then
 		echo "######### cp bzImage .config System.map ... returned error code $err #########" | tee -a $OUTPUTDIR/$log
-		rm -rf $destdir
+		$SUDO rm -rf $destdir
 		continue
 	    fi
-	    rm -f $archdir/boot/build
+	    $SUDO rm -f $archdir/boot/build
 
-	    for i in $(find $libmoddir -type f -name '*.o'); do
+	    for i in $($SUDO find $libmoddir -type f -name '*.o'); do
 		echo "Stripping $i"
-		strip -S $i
+		$SUDO strip -S $i
 	    done >> $OUTPUTDIR/$log 2>&1
 
 
-	    chown -R root:adm $archdir/{boot,lib}
-	    chmod -R g-w,o-rwx $archdir/{boot,lib}
+	    $SUDO chown -R root:adm $archdir/{boot,lib}
+	    $SUDO chmod -R g-w,o-rwx $archdir/{boot,lib}
 	    # system.map is used by 'ps' to display the syscall being used (ps -o wchan)
-	    chmod ugo+r $archdir/boot/System.map-${KVER}
+	    $SUDO chmod ugo+r $archdir/boot/System.map-${KVER}
 
 	    # let's build the tar.gz
-	    find $archdir -xdev -not -path $archdir/boot -not -path $archdir/lib \
+	    $SUDO find $archdir -xdev -not -path $archdir/boot -not -path $archdir/lib \
 		-not -path $archdir/lib/modules -printf "%P\n" | \
-		grep -v '^$' | tar -C $archdir --no-recursion -T - -vcf - 2>>$OUTPUTDIR/$log | \
+		grep -v '^$' | $SUDO tar -C $archdir --no-recursion -T - -vcf - 2>>$OUTPUTDIR/$log | \
 		gzip -c9 >$OUTPUTDIR/kernel-${KVER}-${BUILDVERSION}-$arch.tgz
 
 	    cp .config $OUTPUTDIR/config-$KVER-$BUILDVERSION-$arch
@@ -255,7 +259,7 @@ for cfg in "$@"; do
 	    ;;
 	esac ## case $curdist
 
-	rm -rf $destdir
+	$SUDO rm -rf $destdir
 	echo "#### package done ! ####" >> $OUTPUTDIR/$log
     done
 done
