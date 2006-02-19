@@ -1,0 +1,27 @@
+#!/bin/bash
+# uClibc wrapper v0.3 - 2006/02/19 - Willy Tarreau
+# Use this script as a GCC prefix to build a source with uclibc.
+# Note that it is smart enough to build kexec-tools and busybox.
+
+compilo="$1" ; shift
+UCLIBCROOT=${UCLIBCROOT-/usr/i386-linux-uclibc}
+# echo "uclibc: $@" >&2
+
+# Check if one parameter is '-c','-E','-S' or '-M'
+args=" ${*} "
+if [ "${args/ -c /}${args/ -E /}${args/ -S /}${args/ -M /}" \
+  != "${args}${args}${args}${args}" ]; then
+  # we found at least one of '-c','-E','-S' or '-M'
+  exec "$compilo" "$@" -isystem ${UCLIBCROOT}/usr/include
+else
+  exec "$compilo" -nostdlib -static \
+     -L${UCLIBCROOT}/lib \
+     ${UCLIBCROOT}/usr/lib/crti.o \
+     ${UCLIBCROOT}/usr/lib/crt1.o \
+     ${UCLIBCROOT}/usr/lib/crtn.o \
+     "$@" \
+     -isystem ${UCLIBCROOT}/usr/include \
+     ${UCLIBCROOT}/usr/lib/libc_pic.a \
+     -lgcc
+fi
+
