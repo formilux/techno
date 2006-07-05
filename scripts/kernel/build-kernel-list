@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# build-kernel-list - build a list of kernels - version 0.0.4 - 2006-03-18
+# build-kernel-list - build a list of kernels - version 0.0.5 - 2006-07-05
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
 # Copyright (C) 2001-2006 Benoit Dolez & Willy Tarreau
@@ -14,6 +14,14 @@
 # This script builds kernels for all valid configurations passed on the command
 # line. The configuration MUST be completely valid, and the script rejects those
 # which are not (eg: new entries).
+# If addons are found in the directory 'addons', they will be processed in the
+# following order :
+#   - execute addons/build.<$dir> 'clean' if <$dir> exists
+#   - build kernel + modules
+#   - execute addons/build.<$dir> 'compile'
+#   - make kernel install
+#   - execute addons/build.<$dir> 'install'
+#
 # It deduces every parameter from the configuration file name. It supports
 # building several packages from a single file if the packages types are
 # delimited with a '+'.
@@ -48,6 +56,8 @@ usage() {
     echo "Note: this script needs sudo during the install phase."
     echo "Use --suffix to automatically suffix the build version to the EXTRAVERSION."
     echo
+    echo "Addons found : ${addons[@]}"
+    echo
 }
 
 OUTPUTDIR=${OUTPUTDIR:-$PWD/KERNEL-PKG}
@@ -58,6 +68,15 @@ HOSTCC=${HOSTCC:-$CC}
 SUDO=${SUDO-sudo}
 
 mkdir -p $OUTPUTDIR || die 1 "Cannot create directory : $OUTPUTDIR"
+
+addons=( )
+if [ -d "addons/." ]; then
+  for i in $(cd addons && echo *); do
+    if [ -d "addons/$i/." -a -x "addons/build.$i" ]; then
+      addons[${#addons[@]}]="$i"
+    fi
+  done
+fi
 
 do_compile=1
 do_suffix=0
@@ -138,33 +157,57 @@ for cfg in "$@"; do
     MAKEINST="sudo make $VERSTR"
 
     if [ $do_compile -eq 1 ]; then
+        echo "Doing make distclean..."
 	$MAKE distclean >/dev/null 2>&1
+	for addon in "${addons[@]}"; do
+          echo "Cleaning addon '$addon'..."
+	  addons/"build.$addon" clean "$KVER" "$PWD" "$PWD/addons/$addon"
+        done
+	echo "Done."
 	rm -f .version .config
 	rm -f include/linux/version.h include/linux/modversions.h
 	cp $cfg .config
 
-	echo "Checking configuration file" >> $OUTPUTDIR/$log
+	echo "Checking configuration file" | tee -a $OUTPUTDIR/$log
 	$MAKE oldconfig </dev/null >>$OUTPUTDIR/$log 2>&1 ; err=$?
 	if [ $err -ne 0 ]; then
 	    echo "######### make oldconfig returned error code $err #########" | tee -a $OUTPUTDIR/$log
 	    continue
 	fi
 
-	echo "Building dependencies" >> $OUTPUTDIR/$log
+	echo "Building dependencies" | tee -a $OUTPUTDIR/$log
 	$MAKE -j $PARALLELDEP dep </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
 	if [ $err -ne 0 ]; then
 	    echo "######### make dep returned error code $err #########" | tee -a $OUTPUTDIR/$log
 	    continue
 	fi
 
-	echo "Building kernel and modules" >> $OUTPUTDIR/$log
+	echo "Building kernel and modules" | tee -a $OUTPUTDIR/$log
 	$MAKE -j $PARALLELCC bzImage modules </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
 	if [ $err -ne 0 ]; then
 	    echo "######### make bzImage modules returned error code $err #########" | tee -a $OUTPUTDIR/$log
 	    continue
 	fi
+
+	# now build all addons
+	addon_err=0
+	for addon in "${addons[@]}"; do
+          echo "Compiling addon '$addon'..."| tee -a $OUTPUTDIR/$log
+	  addons/"build.$addon" compile "$KVER" "$PWD" "$PWD/addons/$addon" </dev/null >>$OUTPUTDIR/$log 2>&1
+	  err=$?
+	  if [ $err -ne 0 ]; then
+	    addon_err=1
+	    echo "######### compile of addon '$addon' returned error code $err #########" | tee -a $OUTPUTDIR/$log
+	  fi
+        done
+	echo "Done."
+
+	if [ $addon_err -ne 0 ]; then
+	  echo "######### errors encountered while compiling addons #########"
+	  continue
+        fi
     else
-	echo "Skipping compilation" >> $OUTPUTDIR/$log
+	echo "Skipping compilation" | tee -a $OUTPUTDIR/$log
     fi
 
     # we can build several packages from one distro
@@ -198,6 +241,29 @@ for cfg in "$@"; do
 	    $SUDO rm -rf $destdir
 	    continue
 	fi
+
+	# install all addons
+	addon_err=0
+	for addon in "${addons[@]}"; do
+          echo "Installing addon '$addon'..."
+
+	  $SUDO addons/"build.$addon" install "$KVER" "$PWD" "$PWD/addons/$addon" "$archdir" </dev/null >>$OUTPUTDIR/$log 2>&1
+	  err=$?
+	  if [ $err -ne 0 ]; then
+	    addon_err=1
+	    echo "######### install of addon '$addon' returned error code $err #########" | tee -a $OUTPUTDIR/$log
+	  fi
+        done
+	echo "Done."
+
+	if [ $addon_err -ne 0 ]; then
+	  echo "######### errors encountered while installing addons #########"
+	  $SUDO rm -rf $destdir
+	  continue
+        fi
+
+	# now that we have all the modules, let's generate the modules.dep file.
+        [ -r System.map ] && $SUDO depmod -ae -F System.map -b "$archdir" -r "$KVER"
 
 	curdir=$PWD
 	case $curdist in
