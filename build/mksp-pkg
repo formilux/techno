@@ -1,13 +1,37 @@
 #!/bin/bash
 
 #
-# mksp-pkg - make a pkg dir from several softwares - version 0.0.3 - 2005-10-16
+# mksp-pkg - make a pkg dir from several softwares - version 0.0.4 - 2005-11-01
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
 # Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
 #       mailto: benoit@ant-computing.com,willy@ant-computing.com
 #
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+# FIXME: should we use "-follow -type f" or "-xtype f" ?
+# the first one follows directories, is it really needed ?
+
+#### update PATH to include this script's directory
+MYDIR="${0%/*}"
+[ "${PATH#$MYDIR:}" == "$PATH" ] && export PATH="$MYDIR:$PATH"
+
+#### source defaults file if it exists
+FLXDEFAULTS="${FLXDEFAULTS-$HOME/.flxdefaults}"
+if [ -r "$FLXDEFAULTS" ]; then
+  . "$FLXDEFAULTS"
+fi
+
+# Searches for scripts in this order :
+# - _mksp_pkg_<script name>
+# - <script name>
+# - $SCRIPTDIR/<script name>
+# - script name
+
+_cnt2prf="${_mksp_pkg_cnt2prf-${cnt2prf-${SCRIPTDIR:+$SCRIPTDIR/}cnt2prf}}"
+_fix_prf="${_mksp_pkg_fix_prf-${fix_prf-${SCRIPTDIR:+$SCRIPTDIR/}fix-prf"
+_updt_prf="${_mksp_pkg_updt_prf-${updt_prf-${SCRIPTDIR:+$SCRIPTDIR/}updt-prf}}"
+
 
 CMDLINE="$*"
 
@@ -57,10 +81,6 @@ DEBUG=0
 # default names
 INCLUDE_FILE_NAME=PKGLIST
 EXCLUDE_FILE_NAME=PKG_EXCLUDE
-
-_UPDT_PRF="${SCRIPTDIR:+$SCRIPTDIR/}updt-prf"
-_CNT2PRF="${SCRIPTDIR:+$SCRIPTDIR/}cnt2prf"
-_FIX_PRF="${SCRIPTDIR:+$SCRIPTDIR/}fix-prf"
 
 unset IN_DIRS IN_DIR OUT_DIR BUILDVERSION PKGI PKGO PRF
 
@@ -228,7 +248,7 @@ for IN_DIR in "${IN_DIRS[@]}"; do
 	"${exclude_args[@]}" 2>/dev/null ) )
     if [ ${#list[@]} -gt 0 ]; then
       # FIXME: we should first remove those files if they exist
-      ln -v "${list[@]}" $OUT_DIR/temp/pkg/ 2>/dev/null || cp -av "${list[@]}" $OUT_DIR/temp/pkg/
+      ln -v "${list[@]}" $OUT_DIR/temp/pkg/ 2>/dev/null || cp -avH "${list[@]}" $OUT_DIR/temp/pkg/
     else
       echo "   -> No package found in directory $IN_DIR/pkg"
     fi
@@ -241,7 +261,7 @@ for IN_DIR in "${IN_DIRS[@]}"; do
 		"${exclude_args[@]}" 2>/dev/null ) )
 	if [ ${#list[@]} -gt 0 ]; then
 	  # FIXME: we should first remove those files if they exist
-	  ln -v "${list[@]}" $OUT_DIR/temp/pkg/ 2>/dev/null || cp -av "${list[@]}" $OUT_DIR/temp/pkg/
+	  ln -v "${list[@]}" $OUT_DIR/temp/pkg/ 2>/dev/null || cp -avH "${list[@]}" $OUT_DIR/temp/pkg/
 	else
 	  # We did not find this package in the original software dir. Maybe it
 	  # was provided by former software, and is already lying in the dir.
@@ -268,22 +288,22 @@ for IN_DIR in "${IN_DIRS[@]}"; do
   if [ -e "$IN_DIR/prf" ]; then
     list=( $(find "$IN_DIR/prf/" -follow -maxdepth 3 -type f "${prflist_args[@]}" -name "*.prf" 2>/dev/null ) )
     FULL_LIST=( "${FULL_LIST[@]}" "${list[@]##*/}" )
-    [ ${#list[@]} -gt 0 ] && cp -av "${list[@]}" "$OUT_DIR/temp/prf/"
+    [ ${#list[@]} -gt 0 ] && cp -avH "${list[@]}" "$OUT_DIR/temp/prf/"
 
     # everything not a .prf can be copied as-is into the target directory
     list=( $(find "$IN_DIR/prf/" -follow -maxdepth 3 -type f "${prflist_args[@]}" -not -name "*.prf" 2>/dev/null ) )
     FULL_LIST=( "${FULL_LIST[@]}" "${list[@]##*/}" )
-    [ ${#list[@]} -gt 0 ] && cp -av "${list[@]}" "$OUT_DIR/temp/pkg/"
+    [ ${#list[@]} -gt 0 ] && cp -avH "${list[@]}" "$OUT_DIR/temp/pkg/"
   fi
 
   # 2) then we must copy all .cnt files
   if [ -e "$IN_DIR/cnt" ]; then
     list=( $(find "$IN_DIR/cnt/" -follow -maxdepth 3 -type f "${prflist_args[@]}" -name "*.cnt" 2>/dev/null ) )
-    [ ${#list[@]} -gt 0 ] && cp -av "${list[@]}" "$OUT_DIR/temp/cnt/"
+    [ ${#list[@]} -gt 0 ] && cp -avH "${list[@]}" "$OUT_DIR/temp/cnt/"
   fi
 
   # 3) Now, let's fix the .prf. It's important to do this before merging other packages
-  $_UPDT_PRF "$OUT_DIR/temp/prf" "$OUT_DIR/temp/pkg"
+  $_updt_prf "$OUT_DIR/temp/prf" "$OUT_DIR/temp/pkg"
 
   if [ -n "$(echo $OUT_DIR/temp/prf/rescan/*)" ]; then
     echo;echo "+++++++++++++++++++++++++++++++";echo
@@ -303,12 +323,12 @@ for IN_DIR in "${IN_DIRS[@]}"; do
   if [ -n "$(echo $OUT_DIR/temp/cnt/*)" ]; then
     for cnt in "$OUT_DIR"/temp/cnt/*.cnt; do
       prf="${cnt%.cnt}.prf"
-      $_CNT2PRF < "$cnt" | PKGDIRS="$OUT_DIR/temp/pkg" $_FIX_PRF > "$prf"
+      $_cnt2prf < "$cnt" | PKGDIRS="$OUT_DIR/temp/pkg" $_fix_prf > "$prf"
       FULL_LIST=( "${FULL_LIST[@]}" "${prf##*/}" )
     done
 
     # Now, let's fix the resulting .prf. It's important to do this before merging other packages
-    $_UPDT_PRF "$OUT_DIR/temp/cnt" "$OUT_DIR/temp/pkg"
+    $_updt_prf "$OUT_DIR/temp/cnt" "$OUT_DIR/temp/pkg"
     if [ -n "$(echo $OUT_DIR/temp/cnt/rescan/*)" ]; then
       echo;echo "+++++++++++++++++++++++++++++++";echo
       echo "Some changes have been detected, please check those two directories :"
@@ -329,8 +349,8 @@ chown -R root:root $OUT_DIR/temp/pkg 2>/dev/null
 chmod -R ugo+rX $OUT_DIR/temp/pkg 2>/dev/null
 
 #mv $OUT_DIR/temp/cnt-ok/* $OUT_DIR/fs/
-[ -n "$(echo $OUT_DIR/temp/pkg/*)" ] && cp -a $OUT_DIR/temp/pkg/* $OUT_DIR/fs/
-[ -n "$(echo $OUT_DIR/temp/prf-ok/*)" ] && cp -a $OUT_DIR/temp/prf-ok/* $OUT_DIR/fs/
+[ -n "$(echo $OUT_DIR/temp/pkg/*)" ] && cp -aH $OUT_DIR/temp/pkg/* $OUT_DIR/fs/
+[ -n "$(echo $OUT_DIR/temp/prf-ok/*)" ] && cp -aH $OUT_DIR/temp/prf-ok/* $OUT_DIR/fs/
 
 # put the full list of packages to be installed in the target dir
 # FIXME: there can be duplicates from conflicting prf & cnt.
