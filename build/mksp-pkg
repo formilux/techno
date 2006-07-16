@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-# mksp-pkg - make a pkg dir from several softwares - version 0.0.5 - 2006-01-27
+# mksp-pkg - make a pkg dir from several softwares - version 0.0.6 - 2006-07-03
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
 # Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
@@ -31,6 +31,7 @@ fi
 _cnt2prf="${_mksp_pkg_cnt2prf-${cnt2prf-${SCRIPTDIR:+$SCRIPTDIR/}cnt2prf}}"
 _fix_prf="${_mksp_pkg_fix_prf-${fix_prf-${SCRIPTDIR:+$SCRIPTDIR/}fix-prf}}"
 _updt_prf="${_mksp_pkg_updt_prf-${updt_prf-${SCRIPTDIR:+$SCRIPTDIR/}updt-prf}}"
+_prfchk="${_mksp_pkg_prfchk-${prfchk-${SCRIPTDIR:+$SCRIPTDIR/}prfchk}}"
 
 #_="${_mksp_pkg_-${-}}"
 _cp="${_mksp_pkg_cp-${cp-cp}}"
@@ -48,10 +49,10 @@ CMDLINE="$*"
 
 # usage: displays script usage and returns no error.
 function usage {
-  echo "MKSP-PKG - make a pkg dir from several softwares - version 0.0.5 - 2006-01-27"
+  echo "MKSP-PKG - make a pkg dir from several softwares - version 0.0.6 - 2006-07-03"
   echo "Usage: ${myname##*/} { -c |  [ -i <base_dir> ]* [ -prf <base_dir:match> ]* "
   echo "       [ -pkgi <base_dir:file> ]* [ -pkge <base_dir:file> ]* }"
-  echo "       -o <out_dir> [ -b build_ver] [ -d ]"
+  echo "       -o <out_dir> [ -b build_ver] [ -d ] [ -nc ]"
   echo
   echo "   The 'fs' directory will be deleted under <out_dir>, and the execution will"
   echo "   end here if '-c' is set. Otherwise, an 'fs' directory will be created under"
@@ -64,7 +65,7 @@ function usage {
   echo "   cross-reference another tree, you have to work on the other tree first."
   echo "   All paths are absolute. '-b' is used to force the version which appears"
   echo "   everywhere. Uses several scripts from \$SCRIPTDIR='$SCRIPTDIR'."
-  echo "   Use '-d' for debug."
+  echo "   -nc disables prf consistency checking. Use '-d' for debug."
 }
 
 function die {
@@ -88,6 +89,7 @@ myname=$0
 PRINTUSAGE=0
 CLEAN_ONLY=0
 DEBUG=0
+NOCONS=0
 
 # default names
 INCLUDE_FILE_NAME=PKGLIST
@@ -143,6 +145,9 @@ while [ $# -gt 0 ] ; do
     -d) # -d = clean
       DEBUG=1
       ;;
+    -nc) # -nc = no consistency checking
+      NOCONS=1
+      ;;
     -h) # displays help
       PRINTUSAGE=1
       shift
@@ -174,6 +179,45 @@ fi
 
 $_mkdir -p $OUT_DIR/fs || die "Cannot make directory '$OUT_DIR/fs'. Aborting."
 $_mkdir -p $OUT_DIR/temp || die "Cannot make directory '$OUT_DIR/temp'. Aborting."
+
+#===================================================================================
+
+# Pass the original prf directory in $1 and the rebuilt one in $2.
+# Note that files under $2/rescan are automatically detected and used.
+prf_consistency_check() {
+  local incons=0
+  local p q
+
+  for p in $(cd "$1" && echo *.prf); do
+    # if we have a rescan output for this file, we must use it instead.
+    q="$2/rescan/$p";
+    [ -e "$q" ] || q="$2/$p"
+
+    echo "Checking $p for inconsistencies ..."
+    if ! $_prfchk "$1/$p" "$q"; then
+      echo
+      ((incons++))
+      incons_list[${#incons_list[@]}]="$p"
+    fi
+  done
+  echo "  -> done."
+  
+  if [ $incons -gt 0 ]; then
+    echo;echo;
+    echo "                  +++++++  WARNING !!!  +++++++"
+    echo "    There were inconsistencies between expected and used packages"
+    echo "    for the following PRF files :"
+    echo "    ${incons_list[@]}"
+    echo
+    echo "    - the rebuild files were in $2"
+    echo "    - the original files were in $1"
+    echo
+    echo "    => You should press <Ctrl>-C now and fix them by hand,"
+    echo "       or press <ENTER> now to ignore the problem."
+    echo
+    read
+  fi
+}
 
 #===================================================================================
 
@@ -290,6 +334,7 @@ for IN_DIR in "${IN_DIRS[@]}"; do
 	echo "The following packages were referenced by $INCLUDE_FILE but not found : ${not_found[@]}"
 	echo
         echo "   +++ Press <ENTER> to continue of <Ctrl>-C to stop here +++"; read
+        echo
     fi
   else
     echo;echo "   +++ Package list ($INCLUDE_FILE) not found +++";echo
@@ -316,12 +361,17 @@ for IN_DIR in "${IN_DIRS[@]}"; do
   # 3) Now, let's fix the .prf. It's important to do this before merging other packages
   $_updt_prf "$OUT_DIR/temp/prf" "$OUT_DIR/temp/pkg"
 
+  if [ $NOCONS -eq 0 ]; then
+    prf_consistency_check "$IN_DIR/prf" "$OUT_DIR/temp/prf"
+  fi
+
   if [ -n "$(echo $OUT_DIR/temp/prf/rescan/*)" ]; then
     echo;echo "+++++++++++++++++++++++++++++++";echo
     echo "Some changes have been detected, please check those two directories :"
     echo "  - $OUT_DIR/temp/prf/rescan/"
     echo "  - $OUT_DIR/temp/prf/rescan.log/"
     echo "If you need to fix files, those were initially found here : $IN_DIR/prf"
+    echo
     exit 1
   else
     $_rmdir $OUT_DIR/temp/prf/rescan $OUT_DIR/temp/prf/rescan.log 2>/dev/null
@@ -342,6 +392,11 @@ for IN_DIR in "${IN_DIRS[@]}"; do
 
     # Now, let's fix the resulting .prf. It's important to do this before merging other packages
     $_updt_prf "$OUT_DIR/temp/cnt" "$OUT_DIR/temp/pkg"
+
+    if [ $NOCONS -eq 0 ]; then
+      prf_consistency_check "$IN_DIR/cnt" "$OUT_DIR/temp/cnt"
+    fi
+
     if [ -n "$(echo $OUT_DIR/temp/cnt/rescan/*)" ]; then
       echo;echo "+++++++++++++++++++++++++++++++";echo
       echo "Some changes have been detected, please check those two directories :"

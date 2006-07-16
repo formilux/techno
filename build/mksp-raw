@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-# mksp-raw - make a root fs from packages - version 0.0.5 - 2006-02-27
+# mksp-raw - make a root fs from packages - version 0.0.6 - 2006-07-03
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
 # Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
@@ -27,22 +27,27 @@ fi
 
 _flxextract="${_mksp_raw_flxextract-${flxextract-${SCRIPTDIR:+$SCRIPTDIR/}flxextract}}"
 _ln="${_mksp_raw_ln-${ln-ln}}"
+_ls="${_mksp_raw_ls-${ls-ls}}"
 _mkdir="${_mksp_raw_mkdir-${mkdir-mkdir}}"
+_sort="${_mksp_raw_sort-${sort-sort}}"
 _tar="${_mksp_raw_tar-${tar-tar}}"
+_xargs="${_mksp_raw_xargs-${xargs-xargs}}"
 
 CMDLINE="$*"
 
 # usage: displays script usage and returns no error.
 function usage {
-  echo "MKSP-RAW - make a root fs from packages - version 0.0.5 - 2006-02-27"
+  echo "MKSP-RAW - make a root fs from packages - version 0.0.6 - 2006-07-03"
   echo "Usage: ${myname##*/} { -c |  [ -pkg <pkg_dir> ]* -prf <prf_dir>"
-  echo "       -o <out_dir> [ -d ]"
+  echo "       -o <out_dir> [ -d ] [ -nc ]"
   echo
   echo "   The 'fs' directory will be deleted under <out_dir>, and the execution"
   echo "   will end here if '-c' is set. Otherwise, an 'fs' directory will be created"
   echo "   under <out_dir>, with packages [0-9]*.{prf,tgz} selected from <prf_dir> and"
   echo "   extracted from dirs <pkg_dir>. All paths are absolute. Uses several scripts"
-  echo "   from \$SCRIPTDIR='$SCRIPTDIR'. Use '-d' for debug."
+  echo "   from \$SCRIPTDIR='$SCRIPTDIR'.  -nc disables consistency checking."
+  echo "   Use '-d' for debug."
+  echo
 }
 
 function die {
@@ -66,6 +71,7 @@ umask 022
 myname="$0"
 PRINTUSAGE=0
 CLEAN_ONLY=0
+NOCONS=0
 DEBUG=0
 
 unset PKG_ARG OUT_DIR PRF
@@ -102,6 +108,9 @@ while [ $# -gt 0 ] ; do
       ;;
     -d) # -d = clean
       DEBUG=1
+      ;;
+    -nc) # -nc = no consistency checking
+      NOCONS=1
       ;;
     -h) # displays help
       PRINTUSAGE=1
@@ -153,6 +162,22 @@ for i in "$PRF"/[0-9]*.{prf,tgz}; do
 done
 
 [ $DEBUG -eq 0 ] && rm -rf $OUT_DIR/temp
+
+if [ $NOCONS -eq 0 ]; then
+  echo
+  echo "Scanning the rootfs for missing files ..."
+  if ! $_sort -u $OUT_DIR/log/* | (cd $OUT_DIR/fs/; $_xargs --no-run-if-empty $_ls -1d >/dev/null ); then
+    echo
+    echo "### FATAL : some files which were present in the tgz files are missing from"
+    echo "### the rootfs (${OUT_DIR#$PWD/}/fs). While it *MIGHT* be caused by a bug in"
+    echo "### the tools, it generally indicates a hard link within a tar file which was"
+    echo "### extracted without the refering file, a condition that GNU tar does not"
+    echo "### support. You can lookup the files above by grepping in the log directory"
+    echo "### (${OUT_DIR#$PWD/}/log). If you think this is not an error, please pass"
+    echo "### the '-nc' option to ${0##*/} to disable consistency checks."
+    die "Aborting."
+  fi
+fi
 
 echo
 echo "+++ Done ! +++";
