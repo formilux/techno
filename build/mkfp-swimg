@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-# mksp-swimg - make a software image from a raw FS - version 0.0.1 - 2005-09-19
+# mksp-swimg - make a software image from a raw FS - version 0.0.2 - 2006-03-05
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
 # Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
@@ -13,7 +13,7 @@ CMDLINE="$*"
 
 # usage: displays script usage and returns no error.
 function usage {
-  echo "MKSP-SWIMG - make a software image from a raw FS - version 0.0.1 - 2005-09-19"
+  echo "MKSP-SWIMG - make a software image from a raw FS - version 0.0.2 - 2006-03-05"
   echo "Usage: ${myname##*/} -o <target_dir> { -i <in_dir> | -c } [ -b build_ver] [ -d ]"
   echo
   echo "   The 'fs' directory will be deleted under <target_dir>, and the execution"
@@ -137,6 +137,7 @@ fi
 cd $OUT_DIR/temp
 if [ -n "$BUILDVERSION" ]; then
   name="$BUILDVERSION".bin
+  echo "$BUILDVERSION" > active/system.ver
   cp -al active "$BUILDVERSION"
   tar c "$BUILDVERSION"/* | gzip -9 > "$OUT_DIR/fs/$name" && rm -rf "$BUILDVERSION"
 else
