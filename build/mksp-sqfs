@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-# mksp-sqfs - make a squashfs from a raw FS - version 0.0.1 - 2005-09-18
+# mksp-sqfs - make a squashfs from a raw FS - version 0.0.2 - 2005-09-26
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
 # Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
@@ -13,9 +13,10 @@ CMDLINE="$*"
 
 # usage: displays script usage and returns no error.
 function usage {
-  echo "MKSP-SQFS - package a root dir as a squashfs - version 0.0.1 - 2005-09-18"
+  echo "MKSP-SQFS - package a root dir as a squashfs - version 0.0.2 - 2005-09-26"
   echo "Usage: ${myname##*/} -o <target_dir> { -i <in_dir> | -c } [ -d ] [ -ve ]"
   echo "       [ -b build_ver] [ -k kern_ver ]* [ -s size_max ] [ -kv ] [ -md dir ]*"
+  echo "       [ -rm file|dir ]*"
   echo
   echo "   The 'fs' directory will be deleted under <target_dir>, and the execution"
   echo "   will end here if '-c' is set. Otherwise, an 'fs' directory will be created"
@@ -27,7 +28,8 @@ function usage {
   echo "   resulting kernel file, even if there's only one version. '-b' is used to"
   echo "   force the version which appears in kernel.ver. '-ve' creates a 'vetc' image"
   echo "   by moving /etc to /usr/share/factory/base-etc. '-md' makes it possible to"
-  echo "   create new directories right before packaging, eg: mount points."
+  echo "   create new directories right before packaging, eg: mount points. '-rm' makes"
+  echo "   it possible to remove some files or dirs before packaging."
   echo "   Use '-d' for debug."
 }
 
@@ -55,13 +57,14 @@ DEBUG=0
 VERSIONNED_KERNEL=0
 VETC=0
 
-unset IN_DIR OUT_DIR KVER SIZE_MAX VERSIONNED_KERNEL BUILDVERSION MKDIRS
+unset IN_DIR OUT_DIR KVER SIZE_MAX VERSIONNED_KERNEL BUILDVERSION MKDIRS RMDIRS
 
 # KVER is a list composed of words starting and ending with '|' so that it's
 # very easy to tell whether a word belongs to the list or not :
 # 'kver' belongs to KVER if "${KVER[*]/|$kver|/}" != "${KVER[*]}"
 KVER=( )
 MKDIRS=( )
+RMDIRS=( )
 
 [ $# -gt 0 ] || PRINTUSAGE=1
 
@@ -93,6 +96,14 @@ while [ $# -gt 0 ] ; do
     -md) # -md dir : directories we want to create.
       [ -n "$2" ] || PRINTUSAGE=1
       MKDIRS=( "${MKDIRS[@]}" "$2" )
+      shift;
+      ;; 
+    -rm) # -rm dir : directories or files we want to remove.
+      [ -n "$2" ] || PRINTUSAGE=1
+      if [ -z "${2##/*}" ]; then
+        die "For security reasons, -rm cannot specify an absolute path. Remove the leading /"
+      fi
+      RMDIRS=( "${RMDIRS[@]}" "$2" )
       shift;
       ;; 
     -s) # -s size_max in megabytes
@@ -159,11 +170,22 @@ tar -C $IN_DIR --exclude=./boot -cf - . | tar -C $OUT_DIR/temp/root/ -xpf - \
 # We will copy only <KVER> if it has been specified, otherwise we will
 # copy every kernel.
 
+# FIXME : this process is buggy :
+#  - we create as many root dirs as there are different kernel versions
+#  - we only package the original root dir without modules
+#  - we copy the kernels
+# => we should not proceed this way, but this way :
+#  - we create one root dir
+#  - we extract only the boot into another dir
+#  - we work on it (unzip modules, extract kernel, ...)
+#  - we copy it back to original root.
+
 for kdir in $IN_DIR/boot/[1-9]*; do
   kver=${kdir##*/}
   if [ ${#KVER[@]} = 0 -o "${KVER[*]/|$kver|/}" != "${KVER[*]}" ]; then
     mkdir -p $OUT_DIR/temp/$kver
-    cp -al $OUT_DIR/temp/root $OUT_DIR/temp/$kver/
+    #cp -al $OUT_DIR/temp/root $OUT_DIR/temp/$kver/
+    mkdir -p $OUT_DIR/temp/$kver/root
 
     echo;echo "+++ Copying kernel modules for version $kver +++";echo
 
@@ -192,13 +214,17 @@ for kdir in $IN_DIR/boot/[1-9]*; do
 
     echo;echo "+++ Uncompressing kernel modules for version $kver +++";echo
     find $OUT_DIR/temp/$kver/root/boot -name '*.o' -type f | while read; do \
-	if gzip -cd <$REPLY >$REPLY- 2>/dev/null; then
-	    mv $REPLY- $REPLY
+        # we cannot create any temp directory because we will loose the permissions.
+	if mv $REPLY $REPLY.gz && gzip -d $REPLY.gz 2>/dev/null; then
+	    rm -f $REPLY.gz 2>/dev/null # just in case
 	else
-	    rm -f $REPLY-
+	    mv $REPLY.gz $REPLY  # could not decompress
 	fi
     done
 
+    echo;echo "+++ Installing kernel modules for version $kver +++";echo
+    cp -al $OUT_DIR/temp/$kver/root/boot $OUT_DIR/temp/root/
+    
     echo;echo "+++ Copying kernel $kver +++";echo
     cp $IN_DIR/boot/$kver/bzImage $OUT_DIR/fs/kernel-$kver.img
 
@@ -219,6 +245,11 @@ if [ "$VETC" = 1 ]; then
   mv $OUT_DIR/temp/root/etc $OUT_DIR/temp/root/usr/share/factory/base-etc
   mkdir -m 0755 -p $OUT_DIR/temp/root/etc
 fi
+
+# FIXME: it's not this script's role to delete those entries
+for dir in "${RMDIRS[@]}"; do
+  rm -rf "$OUT_DIR/temp/root/$dir"
+done
 
 # FIXME: it's not this script's role to create those entries
 for dir in "${MKDIRS[@]}"; do
