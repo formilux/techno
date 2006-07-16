@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-# scripts/flxrescan - rescans and updates a prf  - version 0.0.3 - 2006-01-27
+# scripts/flxrescan - rescans and updates a prf  - version 0.0.4 - 2006-02-25
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
 # Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
@@ -29,7 +29,13 @@ function main {
 
 	unversionned=0
 	for pack in ${packages//,/ }; do
-	    [ "$pack" = "${pack%%[._-][0-9]*}" ] && unversionned=1
+	    if [ "$pack" = "${pack%%[._-][0-9]*}" ]; then
+		unversionned=1
+		break;
+	    fi
+	done
+
+	for pack in ${packages//,/ }; do
 	    pkgsrc=$(find $SEARCHPATH -name ${pack}'*'.lst | head -1)
             [ "$pkgsrc" ] && break
 	done
@@ -43,7 +49,8 @@ function main {
 	# look for the first exact match
 	set -- $( grep -F -- "$file" "$pkgsrc" | awk '{ if ($8=="'$file'") { print $0;exit;}}' )
 	if [ -z "$*" ]; then
-	    pkgsrc=$( basename $pkgsrc .lst ) 
+	    pkgsrc=${pkgsrc##*/}
+	    pkgsrc=${pkgsrc%.lst}
 	    if [ $unversionned = 1 ]; then
 	        echo "##not found## $file $pkgsrc,${pkgsrc%-*},${pkgsrc%-*-*},${pkgsrc%%[._-][0-9]*}" >> $LOGFILE
 	    else
@@ -53,7 +60,8 @@ function main {
             continue
         fi
 
-	pkgsrc=$( basename $pkgsrc .lst ) 
+	pkgsrc=${pkgsrc##*/}
+	pkgsrc=${pkgsrc%.lst}
         if [ $unversionned = 1 ]; then
 	    echo $file $pkgsrc,${pkgsrc%-*},${pkgsrc%-*-*},${pkgsrc%%[._-][0-9]*} >> $TMPDIR/OUTPUT
 	    echo $file $pkgsrc,${pkgsrc%-*},${pkgsrc%-*-*},${pkgsrc%%[._-][0-9]*} >> $LOGFILE
