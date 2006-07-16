@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-# mksp-pkg - make a pkg dir from several softwares - version 0.0.1 - 2005-09-19
+# mksp-pkg - make a pkg dir from several softwares - version 0.0.3 - 2005-10-16
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
 # Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
@@ -13,14 +13,20 @@ CMDLINE="$*"
 
 # usage: displays script usage and returns no error.
 function usage {
-  echo "MKSP-PKG - make a pkg dir from several softwares - version 0.0.1 - 2005-09-19"
-  echo "Usage: ${myname##*/} { -c |  [ -i <in_dir> ]* [ -prf <dir:match> ]* "
-  echo "       [ -pkgi <dir:file> ]* [ -pkge <dir:file> ]* }"
+  echo "MKSP-PKG - make a pkg dir from several softwares - version 0.0.2 - 2005-09-26"
+  echo "Usage: ${myname##*/} { -c |  [ -i <base_dir> ]* [ -prf <base_dir:match> ]* "
+  echo "       [ -pkgi <base_dir:file> ]* [ -pkge <base_dir:file> ]* }"
   echo "       -o <out_dir> [ -b build_ver] [ -d ]"
   echo
-  echo "   The 'fs' directory will be deleted under <out_dir>, and the execution"
-  echo "   will end here if '-c' is set. Otherwise, an 'fs' directory will be created"
-  echo "   under <target_dir>, with packages copied (or linked) from dirs <in_dir>."
+  echo "   The 'fs' directory will be deleted under <out_dir>, and the execution will"
+  echo "   end here if '-c' is set. Otherwise, an 'fs' directory will be created under"
+  echo "   <out_dir>, with packages copied (or linked) from dirs <out_dir>. The pkgi"
+  echo "   and pkge options provide a way to supply, for each <base_dir>, a package"
+  echo "   match list via a file located either relative to <base_dir> or at another"
+  echo "   absolute path. The prf option sets a file match on the prf names to be"
+  echo "   scanned for under <base_dir>/prf and <base_dir>/cnt. Those prf will use all"
+  echo "   the packages installed up to and before <base_dir>/pkg. This means that to"
+  echo "   cross-reference another tree, you have to work on the other tree first."
   echo "   All paths are absolute. '-b' is used to force the version which appears"
   echo "   everywhere. Uses several scripts from \$SCRIPTDIR='$SCRIPTDIR'."
   echo "   Use '-d' for debug."
@@ -215,11 +221,22 @@ for IN_DIR in "${IN_DIRS[@]}"; do
   # listed in the exclude file.
 
   not_found=( )
-  if [ -n "$INCLUDE_FILE" -a -r "$INCLUDE_FILE" ]; then
+  if [ -z "$INCLUDE_FILE" ]; then
+    # install everything from this directory (default)
+    echo;echo "   +++ Copying all the packages to the medium's data directory +++";echo
+    list=( $(find $IN_DIR/pkg/ -follow -maxdepth 3 -type f -and \( -name \*.tgz -o -name \*.lst -o -name \*.dep \) \
+	"${exclude_args[@]}" 2>/dev/null ) )
+    if [ ${#list[@]} -gt 0 ]; then
+      # FIXME: we should first remove those files if they exist
+      ln -v "${list[@]}" $OUT_DIR/temp/pkg/ 2>/dev/null || cp -av "${list[@]}" $OUT_DIR/temp/pkg/
+    else
+      echo "   -> No package found in directory $IN_DIR/pkg"
+    fi
+  elif [ -r "$INCLUDE_FILE" ]; then
     echo;echo "   +++ Copying all the packages in ${INCLUDE_FILE##*/} to the medium's data directory +++";echo
     while read -r pkg_name; do
 	[ -n "${pkg_name##\#*}" ] || continue
-	list=( $(find $IN_DIR/pkg/ -type f \( -name "$pkg_name" -o -name "$pkg_name[-.]*" \) \
+	list=( $(find $IN_DIR/pkg/ -follow -maxdepth 3 -type f \( -name "$pkg_name" -o -name "$pkg_name[-.]*" \) \
 		-and \( -name \*.tgz -o -name \*.lst -o -name \*.dep \) \
 		"${exclude_args[@]}" 2>/dev/null ) )
 	if [ ${#list[@]} -gt 0 ]; then
@@ -249,23 +266,40 @@ for IN_DIR in "${IN_DIRS[@]}"; do
 
   # 1) we must copy all .prf files we know about
   if [ -e "$IN_DIR/prf" ]; then
-    list=( $(find "$IN_DIR/prf/" -type f "${prflist_args[@]}" -name "*.prf" 2>/dev/null ) )
+    list=( $(find "$IN_DIR/prf/" -follow -maxdepth 3 -type f "${prflist_args[@]}" -name "*.prf" 2>/dev/null ) )
     FULL_LIST=( "${FULL_LIST[@]}" "${list[@]##*/}" )
     [ ${#list[@]} -gt 0 ] && cp -av "${list[@]}" "$OUT_DIR/temp/prf/"
 
     # everything not a .prf can be copied as-is into the target directory
-    list=( $(find "$IN_DIR/prf/" -type f "${prflist_args[@]}" -not -name "*.prf" 2>/dev/null ) )
+    list=( $(find "$IN_DIR/prf/" -follow -maxdepth 3 -type f "${prflist_args[@]}" -not -name "*.prf" 2>/dev/null ) )
     FULL_LIST=( "${FULL_LIST[@]}" "${list[@]##*/}" )
     [ ${#list[@]} -gt 0 ] && cp -av "${list[@]}" "$OUT_DIR/temp/pkg/"
   fi
 
   # 2) then we must copy all .cnt files
   if [ -e "$IN_DIR/cnt" ]; then
-    list=( $(find "$IN_DIR/cnt/" -type f "${prflist_args[@]}" -name "*.cnt" 2>/dev/null ) )
+    list=( $(find "$IN_DIR/cnt/" -follow -maxdepth 3 -type f "${prflist_args[@]}" -name "*.cnt" 2>/dev/null ) )
     [ ${#list[@]} -gt 0 ] && cp -av "${list[@]}" "$OUT_DIR/temp/cnt/"
   fi
 
-  # 3) we generate the .prf from .cnt, possibly overwriting the ones copied in (1)
+  # 3) Now, let's fix the .prf. It's important to do this before merging other packages
+  $_UPDT_PRF "$OUT_DIR/temp/prf" "$OUT_DIR/temp/pkg"
+
+  if [ -n "$(echo $OUT_DIR/temp/prf/rescan/*)" ]; then
+    echo;echo "+++++++++++++++++++++++++++++++";echo
+    echo "Some changes have been detected, please check those two directories :"
+    echo "  - $OUT_DIR/temp/prf/rescan/"
+    echo "  - $OUT_DIR/temp/prf/rescan.log/"
+    echo "If you need to fix files, those were initially found here : $IN_DIR/prf"
+    exit 1
+  else
+    rmdir $OUT_DIR/temp/prf/rescan $OUT_DIR/temp/prf/rescan.log 2>/dev/null
+  fi
+  # move the prfs to their destination now, so that we don't risk rescanning them
+  [ -n "$(echo $OUT_DIR/temp/prf/*)" ] && mv $OUT_DIR/temp/prf/* $OUT_DIR/temp/prf-ok/
+  # the prf dir is now empty and available for next round
+
+  # 4) we generate the .prf from .cnt, possibly overwriting the ones copied in (1 and 3)
   if [ -n "$(echo $OUT_DIR/temp/cnt/*)" ]; then
     for cnt in "$OUT_DIR"/temp/cnt/*.cnt; do
       prf="${cnt%.cnt}.prf"
@@ -285,36 +319,18 @@ for IN_DIR in "${IN_DIRS[@]}"; do
     else
       rmdir $OUT_DIR/temp/cnt/rescan $OUT_DIR/temp/cnt/rescan.log 2>/dev/null
     fi
-    [ -n "$(echo $OUT_DIR/temp/cnt/*.prf)" ] && mv $OUT_DIR/temp/cnt/*.prf $OUT_DIR/temp/prf/ 2>/dev/null
+    [ -n "$(echo $OUT_DIR/temp/cnt/*.prf)" ] && mv $OUT_DIR/temp/cnt/*.prf $OUT_DIR/temp/prf-ok/ 2>/dev/null
     [ -n "$(echo $OUT_DIR/temp/cnt/*.cnt)" ] && mv $OUT_DIR/temp/cnt/* $OUT_DIR/temp/cnt-ok/ 2>/dev/null
     # the cnt dir is now empty and available for next round
   fi
-
-  # 4) Now, let's fix the .prf. It's important to do this before merging other packages
-  $_UPDT_PRF "$OUT_DIR/temp/prf" "$OUT_DIR/temp/pkg"
-
-  if [ -n "$(echo $OUT_DIR/temp/prf/rescan/*)" ]; then
-    echo;echo "+++++++++++++++++++++++++++++++";echo
-    echo "Some changes have been detected, please check those two directories :"
-    echo "  - $OUT_DIR/temp/prf/rescan/"
-    echo "  - $OUT_DIR/temp/prf/rescan.log/"
-    echo "If you need to fix files, those were initially found here : $IN_DIR/prf"
-    exit 1
-  else
-    rmdir $OUT_DIR/temp/prf/rescan $OUT_DIR/temp/prf/rescan.log 2>/dev/null
-  fi
-
-  # move the prf to their destination now, so that we don't risk rescanning them
-  [ -n "$(echo $OUT_DIR/temp/prf/*)" ] && mv $OUT_DIR/temp/prf/* $OUT_DIR/temp/prf-ok/
-  # the prf dir is now empty and available for next round
 done
 
 chown -R root:root $OUT_DIR/temp/pkg 2>/dev/null
 chmod -R ugo+rX $OUT_DIR/temp/pkg 2>/dev/null
 
 #mv $OUT_DIR/temp/cnt-ok/* $OUT_DIR/fs/
-[ -n "$(echo $OUT_DIR/temp/pkg/*)" ] && mv $OUT_DIR/temp/pkg/* $OUT_DIR/fs/
-[ -n "$(echo $OUT_DIR/temp/prf-ok/*)" ] && mv $OUT_DIR/temp/prf-ok/* $OUT_DIR/fs/
+[ -n "$(echo $OUT_DIR/temp/pkg/*)" ] && cp -a $OUT_DIR/temp/pkg/* $OUT_DIR/fs/
+[ -n "$(echo $OUT_DIR/temp/prf-ok/*)" ] && cp -a $OUT_DIR/temp/prf-ok/* $OUT_DIR/fs/
 
 # put the full list of packages to be installed in the target dir
 # FIXME: there can be duplicates from conflicting prf & cnt.
