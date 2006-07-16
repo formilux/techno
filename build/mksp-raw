@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-# mksp-raw - make a root fs from packages - version 0.0.4 - 2006-01-27
+# mksp-raw - make a root fs from packages - version 0.0.5 - 2006-02-27
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
 # Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
@@ -34,7 +34,7 @@ CMDLINE="$*"
 
 # usage: displays script usage and returns no error.
 function usage {
-  echo "MKSP-RAW - make a root fs from packages - version 0.0.4 - 2006-01-27"
+  echo "MKSP-RAW - make a root fs from packages - version 0.0.5 - 2006-02-27"
   echo "Usage: ${myname##*/} { -c |  [ -pkg <pkg_dir> ]* -prf <prf_dir>"
   echo "       -o <out_dir> [ -d ]"
   echo
@@ -146,7 +146,7 @@ for i in "$PRF"/[0-9]*.{prf,tgz}; do
 	*.prf) $_flxextract -i "$i" -l $OUT_DIR/log/${i##*/}.log "${PKG_ARG[@]}" -R $OUT_DIR/fs \
                || die "There was an error while extracting some files. Aborting."
 	       ;;
-	*.tgz) $_tar -C $OUT_DIR/fs -zUpxf $i \
+	*.tgz) ( ( $_tar -C $OUT_DIR/fs -zUpxf - >/dev/null 2>&1 || : ) < $i ) \
 	       || die "There was an error while extracting some files. Aborting."
 	       ;;
     esac
