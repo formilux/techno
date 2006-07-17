@@ -77,6 +77,7 @@ PKGSUFF="tgz"
 CFGSUFF="cfg"
 INSTNAME=".flxdisk"
 LINKNAME=".flxpkg"
+VERSFILE="Version"
 
 FIND_CMD=pkgfilefind
 CURDIR="$(pwd)"
@@ -533,10 +534,10 @@ function get_name {
 	    search_dir="${CURDIR%/*}" ; search_dir="/${search_dir#/}"
 	    pattern="$(basename $CURDIR)"
 	elif [ "$pattern" = "%L" ]; then
-	    if [ -r ".flxpkg/Version" ]; then
-		REPLY="$(cat .flxpkg/Version)"
+	    if [ -r "${LINKNAME}/${VERSFILE}" ]; then
+		REPLY="$(cat ${LINKNAME}/${VERSFILE})"
 		REPLY="${REPLY##*/}"
-		PKGDIR="$CURDIR/.flxpkg/."
+		PKGDIR="$CURDIR/${LINKNAME}/."
 		return
 	    elif [ -L ${LINKNAME} -a -d ${LINKNAME}/. ]; then
 		# the link is always an EXACT name, so we return it as-is.
@@ -663,17 +664,35 @@ function get_name {
 
 # choose a package and make ${LINKNAME} point to it
 function do_setpkg {
-    rm -f ${LINKNAME}
-    ln -s $PKGDIR ${LINKNAME}
 
-    echo "Re-using package ${PKGDIR%%*/}."
-    echo "The link '${LINKNAME}' now points to it."
-    echo
-    if [ $(find $LINKNAME/patches -type f |wc -l) -gt 0 ]; then
-	echo "*** Warning: there are patches that may need to be applied, use >>>pkg info<<< ***"
+    if [ ! -r "${LINKNAME}/${VERSFILE}" ]; then
+	# Conventionnal naming scheme (using the link)
+	rm -f ${LINKNAME}
+	ln -s $PKGDIR ${LINKNAME}
+
+	echo "Re-using package ${PKGDIR##*/}."
+	echo "The link '${LINKNAME}' now points to it."
 	echo
+	if [ $(find $LINKNAME/patches -type f |wc -l) -gt 0 ]; then
+	    echo "*** Warning: there are patches that may need to be applied, use >>>pkg info<<< ***"
+	    echo
+	fi
+    else
+	# The version should only be in the Version file
+	if [ -w "${LINKNAME}/${VERSFILE}" ] || rm -f "${LINKNAME}/${VERSFILE}"; then
+	    echo ${PKGDIR##*/} > "${LINKNAME}/${VERSFILE}"
+	    echo "Setting package version to ${PKGDIR##*/}."
+	    echo
+	    if [ $(find "${LINKNAME}/patches" -type f |wc -l) -gt 0 ]; then
+		echo "*** Warning: there are patches that may need to be applied, use >>>pkg info<<< ***"
+		echo
+	    fi
+	else
+	    echo "Could not change version in file ${LINKNAME}/${VERSFILE}. Please check permissions."
+	    exit 1
+	fi
     fi
- }
+}
 
 
 # look for existing packages, and propose a new version for the current one
@@ -827,7 +846,7 @@ function do_newpkg {
     rm -f ${LINKNAME} && mkdir -p $new_name && ln -s $new_name ${LINKNAME} && \
 	tar -C $pkg_name  --exclude='./compiled/*' --exclude='./RELEASED*' --exclude='./pkg.*' \
             --exclude='./CFLAGS' --exclude='./.dep' --exclude='./.lst' --exclude='./.tgz' \
-            --exclude='./Version' --one-file-system -cpf - . | tar -C $new_name -xf - || (rmdir $new_name ; rm -f ${LINKNAME})
+            --exclude="./${VERSFILE}" --one-file-system -cpf - . | tar -C $new_name -xf - || (rmdir $new_name ; rm -f ${LINKNAME})
     chmod u+rw $new_name/build.cfg
 
     echo "A new package '$(basename $new_name)' has been created as '$new_name', based on '$(basename $pkg_name)'."
@@ -865,15 +884,22 @@ function do_lst {
 
 function pre_info {
     echo "Information for package '${EXACTPKG##*/}' (\${EXACTPKG##*/}) :"
-
-    echo "   Package name    : $PKGRADIX (\$PKGRADIX)"
-    echo "   Package version : $PKGVER (\$PKGVER)"
-    echo "   Distrib version : $DISTVER (\$DISTVER)"
+    echo "   PKG utility version (\$PKG_VERSION) : $PKG_VERSION"
+    echo "   Package name           (\$PKGRADIX) : $PKGRADIX"
+    echo "   Package version          (\$PKGVER) : $PKGVER"
+    echo "   Distrib version         (\$DISTVER) : $DISTVER"
     echo -n "   Config. file : "
     if [ -e $CFGFILE ]; then
 	echo "$CFGFILE"
     else
 	echo "none found."
+    fi
+    echo "   Released packages repository    (\$PKGROOT) : $PKGROOT"
+    echo "   Development packages repository (\$DEVROOT) : $DEVROOT"
+    if [ -d "${LINKNAME}/." ]; then
+	echo "   Current package directory        (\$PKGDIR) : $PKGDIR"
+    else
+	echo "   Alternative package directory    (\$PKGDIR) : $PKGDIR  (${LINKNAME} invalid)"
     fi
     echo "   Package file : $PKGDIR/compiled/${EXACTPKG##*/}-$FLXARCH.$PKGSUFF"
     echo -n "   Package size : "
@@ -1611,10 +1637,6 @@ function do_changelog {
 function do_release {
     local last_pkg
 
-    echo "#####################################################"
-    echo "# Release command not implemented yet ! Aborting... #"
-    echo "#####################################################"
-    #exit 1
     # some important checks before things get wrong
     if [ -z "$PKGROOT" -o -z "$PKGDIR" -o -z "$EXACTPKG" ]; then
 	echo "Critical error : PKGROOT, PKGDIR and EXACTPKG must be set !"
@@ -1630,7 +1652,7 @@ function do_release {
     # first, the destination directory must not exist
     if [ -d "$PKGROOT/${EXACTPKG##*/}" ]; then
 	if [ -e "$PKGROOT/${EXACTPKG##*/}/RELEASED" ]; then
-	    echo "Error: This package already exists."
+	    echo "Error: This package has already been released. Please change the version."
 	else
 	    echo "Error: The package directory $PKGROOT/${EXACTPKG##*/} already exists."
 	fi
@@ -1659,15 +1681,35 @@ function do_release {
 #traiter le cas où PKGROOT/PKGDIR existe déjà mais pour d'autres archi
 #</FIXME>
 
-    if ! mv $PKGDIR $PKGROOT/ ; then
+    if [ ! -r "${LINKNAME}/${VERSFILE}" ]; then
+      # We use the conventionnal versionning scheme : PKGDIR points to a
+      # directory which we will move to the destination.
+      if ! mv $PKGDIR $PKGROOT/ ; then
 	echo "Error: cannot move the package to the released directory. Cancelling."
 	# the mv here fails atomically, so nothing's lost in PKGDIR, but we have
 	# to clean a possible partial copy
-	rm -rf $PKGROOT/${EXACTPKG##*/}
+	rm -rf "$PKGROOT/${EXACTPKG##*/}"
 	exit 2
+      fi
+    else
+      # We rely exclusively on Version to get the package version. In this
+      # case, we do not MOVE the directory, but rather COPY it to its
+      # destination.
+
+      # Try to clean the destination first. We only know it is not a dir.
+      rm -f "$PKGROOT/${EXACTPKG##*/}" >/dev/null 2>&1
+      if ! cp -a $PKGDIR "$PKGROOT/${EXACTPKG##*/}" ; then
+	echo "Error: cannot copy the package to the released directory. Cancelling."
+	# the mv here fails atomically, so nothing's lost in PKGDIR, but we have
+	# to clean a possible partial copy
+	rm -rf "$PKGROOT/${EXACTPKG##*/}"
+	exit 2
+      fi
+      # Note that right now, we should have a way to step the .flx version up.
+      # pkg newpkg should be helpful.
     fi
 
-    touch $PKGROOT/${EXACTPKG##*/}/RELEASED
+    touch "$PKGROOT/${EXACTPKG##*/}/RELEASED"
 
     return 0
 }
@@ -1824,10 +1866,10 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 	patch|unpatch)
 	    CHAINCMD=0
 	    KNOWNCMD=1
-	    if [ -r ".flxpkg/Version" ]; then
-		REPLY="$(cat .flxpkg/Version)"
+	    if [ -r "${LINKNAME}/${VERSFILE}" ]; then
+		REPLY="$(cat ${LINKNAME}/${VERSFILE})"
 		REPLY="${REPLY##*/}"
-		PKGDIR="$CURDIR/.flxpkg/."
+		PKGDIR="$CURDIR/${LINKNAME}/."
 	    else
 		REPLY="$(basename $(readlink ${LINKNAME}) 2>/dev/null)"
 		PKGDIR="$(readlink ${LINKNAME} 2>/dev/null)"
@@ -1836,10 +1878,10 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 	    ;;
 	compile_only|config|config_only|compile|build)
 	    KNOWNCMD=1
-	    if [ -r ".flxpkg/Version" ]; then
-		REPLY="$(cat .flxpkg/Version)"
+	    if [ -r "${LINKNAME}/${VERSFILE}" ]; then
+		REPLY="$(cat ${LINKNAME}/${VERSFILE})"
 		REPLY="${REPLY##*/}"
-		PKGDIR="$CURDIR/.flxpkg/."
+		PKGDIR="$CURDIR/${LINKNAME}/."
 	    else
 		REPLY="$(basename $(readlink ${LINKNAME}) 2>/dev/null)"
 		PKGDIR="$(readlink ${LINKNAME} 2>/dev/null)"
@@ -1849,10 +1891,10 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 	    ;;
 	prepack|strip|pack|delpack|release|clean)
 	    KNOWNCMD=1
-	    if [ -r ".flxpkg/Version" ]; then
-		REPLY="$(cat .flxpkg/Version)"
+	    if [ -r "${LINKNAME}/${VERSFILE}" ]; then
+		REPLY="$(cat ${LINKNAME}/${VERSFILE})"
 		REPLY="${REPLY##*/}"
-		PKGDIR="$CURDIR/.flxpkg/."
+		PKGDIR="$CURDIR/${LINKNAME}/."
 	    else
 		REPLY="$(basename $(readlink ${LINKNAME}) 2>/dev/null)"
 		PKGDIR="$(readlink ${LINKNAME} 2>/dev/null)"
@@ -1862,10 +1904,10 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 	*)
 	    CHAINCMD=0
 	    KNOWNCMD=0
-	    if [ -r ".flxpkg/Version" ]; then
-		REPLY="$(cat .flxpkg/Version)"
+	    if [ -r "${LINKNAME}/${VERSFILE}" ]; then
+		REPLY="$(cat ${LINKNAME}/${VERSFILE})"
 		REPLY="${REPLY##*/}"
-		PKGDIR="$CURDIR/.flxpkg/."
+		PKGDIR="$CURDIR/${LINKNAME}/."
 	    else
 		REPLY="$(basename $(readlink ${LINKNAME}) 2>/dev/null)"
 		PKGDIR="$(readlink ${LINKNAME} 2>/dev/null)"
