@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# pkg - Formilux package builder - version 0.7.1 - 2005-12-17
+# pkg - Formilux package builder - version 0.8.0 - 2005-12-17
 #
 # Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
 #       mailto: benoit@ant-computing.com,willy@ant-computing.com
@@ -8,7 +8,7 @@
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
 
 ######## Please update this version ########
-PKG_VERSION=0.7.1
+PKG_VERSION=0.8.0
 ############################################
 
 ## WARNING ##
@@ -517,6 +517,7 @@ function do_build {
 #   %P => use current directory as the source for the name
 #   %L => use the package pointed to by the ${LINKNAME} link
 #   %D => use the default package
+#   %V => use the Version file in ${LINKNAME} if it exists
 # If several packages match a given pattern, the user is asked to select the
 # desired one.
 # The resulting package name is returned in REPLY, and the package directoryy
@@ -534,12 +535,12 @@ function get_name {
 	    search_dir="${CURDIR%/*}" ; search_dir="/${search_dir#/}"
 	    pattern="$(basename $CURDIR)"
 	elif [ "$pattern" = "%L" ]; then
-	    if [ -r "${LINKNAME}/${VERSFILE}" ]; then
+	    if [ -r "${LINKNAME}/${VERSFILE}" -a -s "${LINKNAME}/${VERSFILE}" ]; then
 		REPLY="$(cat ${LINKNAME}/${VERSFILE})"
 		REPLY="${REPLY##*/}"
 		PKGDIR="$CURDIR/${LINKNAME}/."
 		return
-	    elif [ -L ${LINKNAME} -a -d ${LINKNAME}/. ]; then
+	    elif [ -L "${LINKNAME}" -a -d "${LINKNAME}/." ]; then
 		# the link is always an EXACT name, so we return it as-is.
 		pattern="$(readlink ${LINKNAME})"
 		PKGDIR="$pattern/."
@@ -547,6 +548,10 @@ function get_name {
 		return
 	    else
 		continue
+	    fi
+	elif [ "$pattern" = "%V" ]; then
+	    if [ -r "${LINKNAME}/${VERSFILE}" -a -s "${LINKNAME}/${VERSFILE}" ]; then
+		pattern="$(cat "${LINKNAME}/${VERSFILE}")"
 	    fi
 	elif [ "$pattern" = "%D" ]; then
 	    pattern=default
@@ -702,7 +707,9 @@ function do_newpkg {
     local radix ver build
 
     set -o noglob
-    if [ -e ${LINKNAME} ]; then
+    if [ ! -r "${LINKNAME}/${VERSFILE}" ]; then
+      # We don't touch the link
+      if [ -e ${LINKNAME} ]; then
 	if [ -L ${LINKNAME} ]; then
 	    if [ -d ${LINKNAME}/. ]; then
 		echo "Error! the link '${LINKNAME}' already exists. Please remove it by manually."
@@ -714,6 +721,7 @@ function do_newpkg {
 	    echo "Error! '${LINKNAME}' already exists and is not a link. Please remove it by manually."
 	    exit 1
 	fi
+      fi
     fi
 
     if [ $# -gt 0 ]; then
@@ -731,7 +739,8 @@ function do_newpkg {
     if [ -z "$new_name" ]; then
 	# the user has not specified any version string, we'll use the directory
 	# name.
-	new_name=$(basename $CURDIR)
+	[ -r "${LINKNAME}/${VERSFILE}" ] && new_name="$(cat "${LINKNAME}/${VERSFILE}")"
+	[ -z "$new_name" ] && new_name="$(basename $CURDIR)"
     fi
 
     rel_list=( ); dev_list=( )
@@ -793,7 +802,7 @@ function do_newpkg {
 	# in both release and dev dirs. Then we'll be able to deduce the latest
 	# build number used.
 	#sort_list=( $(find $PKGROOT/ $DEVROOT/ -maxdepth 1 -type d -name ${new_name}-${BUILDSFX}*.\* -printf "%f\n" 2>/dev/null|sort -u) )
-	sort_list=( $(find $PKGROOT/ $DEVROOT/ -maxdepth 1 -type d -name ${new_name}-${BUILDSFX}${BUILDVER}.\* -printf "%p\n" 2>/dev/null|sort -u) )
+	sort_list=( $((find $PKGROOT/ $DEVROOT/ -maxdepth 1 -type d -name ${new_name}-${BUILDSFX}${BUILDVER}.\* -printf "%p\n" 2>/dev/null; [ -r "${LINKNAME}/${VERSFILE}" ] && cat "${LINKNAME}/${VERSFILE}") |sort -u) )
 	if [ ${#sort_list[*]} -eq 0 ]; then
 	    # this can happen with new BUILDSFX/BUILDVER
 	    new_name=${new_name}-${BUILDSFX}${BUILDVER}.1
@@ -802,13 +811,19 @@ function do_newpkg {
 	    new_name=${new_name}-$(get_next_build $(get_build_num ${sort_list[${#sort_list[*]}-1]}))
 	fi
     else
-	if [ -z "${radix/*\\**/}" -o -z "${ver/*\\**/}" ]; then
-	    echo "Error: no existing package matches $new_name, and wildcards"
-	    echo "or incomplete names cannot be part of a real name."
-	    exit 1
+	# No package currently exists with this name. Let's check if we can rely
+        # on the version in "Version" anyway.
+	if [ -r "${LINKNAME}/${VERSFILE}" -a -s "${LINKNAME}/${VERSFILE}" ]; then
+	    new_name=${new_name}-$(get_next_build $(get_build_num $(cat "${LINKNAME}/${VERSFILE}")))
+	else
+	    if [ -z "${radix/*\\**/}" -o -z "${ver/*\\**/}" ]; then
+		echo "Error: no existing package matches $new_name, and wildcards"
+		echo "or incomplete names cannot be part of a real name."
+		exit 1
+	    fi
+	    # we keep new_name since it's syntactically correct
+	    new_name=${new_name}-${BUILDSFX}${BUILDVER}.1
 	fi
-	# we keep new_name since it's syntactically correct
-	new_name=${new_name}-${BUILDSFX}${BUILDVER}.1
     fi
 
     #echo "new_name: $new_name"
@@ -817,7 +832,7 @@ function do_newpkg {
     # the source package, else we'll use the explicit name
     echo; echo ">>> Please select the package to use as a reference :"; echo
 
-    get_name $pkg_name $new_name %P %D
+    get_name $pkg_name $new_name %P %D %V
 
     if [ -z "$REPLY" ]; then
 	echo "No reference package found (even default). Please specify one."
@@ -826,33 +841,54 @@ function do_newpkg {
 
     echo "Using '$REPLY'."
 
-    if [ -e "$PKGROOT/$REPLY/build.cfg" ]; then
-	pkg_name=$PKGROOT/$REPLY
+    if [ -r "${LINKNAME}/${VERSFILE}" ]; then
+	# The version should only be in the Version file
+	if [ -w "${LINKNAME}/${VERSFILE}" ] || rm -f "${LINKNAME}/${VERSFILE}"; then
+	    echo ${new_name} > "${LINKNAME}/${VERSFILE}"
+	    echo "Setting package version to ${new_name}."
+	    echo
+	else
+	    echo "Could not change version in file ${LINKNAME}/${VERSFILE}. Please check permissions."
+	    exit 1
+	fi
+	
+	# Self-contained mode : we only update the version in the Version file.
+	#echo "new_name: $new_name"
+	#echo "pkg_name: $pkg_name"
+	#echo "REPLY: $REPLY"
+	#exit 1
     else
-	pkg_name=$DEVROOT/$REPLY
+	# Conventional packaging mode : the package is either in PKGROOT or DEVROOT
+
+	if [ -e "$PKGROOT/$REPLY/build.cfg" ]; then
+	    pkg_name=$PKGROOT/$REPLY
+	else
+	    pkg_name=$DEVROOT/$REPLY
+	fi
+
+	# new_name is always relative to DEVROOT
+	#echo "new_name: $new_name ; old_name: $(basename $pkg_name)"
+
+	# we should verify that new_name/released doesn't exist before extracting
+	# anything into it, or even that new_name doesn't exist at all.
+	new_name=$DEVROOT/$new_name
+	if [ -e $new_name ]; then
+	    echo "Error! new directory $new_name already exists. Refusing to overwrite."
+	    exit 1
+	fi
+
+	rm -f ${LINKNAME} && mkdir -p $new_name && ln -s $new_name ${LINKNAME} && \
+	    tar -C $pkg_name  --exclude='./compiled/*' --exclude='./RELEASED*' --exclude='./pkg.*' \
+		--exclude='./CFLAGS' --exclude='./.dep' --exclude='./.lst' --exclude='./.tgz' \
+		--exclude="./${VERSFILE}" --one-file-system -cpf - . | \
+	    tar -C $new_name -xf - || (rmdir $new_name ; rm -f ${LINKNAME})
+	chmod u+rw $new_name/build.cfg
+
+	echo "A new package '$(basename $new_name)' has been created as '$new_name', based on '$(basename $pkg_name)'."
+	echo "The link '${LINKNAME}' now points to it."
+	echo
     fi
-
-    # new_name is always relative to DEVROOT
-    #echo "new_name: $new_name ; old_name: $(basename $pkg_name)"
-
-    # we should verify that new_name/released doesn't exist before extracting
-    # anything into it, or even that new_name doesn't exist at all.
-    new_name=$DEVROOT/$new_name
-    if [ -e $new_name ]; then
-	echo "Error! new directory $new_name already exists. Refusing to overwrite."
-	exit 1
-    fi
-
-    rm -f ${LINKNAME} && mkdir -p $new_name && ln -s $new_name ${LINKNAME} && \
-	tar -C $pkg_name  --exclude='./compiled/*' --exclude='./RELEASED*' --exclude='./pkg.*' \
-            --exclude='./CFLAGS' --exclude='./.dep' --exclude='./.lst' --exclude='./.tgz' \
-            --exclude="./${VERSFILE}" --one-file-system -cpf - . | tar -C $new_name -xf - || (rmdir $new_name ; rm -f ${LINKNAME})
-    chmod u+rw $new_name/build.cfg
-
-    echo "A new package '$(basename $new_name)' has been created as '$new_name', based on '$(basename $pkg_name)'."
-    echo "The link '${LINKNAME}' now points to it."
-    echo
-    if [ $(find $new_name/patches -type f |wc -l) -gt 0 ]; then
+    if [ $(find ${LINKNAME}/patches -type f |wc -l) -gt 0 ]; then
 	echo "*** Warning: there are patches that may need to be applied, use >>>pkg info<<< ***"
 	echo
     fi
@@ -1626,10 +1662,13 @@ function do_changelog {
     # Let's create a new changelog entry
     (echo '0a'; date +"%Y/%m/%d %H:%M  $LOGNAME@$HOSTNAME";
      echo ''; echo $'\t* '; echo ''; echo '.' ;
-     echo '1,$wq') | ed $PKGDIR/ChangeLog >/dev/null
+     echo '1,$wq') | ed -s $PKGDIR/ChangeLog >/dev/null
 
     # we'll ask the user to fill the changelog
+    echo "Launching VI to edit the changelog..."
     vi -c ":3" $PKGDIR/ChangeLog
+    echo "VI session completed..."
+    echo
     return 0
 }
 
@@ -1652,7 +1691,8 @@ function do_release {
     # first, the destination directory must not exist
     if [ -d "$PKGROOT/${EXACTPKG##*/}" ]; then
 	if [ -e "$PKGROOT/${EXACTPKG##*/}/RELEASED" ]; then
-	    echo "Error: This package has already been released. Please change the version."
+	    echo "Error: This package has already been released."
+	    echo "Please use 'pkg newpkg' to change the version."
 	else
 	    echo "Error: The package directory $PKGROOT/${EXACTPKG##*/} already exists."
 	fi
@@ -1671,11 +1711,13 @@ function do_release {
 	touch $PKGDIR/ChangeLog	# avoid error message in case it doesn't exist
 	(echo '0a'; date +"%Y/%m/%d %H:%M  $LOGNAME@$HOSTNAME";
 	 echo ''; echo $'\t'"* released ${EXACTPKG##*/}";
-	 echo ''; echo '.' ; echo '1,$wq') | ed $PKGDIR/ChangeLog >/dev/null
+	 echo ''; echo '.' ; echo '1,$wq') | ed -s $PKGDIR/ChangeLog >/dev/null
     fi
 
     # we'll ask the user to fill the changelog
+    echo "Launching VI to edit the changelog..."
     vi -c ":4" $PKGDIR/ChangeLog
+    echo "VI session completed..."
 
 #<FIXME.WTA>
 #traiter le cas où PKGROOT/PKGDIR existe déjà mais pour d'autres archi
@@ -1709,6 +1751,9 @@ function do_release {
       # pkg newpkg should be helpful.
     fi
 
+    # Just in case, we remove this file because we now have a *real* repository
+    # for which the name is enough to tell the version.
+    rm -f "$PKGROOT/${EXACTPKG##*/}/${VERSFILE}" >/dev/null 2>&1
     touch "$PKGROOT/${EXACTPKG##*/}/RELEASED"
 
     return 0
