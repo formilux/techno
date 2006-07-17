@@ -13,6 +13,7 @@
 # the first one follows directories, is it really needed ?
 
 #### update PATH to include this script's directory
+MYNAME="${0##*/}"
 MYDIR="${0%/*}"
 [ "${PATH#$MYDIR:}" == "$PATH" ] && export PATH="$MYDIR:$PATH"
 
@@ -31,13 +32,15 @@ fi
 _cnt2prf="${_mksp_pkg_cnt2prf-${cnt2prf-${SCRIPTDIR:+$SCRIPTDIR/}cnt2prf}}"
 _fix_prf="${_mksp_pkg_fix_prf-${fix_prf-${SCRIPTDIR:+$SCRIPTDIR/}fix-prf}}"
 _updt_prf="${_mksp_pkg_updt_prf-${updt_prf-${SCRIPTDIR:+$SCRIPTDIR/}updt-prf}}"
-_prfchk="${_mksp_pkg_prfchk-${prfchk-${SCRIPTDIR:+$SCRIPTDIR/}prfchk}}"
+_prfdiff="${_mksp_pkg_prfdiff-${prfdiff-${SCRIPTDIR:+$SCRIPTDIR/}prfdiff}}"
 
 #_="${_mksp_pkg_-${-}}"
 _cp="${_mksp_pkg_cp-${cp-cp}}"
 _ln="${_mksp_pkg_ln-${ln-ln}}"
 _mv="${_mksp_pkg_mv-${mv-mv}}"
 _rm="${_mksp_pkg_rm-${rm-rm}}"
+_awk="${_mksp_pkg_awk-${awk-awk}}"
+_sed="${_mksp_pkg_sed-${sed-sed}}"
 _find="${_mksp_pkg_find-${find-find}}"
 _mkdir="${_mksp_pkg_mkdir-${mkdir-mkdir}}"
 _sort="${_mksp_pkg_sort-${sort-sort}}"
@@ -70,7 +73,7 @@ function usage {
 
 function die {
   echo
-  echo "### $@"
+  echo "### ${MYNAME}: $@"
   echo "Cmdline was $CMDLINE"
   echo
   exit 1
@@ -186,15 +189,36 @@ $_mkdir -p $OUT_DIR/temp || die "Cannot make directory '$OUT_DIR/temp'. Aborting
 # Note that files under $2/rescan are automatically detected and used.
 prf_consistency_check() {
   local incons=0
+  local todelete=0
   local p q
+  local nopkg
 
   for p in $(cd "$1" && echo *.prf); do
+    echo "Checking PRF $p for inconsistencies ..."
+    nopkg=( )
     # if we have a rescan output for this file, we must use it instead.
-    q="$2/rescan/$p";
-    [ -e "$q" ] || q="$2/$p"
+    # We enumerate separately the missing packages, and we don't list the files
+    # related to them in the output (we fake as if they were present).
+    if [ -e "$2/rescan.log/${p%.prf}.log" ]; then
+        todelete=1
+        nopkg=( $( $_awk '/^##no package## / { print $4 }' "$2/rescan.log/${p%.prf}.log" | $_sort -u ) )
+        $_sed -e '/^##not found##/d;s/^##no package## //' "$2/rescan.log/${p%.prf}.log"  > "$2/rescan.log/${p%.prf}.log.tmp"
+	q="$2/rescan.log/${p%.prf}.log.tmp"
+    elif [ -e "$2/rescan/$p" ]; then
+	q="$2/rescan/$p"
+    else
+	q="$2/$p"
+    fi
 
-    echo "Checking $p for inconsistencies ..."
-    if ! $_prfchk "$1/$p" "$q"; then
+    if [ ${#nopkg[@]} -gt 0 ]; then
+      echo "    The following packages are missing. Their files will not be listed."
+      echo "    >>> ${nopkg[@]} <<<"
+      echo
+    fi
+
+    if ! $_prfdiff "$1/$p" "$q" >/dev/null 2>&1; then
+      echo "    The following differences have been found between 'expected' and 'found' :"
+      $_prfdiff "$1/$p" "$q"
       echo
       ((incons++))
       incons_list[${#incons_list[@]}]="$p"
@@ -207,12 +231,15 @@ prf_consistency_check() {
     echo "                  +++++++  WARNING !!!  +++++++"
     echo "    There were inconsistencies between expected and used packages"
     echo "    for the following PRF files :"
-    echo
     echo "    >>> ${incons_list[@]} <<<"
     echo
     echo "    - the original files were in $1"
     echo "    - the rebuild files were in $2"
     echo
+    if [ $todelete -ne 0 ]; then
+      echo "    Additionnaly, the directories $2/rescan* must be removed."
+      echo
+    fi
     echo "    => You should press <Ctrl>-C now and fix them by hand,"
     echo "       or press <ENTER> now to ignore the problem."
     echo
@@ -324,7 +351,7 @@ for IN_DIR in "${IN_DIRS[@]}"; do
 
 	  nf=( $($_find $OUT_DIR/temp/pkg -maxdepth 1 \( -name "$pkg_name" -o -name "$pkg_name[-.]*" \) 2>/dev/null) )
 	  if [ ${#nf[@]} -eq 0 ]; then
-	    echo "   -> Not found : $pkg_name"
+	    echo "   -> Package not found : $pkg_name"
 	    not_found=( "${not_found[@]}" "$pkg_name" )
           fi
 	fi
@@ -332,9 +359,10 @@ for IN_DIR in "${IN_DIRS[@]}"; do
 
     if [ ${#not_found[@]} -gt 0 ]; then
 	echo
-	echo "The following packages were referenced by $INCLUDE_FILE but not found : ${not_found[@]}"
+	echo "    The following packages were referenced by $INCLUDE_FILE but not found : "
+	echo "    >>> ${not_found[@]} <<<"
 	echo
-        echo "   +++ Press <ENTER> to continue of <Ctrl>-C to stop here +++"; read
+        echo "    +++ Press <ENTER> to continue of <Ctrl>-C to stop here +++"; read
         echo
     fi
   else

@@ -9,6 +9,7 @@
 #
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
 
+MYNAME="${0##*/}"
 CMDLINE="$*"
 
 # usage: displays script usage and returns no error.
@@ -35,7 +36,7 @@ function usage {
 
 function die {
   echo
-  echo "### $@"
+  echo "### ${MYNAME}: $@"
   echo "Cmdline was $CMDLINE"
   echo
   exit 1
