@@ -167,7 +167,8 @@ done
 if [ $NOCONS -eq 0 ]; then
   echo
   echo "Scanning the rootfs for missing files ..."
-  if ! $_sort -u $OUT_DIR/log/* | (cd $OUT_DIR/fs/; $_xargs --no-run-if-empty $_ls -1d >/dev/null ); then
+  # Note: each line in the log file may start with ## and may contain a package name.
+  if ! $_sort -u $OUT_DIR/log/*.log | sed -e 's/^\(.*## \)\([^ ]*\).*/\2/' | (cd $OUT_DIR/fs/; $_xargs --no-run-if-empty $_ls -1d >/dev/null ); then
     echo
     echo "### FATAL : some files which were present in the tgz files are missing from"
     echo "### the rootfs (${OUT_DIR#$PWD/}/fs). While it *MIGHT* be caused by a bug in"
@@ -176,6 +177,10 @@ if [ $NOCONS -eq 0 ]; then
     echo "### support. You can lookup the files above by grepping in the log directory"
     echo "### (${OUT_DIR#$PWD/}/log). If you think this is not an error, please pass"
     echo "### the '-nc' option to ${0##*/} to disable consistency checks."
+    echo
+    echo "    +++ You may want to check the logs in the following directory  +++"
+    echo "    >>> $OUT_DIR <<<"
+    echo
     die "Aborting."
   fi
 fi
