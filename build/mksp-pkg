@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-# mksp-pkg - make a pkg dir from several softwares - version 0.0.6 - 2006-07-03
+# mksp-pkg - make a pkg dir from several softwares - version 0.0.7 - 2006-07-17
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
 # Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
@@ -207,10 +207,11 @@ prf_consistency_check() {
     echo "                  +++++++  WARNING !!!  +++++++"
     echo "    There were inconsistencies between expected and used packages"
     echo "    for the following PRF files :"
-    echo "    ${incons_list[@]}"
     echo
-    echo "    - the rebuild files were in $2"
+    echo "    >>> ${incons_list[@]} <<<"
+    echo
     echo "    - the original files were in $1"
+    echo "    - the rebuild files were in $2"
     echo
     echo "    => You should press <Ctrl>-C now and fix them by hand,"
     echo "       or press <ENTER> now to ignore the problem."
@@ -361,7 +362,7 @@ for IN_DIR in "${IN_DIRS[@]}"; do
   # 3) Now, let's fix the .prf. It's important to do this before merging other packages
   $_updt_prf "$OUT_DIR/temp/prf" "$OUT_DIR/temp/pkg"
 
-  if [ $NOCONS -eq 0 ]; then
+  if [ $NOCONS -eq 0 -a -d "$IN_DIR/prf/." ]; then
     prf_consistency_check "$IN_DIR/prf" "$OUT_DIR/temp/prf"
   fi
 
@@ -393,7 +394,7 @@ for IN_DIR in "${IN_DIRS[@]}"; do
     # Now, let's fix the resulting .prf. It's important to do this before merging other packages
     $_updt_prf "$OUT_DIR/temp/cnt" "$OUT_DIR/temp/pkg"
 
-    if [ $NOCONS -eq 0 ]; then
+    if [ $NOCONS -eq 0 -a -d "$IN_DIR/cnt/."]; then
       prf_consistency_check "$IN_DIR/cnt" "$OUT_DIR/temp/cnt"
     fi
 
