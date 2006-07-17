@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# pkg - Formilux package builder - version 0.8.0 - 2005-12-17
+# pkg - Formilux package builder - version 0.8.1 - 2005-12-17
 #
 # Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
 #       mailto: benoit@ant-computing.com,willy@ant-computing.com
@@ -8,7 +8,7 @@
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
 
 ######## Please update this version ########
-PKG_VERSION=0.8.0
+PKG_VERSION=0.8.1
 ############################################
 
 ## WARNING ##
@@ -1249,6 +1249,14 @@ function do_pack {
 	echo "Error: \$ROOTDIR doesn't point to a valid directory : $ROOTDIR"
 	exit 1
     fi
+
+    # Check that flx is really here
+    flx sign --no-depth / >/dev/null 2>&1
+    if [ $? -ne 0 ] ; then
+	echo "Error: the 'flx' tool does not seem to be usable. Check your PATH."
+	exit 1
+    fi
+
     cd $ROOTDIR
 
     # use the file list when available
@@ -1679,6 +1687,12 @@ function do_release {
     # some important checks before things get wrong
     if [ -z "$PKGROOT" -o -z "$PKGDIR" -o -z "$EXACTPKG" ]; then
 	echo "Critical error : PKGROOT, PKGDIR and EXACTPKG must be set !"
+	exit 1
+    fi
+
+    # some important checks before things get wrong
+    if [ ! -d "$PKGROOT"]; then
+	echo "Critical error : PKGROOT is not a directory !"
 	exit 1
     fi
 
