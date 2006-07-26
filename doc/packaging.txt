@@ -1,0 +1,122 @@
+      Problèmes posés par l'actuelle gestion de packages dans Formilux
+                         et propositions d'arrangements
+                            version 0.1 - 2006/02/06
+
+
+1) groupement binaires + build scripts
+======================================
+
+Ce groupement a été effectué à un moment où il devenait pénible
+d'avoir les scripts de build et les packages dans des répertoires
+distincts, car les opérations de mise à jour de packages étaient
+systématiquement doublées. Ce choix de regroupement est une énorme
+erreur, car le problème venait d'abord du manque d'outils et non du
+classement. En effet, depuis il n'est plus possible de produire des
+packages spécifiques à une plate-forme.
+
+Illustration :
+
+  On récupére sur le net un package source "xyz-1.2" que l'on veut ajouter à la
+  liste des packages de Formilux. A l'aide de la commande "pkg newpkg", on
+  produit un nouveau package "xyz-1.2-flx0.1". Le fichier "build.cfg" est
+  édité jusqu'à ce que le package compile correctement sur la plate-forme
+  en cours (i586). Une fois le package OK, on le release.
+
+  Ensuite, on veut le compiler pour une nouvelle plate-forme : alpha. On
+  retourne donc dans le même répertoire, on supprime manuellement le lien
+  ".flxpkg", et on fait un "pkg setpkg". Première erreur : on va travailler
+  sur un package déjà releasé. Mais si on fait un "newpkg", on va créer une
+  nouvelle version. L'opération "pkg compile" échoue, il faut donc modifier
+  le fichier "build.cfg". Si l'on fait un "pkg edit", on modifiera par erreur
+  le package releasé. Si l'éditeur fait attention aux droits du fichier, alors
+  il notifiera l'utilisateur qui devra sauver dans un autre fichier, puis
+  quitter, faire un "rm .flxpkg" puis "pkg newpkg" et enfin recopier à la main
+  le nouveau "build.cfg". Les soucis ne s'arrêtent pas là, car une fois le
+  package corrigé, et releasé, on se retrouve avec deux répertoires de
+  packages, l'un pour i586, l'autre pour alpha, alors que seul ce dernier est
+  vraiment à jour.
+
+Conclusion :
+------------
+
+Les scripts de build doivent pouvoir évoluer indépendamment des binaires, et
+les binaires doivent suivre les versions des sources au fil du temps,
+seulement lorsque nécessaire et sans remettre en cause les autres archis.
+Cela facilitera aussi l'archivage et le versionning des packages.
+
+
+2) Packages fournis par la distrib
+==================================
+
+Formilux fournit quelques packages en tant que sources mais aussi de packages
+compilés. A l'heure actuelle, aucune distinction n'est faite entre les sources
+fournies par Formilux et les sources de packages externes. Les sources des
+outils de Formilux peuvent très bien être réutilisés voire recompilés autrement
+pour des usages différents. Il faut donc que ces sources puissent être
+récupérées indépendamment des scripts de construction. Le résultat dépend donc
+de la version de Formilux utilisée pour la construction et de la plate-forme
+cible. On remarquera aussi que les sources ne dépendent pas de la version de
+Formilux. Par contre, une version de Formilux s'appuie sur une version des
+sources et un script de construction (+ potentiellement des patches).
+
+Conclusion :
+------------
+Le versionning de ces sources doit être indépendant de la version de Formilux.
+
+
+3) Outils de fabrication fournis par la distrib
+===============================================
+
+Formilux fournit des scripts de packaging et de fabrication de packages. Ces
+scripts correspondent à une techno dans son ensemble et dépendent donc bien
+d'une version de la techno utilisée. On ne peut pas dire à proprement parler
+que la techno dépende de la version de Formilux car on peut avoir plusieurs
+versions basées sur la même techno. En outre, les scripts de fabrication
+n'ont pas vraiment de raison d'être intégrés aux packages fournis dans la
+distrib car ils ne sont d'aucune utilité à part pour refabriquer du formilux.
+
+Conclusion :
+------------
+Les outils de fabrication de Formilux doivent être versionnés d'après la techno
+et non d'après la version. Si des packages sont produits, ils doivent eux-aussi
+reproduire le numéro de version de la techno.
+
+
+4) Regroupement de packages externes au sein d'une version de Formilux
+======================================================================
+
+Une version de Formilux n'est finalement rien de plus qu'une distribution
+s'appuyant sur :
+  - une version donnée de la techno
+  - une version donnée des outils
+  - un choix de packages externes
+  - un certain mode de compilation pour ces packages
+
+Cette version peut donner lieu à plusieurs modes de distribution, plus ou
+moins complets (ex: rescue, demo, core, dev, full, ...), sur plusieurs
+supports (cd, usb, pxe, ...).
+
+En ce sens, Formilux est un produit reposant sur des composants externes. De la
+même manière, tout produit peut fort bien se baser sur les mêmes composants et
+apporter un autre lot de packages. Il n'est pas envisageable de devoir
+reconstruire tous les packages pour toutes les variantes du produit
+Formilux. La majeure partie d'entre eux seront communs. Il semble donc naturel
+de pouvoir s'appuyer sur des packages prévus pour d'autres distributions ou
+d'autres variantes d'une distribution. Ce concept prend tout son sens lorsque
+l'on souhaite baser un nouveau produit sur les packages d'une certaine version
+de Formilux.
+
+
+Suggestion temporaire de classement
+-----------------------------------
+
+Ceci n'est qu'un axe de réflexion et en aucun cas une direction à suivre.
+
+formilux/techno/<version_techno>/
+         software/<nom_du_soft>/<versionning_du_soft>/
+         pkgdef/<nom_du_package>/<version>/   => définitions de packages
+         binpkg/<version_techno>/<nom_du_package>/<version>/   => packages compilés
+         product/<nom>/<version>/
+
+-- 2006/02/06 -- fin --
+

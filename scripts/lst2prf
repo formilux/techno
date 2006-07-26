@@ -1,0 +1,63 @@
+#!/bin/bash
+
+#
+# build/tools/lst2prf - Makes a .prf from a .lst - version 0.0.4 - 2006-01-27
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+# 
+# This script is used to build a valid profile from a unique signature file.
+# The only argument is the package version that will appear in the profile.
+# The .lst is read from stdin, and the .prf is printed to stdout.
+
+if [ "x$1" = "x-n" ]; then
+    AUTO=1
+    shift
+else
+    AUTO=0
+fi
+
+if [ -n "$1" -a -z "${1##-s[0-9]*}" ]; then
+    STRICT=${1#-s}
+    shift
+else
+    STRICT=4
+fi
+
+if [ $# -lt 1 ]; then
+    echo "Usage: lst2prf [-s{1..4}] pkg_name <pkg_name.lst >newname.prf"
+    echo "   or: lst2prf [-s{1..4}] -n pkg_name >newname.prf"
+    echo
+    echo "In the first form, the .lst will be read from stdin, and you have to be sure to"
+    echo "use the same pkg_name in the 2 places. In the second form, the pkg_name.lst"
+    echo "will be found under common/pkg in the current directory (useful from the build"
+    echo "directory).  The resulting prf will always be sent to stdout. Note that"
+    echo "pkg_name is also accepted as a .lst file full path name. You can use the '-s'"
+    echo "option followed by a number to restrict the number of reductions applied to the"
+    echo "package name. By default, 4 versions are listed (= -s4)."
+    exit 1
+fi
+
+# pkgname is also accepted as a filename
+pkgname=${1##*/} ; pkgname=${pkgname%.lst}
+
+pkglist="$pkgname"
+[ $STRICT -gt 1 ] && pkglist="$pkglist,${pkgname%-*}"
+[ $STRICT -gt 2 ] && pkglist="$pkglist,${pkgname%-*-*}"
+[ $STRICT -gt 3 ] && pkglist="$pkglist,${pkgname%%[._-][0-9]*}"
+
+if [ $AUTO -gt 0 ]; then
+    # use common/pkg/$pkgname.lst
+    while read a b c d e f g h rest; do
+	echo $h $pkglist
+    done < common/pkg/$pkgname.lst
+else
+    # use stdin for the .lst
+    while read a b c d e f g h rest; do
+	echo $h $pkglist
+    done
+fi

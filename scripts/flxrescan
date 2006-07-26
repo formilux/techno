@@ -1,0 +1,163 @@
+#!/bin/bash
+
+#
+# scripts/flxrescan - rescans and updates a prf  - version 0.0.3 - 2006-01-27
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+#
+# This tool is used to update a .prf file from possibly newer packages
+# according to the name reduction rules specified in the original prf.
+# It will make its best to respect them.
+
+function main {
+    local file packages pack pkgsrc
+    exec 3>&0
+    # cette boucle permet de rechercher le package à utiliser pour trouver
+    # le fichier si cela est possible
+    while read file packages; do 
+        echo -n \# >&2
+        if [ -z "$packages" ] ; then
+	    echo "##no package## $file" >> $LOGFILE
+	    echo "$file" >> $TMPDIR/OUTPUT
+	    continue
+	fi
+
+	unversionned=0
+	for pack in ${packages//,/ }; do
+	    [ "$pack" = "${pack%%[._-][0-9]*}" ] && unversionned=1
+	    pkgsrc=$(find $SEARCHPATH -name ${pack}'*'.lst | head -1)
+            [ "$pkgsrc" ] && break
+	done
+
+	if [ -z "$pkgsrc" ]; then
+            echo "##no package## $file $packages" >> $LOGFILE
+	    echo "$file $packages" >> $TMPDIR/OUTPUT
+	    continue
+        fi
+
+	# look for the first exact match
+	set -- $( grep -F -- "$file" "$pkgsrc" | awk '{ if ($8=="'$file'") { print $0;exit;}}' )
+	if [ -z "$*" ]; then
+	    pkgsrc=$( basename $pkgsrc .lst ) 
+	    if [ $unversionned = 1 ]; then
+	        echo "##not found## $file $pkgsrc,${pkgsrc%-*},${pkgsrc%-*-*},${pkgsrc%%[._-][0-9]*}" >> $LOGFILE
+	    else
+	        echo "##not found## $file $pkgsrc,${pkgsrc%-*},${pkgsrc%-*-*}" >> $LOGFILE
+            fi
+	    echo "$file $packages" >> $TMPDIR/OUTPUT
+            continue
+        fi
+
+	pkgsrc=$( basename $pkgsrc .lst ) 
+        if [ $unversionned = 1 ]; then
+	    echo $file $pkgsrc,${pkgsrc%-*},${pkgsrc%-*-*},${pkgsrc%%[._-][0-9]*} >> $TMPDIR/OUTPUT
+	    echo $file $pkgsrc,${pkgsrc%-*},${pkgsrc%-*-*},${pkgsrc%%[._-][0-9]*} >> $LOGFILE
+	else
+	    echo $file $pkgsrc,${pkgsrc%-*},${pkgsrc%-*-*} >> $TMPDIR/OUTPUT
+	    echo $file $pkgsrc,${pkgsrc%-*},${pkgsrc%-*-*} >> $LOGFILE
+	fi
+    done < $LFILES
+    echo "." >&2
+}
+
+
+# temporary file and directory
+TMP=$(date +%y%m%d)-$RANDOM
+while [ -e /tmp/pg-$TMP ] ; do TMP=$(date +%y%m%d)-$RANDOM ; done
+TMPDIR=/tmp/pg-$TMP
+PRINTUSAGE=0
+
+# traitement des parametres
+if [ $# -eq 0 ]; then
+    PRINTUSAGE=1
+fi
+
+while [ $# -gt 0 ] ; do
+    case "$1" in 
+        -i) # <infile> fichierssources des autres fichiers
+            [ "$2" ] || PRINTUSAGE=1
+            INPUT=( $INPUT $2 )
+            shift;
+            ;; 
+        -u) # update first source file with results
+            UPDATE=1
+            ;;
+        -o) # <outfile> fichier destination remis a jour
+            [ "$2" ] || PRINTUSAGE=1
+            OUTPUT=$2
+            shift;
+            ;; 
+        -l) # <logfile> fichier de reference pour les associations fichier/package
+            [ "$2" ] || PRINTUSAGE=1
+            LOGFILE="$2"
+            shift
+            ;;
+        -p) # <pkgdir> repertoire de recherche pour les packages
+            [ "$2" ] || PRINTUSAGE=1
+            SEARCHPATH="$SEARCHPATH $2/."
+            shift
+            ;;
+        -h) # affiche l'aide sur les paramètres
+            PRINTUSAGE=1
+            shift
+            ;;
+    esac
+    shift
+done
+
+# repertoire contenant les .lst et les .tgz servant de source
+SEARCHPATH=${SEARCHPATH:-${PKGROOT:+$PKGROOT/.}}
+SEARCHPATH=${SEARCHPATH:-.}
+
+if [ $PRINTUSAGE -gt 0 ]; then
+    # affiche les lignes du case ci-dessus
+    echo "Usage : $0 followed by these parameters :"
+    grep '^[ 	]\+-.) #.*' $0
+    echo
+    exit 1
+fi
+
+DATE=$(date +%Y%m%d-%H%M%S)
+
+LOGFILE=${LOGFILE:-/tmp/package-$DATE.log}
+if [ -e $LOGFILE ] ; then   
+    echo "Error : log file $LOGFILE exists."
+    exit 0
+fi
+
+# fabrication des fichiers temporaires
+mkdir -p -m 700 $TMPDIR
+# fichier contenant l'ensemble des fichiers requis
+LFILES=$TMPDIR/lfiles ; touch $LFILES
+# fichier contenant la correspondance non du package source du package
+SFILES=$TMPDIR/sfiles ; touch $SFILES
+
+# fabrication d'un fichier contenant la liste de tous les fichiers recherchés
+# le fichier source peut contenir lui-même des informations de packages de provenance
+cat $INPUT > $LFILES
+sort -u $LFILES > $LFILES.new ; rm $LFILES ; mv $LFILES.new $LFILES
+
+main
+
+
+if [ -e $TMPDIR/OUTPUT ] ; then
+    if [ "$UPDATE" == 1 -a "$INPUT" ] ; then
+        set -- $INPUT
+        rm -f $1 ; mv $TMPDIR/OUTPUT $1
+	echo "Le résultat est dans $1, et les opérations sont dans $LOGFILE"
+    elif [ "$OUTPUT" ] ; then
+        mv $TMPDIR/OUTPUT $OUTPUT
+	echo "Le résultat est dans $OUTPUT, et les opérations sont dans $LOGFILE"
+    else
+        cat $TMPDIR/OUTPUT
+    fi
+else
+    echo "Aucun résultat produit. Consulter les opérations dans $LOGFILE"
+fi
+
+rm -rf $TMPDIR

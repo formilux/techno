@@ -1,0 +1,10 @@
+#!/bin/sh
+
+# usage: $0 < x.prf > x.cnt
+unset line
+cut -f2 -d' ' | sort -u | while read; do
+   [ "$line" = "1" ] && echo
+   line=1
+   echo "$REPLY:"
+   grep -Fw $REPLY r3 | cut -f1 -d' ' | awk '{print "\t" $0;}'
+done

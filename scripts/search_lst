@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# arg : a directory containing 256 .lst files
+# input : a server signature file
+# output : possible origins of all files
+if [ $# -eq 0 ]; then
+   echo "usage : $0 <lst directory>"
+   grep "^# " $0
+   exit 1
+fi
+DIR=${1%/}
+
+#rem : d41d8cd98f00b204e9800998ecf8427e = signature for empty file
+grep '^-' |grep -v ' d41d8cd98f00b204e9800998ecf8427e ' |  while read; do set -- $REPLY; grep -- " $6 " $DIR/${6:0:2}.lst || echo "#no_pkg $REPLY"; done
+

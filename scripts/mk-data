@@ -1,0 +1,229 @@
+#!/bin/bash
+
+#
+# build/tools/mk-data - build the data section - version 0.0.6 - 2004-08-07
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+#
+# This tool is used to group packages and profile-specific data on an
+# installation medium (CD, USB, ...). It can call profile-specific helpers
+# located in the profile's directory under the simple name 'prebuild' and 'postbuild'.
+# it will trash and rebuild the 'data' directory in the media's directory.
+
+# it should be run from the 'build' directory, with <medium_dir> and
+# <profile_dir> as its arguments.
+
+CMDLINE="$*"
+
+function die {
+    echo
+    echo "### $@"
+    echo "Cmdline was $CMDLINE"
+    echo
+    exit 1
+}
+
+function do_clean {
+    rm -rf $TARGETDIR/data $TARGETDIR/log \
+    || die "There was an error cleaning the '$TARGETDIR' directory. Aborting."
+}
+
+shopt -s nullglob dotglob
+umask 022
+
+myname=$0
+PRINTUSAGE=0
+CLEAN_ONLY=0
+unset TARGETDIR MEDIUMDIR PROF INCLUDE_FILE EXCLUDE_FILE
+
+[ $# -gt 0 ] || PRINTUSAGE=1
+
+while [ $# -gt 0 ] ; do
+    case "$1" in 
+        -t) # -t target_dir
+            [ -n "$2" -a -d "$2/." ] || PRINTUSAGE=1
+            TARGETDIR=$2
+            shift;
+            ;; 
+        -m) # -m medium_dir
+            [ -n "$2" -a -d "$2/." ] || PRINTUSAGE=1
+            MEDIUMDIR=$2
+            shift;
+            ;; 
+        -p) # -p profile_dir
+            [ -n "$2" -a -d "$2/." ] || PRINTUSAGE=1
+            PROF=$2
+            shift
+            ;;
+        -i) # -i include_file
+            [ -n "$2" ] || PRINTUSAGE=1
+            INCLUDE_FILE=$2
+            shift
+            ;;
+        -e) # -e exclude_file
+            [ -n "$2" ] || PRINTUSAGE=1
+            EXCLUDE_FILE=$2
+            shift
+            ;;
+        -c) # -c = clean
+	    CLEAN_ONLY=1
+            ;;
+        -h) # displays help
+            PRINTUSAGE=1
+            shift
+            ;;
+    esac
+    shift
+done
+
+if [ $PRINTUSAGE -gt 0 -o -z "$TARGETDIR" ] || \
+    [ $CLEAN_ONLY = 0 ] && \
+    [ -z "$PROF" -o -z "$MEDIUMDIR" -o ! -d "$TARGETDIR/." -o ! -d "$PROF/." ]; then
+    echo "Usage: ${myname##*/} -t <target_dir> \\"
+    echo "       { -m <medium_dir>  -p <profile_dir>[ -i include_file ] [ -e exclude_file ] | -c }"
+    echo "   The 'data' directory will be deleted under <target_dir>, and the execution"
+    echo "   will end here if '-c' is set. Otherwise, a 'data' directory will be created"
+    echo "   under <target_dir>. Every dynamic content inside <target_dir>/{data,log} will"
+    echo "   be destroyed. This tool must be located ONLY in the 'build/tools' directory."
+    echo "   eg: '${myname##*/} -t mini-cd -p /nfs/profiles/mini-firewall -m cd'."
+    exit 1
+fi
+
+[ ! -d "$TARGETDIR/." -o -n "$PROF" -a ! -d "$PROF/." -o -n "$MEDIUMDIR" -a ! -d "$MEDIUMDIR/." ] && \
+    die "Either -t, -m or -p arguments point to something not a valid directory. Aborting."
+
+[ -n "${TARGETDIR##/*}" ] && TARGETDIR=$PWD/$TARGETDIR
+TARGETDIR=${TARGETDIR//\/.\//\/}
+[ -n "${MEDIUMDIR##/*}" ] && MEDIUMDIR=$PWD/$MEDIUMDIR
+MEDIUMDIR=${MEDIUMDIR//\/.\//\/}
+MEDIUM=$(basename ""$MEDIUMDIR)
+[ -n "${PROF##/*}" ] && PROF=$PWD/$PROF
+PROF=${PROF//\/.\//\/}
+TOOLS=$(dirname $myname)
+[ -n "${TOOLS##/*}" ] && TOOLS=$PWD/$TOOLS
+TOOLS=${TOOLS//\/.\//\/}
+BUILD=$(dirname $TOOLS)
+
+INCLUDE_FILE=${INCLUDE_FILE:-$PROF/PKGLIST}
+
+[ -n "$INCLUDE_FILE" -a "${INCLUDE_FILE##*/}" = "$INCLUDE_FILE" ] && INCLUDE_FILE=$PROF/$INCLUDE_FILE
+[ -n "$EXCLUDE_FILE" -a "${EXCLUDE_FILE##*/}" = "$EXCLUDE_FILE" ] && EXCLUDE_FILE=$PROF/$EXCLUDE_FILE
+
+if [ -n "$INCLUDE_FILE" -a ! -f "$INCLUDE_FILE" ]; then
+    echo "Error ! the package file specified after '-i' ($INCLUDE_FILE) is unreadable."
+    exit 1
+fi
+
+if [ -n "$EXCLUDE_FILE" -a ! -f "$EXCLUDE_FILE" ]; then
+    echo "Error ! the package exclusion file specified after '-e' is unreadable."
+    exit 1
+fi
+
+export TARGETDIR MEDIUM MEDIUMDIR TOOLS BUILD PROF INCLUDE_FILE EXCLUDE_FILE
+
+cd $BUILD
+
+echo;echo "+++ Cleaning current common tree (common) +++";echo
+do_clean
+
+if [ $CLEAN_ONLY -gt 0 ]; then
+    echo "+++ Done ! +++";
+    echo "==> The '$TARGETDIR' directory has been cleaned."
+    echo
+    exit 0
+fi
+mkdir $TARGETDIR/data $TARGETDIR/log
+
+if [ -x $PROF/prebuild ]; then
+    echo;echo "+++ Calling the profile pre-builder ($PROF/prebuild) +++";echo
+    if ! $PROF/prebuild; then
+	echo;echo "+++ The profile pre-builder returned an error. Aborting. +++";echo
+	exit 1
+    fi
+fi
+
+if [ -d $PROF/data ]; then
+    echo;echo "+++ Copying all the 'data' directory to the medium's data directory +++";echo
+    cp -a $PROF/data/. $TARGETDIR/data/
+fi
+
+exclude_args=( )
+if [ -n "$EXCLUDE_FILE" -a -r "$EXCLUDE_FILE" ]; then
+    while read -r name; do
+	exclude_args=( "${exclude_args[@]}" -and -not -name "${name}" )
+    done < $EXCLUDE_FILE
+fi
+
+not_found=( )
+mkdir -p $TARGETDIR/data/pkg 2>/dev/null
+if [ -n "$INCLUDE_FILE" -a -r "$INCLUDE_FILE" ]; then
+    echo;echo "+++ Copying all the packages in ${INCLUDE_FILE##*/} to the medium's data directory +++";echo
+    while read -r pkg_name; do
+	list=( $(find $PROF/pkg/ $BUILD/../pkg/ -type f -name "$pkg_name" \
+		-and \( -name \*.tgz -o -name \*.lst -o -name \*.dep \) \
+		"${exclude_args[@]}" 2>/dev/null ) )
+	if [ ${#list[@]} -gt 0 ]; then
+	    cp -av "${list[@]}" $TARGETDIR/data/pkg/
+	else
+	    echo;echo "   -> Not found : $pkg_name";echo
+	    not_found=( "${not_found[@]}" "$pkg_name" )
+	fi
+    done < $INCLUDE_FILE
+    chown -R root:root $TARGETDIR/data/pkg
+    chmod -R ugo+rX $TARGETDIR/data/pkg
+
+    if [ ${#not_found[@]} -gt 0 ]; then
+	echo
+	echo "The following packages were referenced but not found : ${not_found[@]}"
+	echo
+        echo "+++ Press <ENTER> to continue of <Ctrl>-C to stop here +++"; read
+    fi
+else
+    echo;echo "+++ Package list ($INCLUDE_FILE) not found +++";echo
+fi
+
+# no need to remove duplicates since we won't put these files on the medium.
+echo;echo "+++ checking for duplicates in the packages +++";echo
+$TOOLS/find-dup $TARGETDIR/data/pkg
+REPLY=$?
+echo;echo "+++ End of duplicates ++++"
+
+if [ "$REPLY" != "0" ]; then
+   echo "+++ Press <ENTER> to continue of <Ctrl>-C to stop here +++"; read
+fi
+
+echo;echo "+++ checking that the profile's .prf files are up to date +++";echo
+$TOOLS/updt-prf $PROF/ordered $TARGETDIR/data/pkg
+
+if [ -n "$(echo $PROF/ordered/rescan/*)" ]; then
+    echo;echo "+++++++++++++++++++++++++++++++";echo
+    echo "Some changes have been detected, please check those two directories :"
+    echo "  - $PROF/ordered/rescan/"
+    echo "  - $PROF/ordered/rescan.log/"
+    echo "Once you have finished, please clear those directories before retrying."
+    exit 1
+fi
+
+echo;echo "+++ OK, now copying the .prf files and ordered packages +++";echo
+rmdir $PROF/ordered/rescan $PROF/ordered/rescan.log 2>/dev/null
+cp -av $PROF/ordered/* $TARGETDIR/data/pkg/
+
+if [ -x $PROF/postbuild ]; then
+    echo;echo "+++ Calling the profile post-builder ($PROF/postbuild) +++";echo
+    if ! $PROF/postbuild; then
+	echo;echo "+++ The profile post-builder returned an error. Aborting. +++";echo
+	exit 1
+    fi
+fi
+
+echo
+echo "+++ Done ! +++";
+echo "The data FS is available in $TARGETDIR/data."
+echo
+
+echo "You can now use mk-image-$MEDIUM to complete."

@@ -1,0 +1,328 @@
+#!/bin/bash
+
+#
+# mksp-pkg - make a pkg dir from several softwares - version 0.0.1 - 2005-09-19
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+CMDLINE="$*"
+
+# usage: displays script usage and returns no error.
+function usage {
+  echo "MKSP-PKG - make a pkg dir from several softwares - version 0.0.1 - 2005-09-19"
+  echo "Usage: ${myname##*/} { -c |  [ -i <in_dir> ]* [ -prf <dir:match> ]* "
+  echo "       [ -pkgi <dir:file> ]* [ -pkge <dir:file> ]* }"
+  echo "       -o <out_dir> [ -b build_ver] [ -d ]"
+  echo
+  echo "   The 'fs' directory will be deleted under <out_dir>, and the execution"
+  echo "   will end here if '-c' is set. Otherwise, an 'fs' directory will be created"
+  echo "   under <target_dir>, with packages copied (or linked) from dirs <in_dir>."
+  echo "   All paths are absolute. '-b' is used to force the version which appears"
+  echo "   everywhere. Uses several scripts from \$SCRIPTDIR='$SCRIPTDIR'."
+  echo "   Use '-d' for debug."
+}
+
+function die {
+  echo
+  echo "### $@"
+  echo "Cmdline was $CMDLINE"
+  echo
+  exit 1
+}
+
+function do_clean {
+  rm -rf $OUT_DIR/{fs,base,temp} \
+  || die "There was an error cleaning the '$OUT_DIR' directory. Aborting."
+}
+
+shopt -s nullglob dotglob
+set -o pipefail
+umask 022
+
+myname=$0
+PRINTUSAGE=0
+CLEAN_ONLY=0
+DEBUG=0
+
+# default names
+INCLUDE_FILE_NAME=PKGLIST
+EXCLUDE_FILE_NAME=PKG_EXCLUDE
+
+_UPDT_PRF="${SCRIPTDIR:+$SCRIPTDIR/}updt-prf"
+_CNT2PRF="${SCRIPTDIR:+$SCRIPTDIR/}cnt2prf"
+_FIX_PRF="${SCRIPTDIR:+$SCRIPTDIR/}fix-prf"
+
+unset IN_DIRS IN_DIR OUT_DIR BUILDVERSION PKGI PKGO PRF
+
+IN_DIRS=( )
+PRF=( )
+PKGI=( )
+PKGO=( )
+
+[ $# -gt 0 ] || PRINTUSAGE=1
+
+while [ $# -gt 0 ] ; do
+  case "$1" in 
+    -i) # -i in_dir
+      if [ -z "$2" -o ! -d "$2/." ]; then
+        die "-i argument '$2' point to something not a valid directory. Aborting."
+	PRINTUSAGE=1
+      fi
+      IN_DIRS=( "${IN_DIRS[@]}" "$2" )
+      shift;
+      ;; 
+    -pkgi) # -pkgi in_dir:<pkglist to include>
+      [ -n "$2" -a -z "${2##*:*}" ] || PRINTUSAGE=1
+      PKGI=( "${PKGI[@]}" "$2" )
+      shift;
+      ;; 
+    -pkge) # -pkge in_dir:<pkglist to exclude>
+      [ -n "$2" -a -z "${2##*:*}" ] || PRINTUSAGE=1
+      PKGE=( "${PKGE[@]}" "$2" )
+      shift;
+      ;; 
+    -prf) # -prf in_dir:<prf files match to merge>
+      [ -n "$2" -a -z "${2##*:*}" ] || PRINTUSAGE=1
+      PRF=( "${PRF[@]}" "$2" )
+      shift;
+      ;; 
+    -o) # -o out_dir : must be a directory or must not exist
+      [ -n "$2" -a \( -d "$2/." -o ! -e "$2" \) ] || PRINTUSAGE=1
+      OUT_DIR=$2
+      shift;
+      ;; 
+    -b) # -b build_version : force the version which will appear in all kernel.ver
+      [ -n "$2" ] || PRINTUSAGE=1
+      BUILDVERSION="$2"
+      shift;
+      ;; 
+    -c) # -c = clean
+      CLEAN_ONLY=1
+      ;;
+    -d) # -d = clean
+      DEBUG=1
+      ;;
+    -h) # displays help
+      PRINTUSAGE=1
+      shift
+      ;;
+  esac
+  shift
+done
+
+if [ $PRINTUSAGE -gt 0 -o -z "$OUT_DIR" -o "$OUT_DIR" = "/" -o $CLEAN_ONLY = 0 -a ${#IN_DIRS[@]} = 0 ]; then
+  usage
+  echo
+  exit 1
+fi
+
+mkdir -p "$OUT_DIR" || die "Cannot make directory '$OUT_DIR'. Aborting."
+
+[ -n "${OUT_DIR##/*}" ] && OUT_DIR="$PWD/$OUT_DIR"
+OUT_DIR="${OUT_DIR//\/.\//\/}"
+
+echo;echo "+++ Cleaning output dir +++";echo
+do_clean
+
+if [ $CLEAN_ONLY -gt 0 ]; then
+  echo "+++ Done ! +++";
+  echo "==> The '$OUT_DIR' directory has been cleaned."
+  echo
+  exit 0
+fi
+
+mkdir -p $OUT_DIR/fs || die "Cannot make directory '$OUT_DIR/fs'. Aborting."
+mkdir -p $OUT_DIR/temp || die "Cannot make directory '$OUT_DIR/temp'. Aborting."
+
+#===================================================================================
+
+mkdir -p $OUT_DIR/temp/{cnt,pkg,prf,cnt-ok,prf-ok} || \
+  die "Cannot make directory '$OUT_DIR/temp/{cnt,pkg,prf,cnt-ok,prf-ok}'. Aborting."
+
+# will contain the total list of prfs, tgz, etc... to be installed
+FULL_INST=( )
+
+for IN_DIR in "${IN_DIRS[@]}"; do
+  echo;echo "+++ Processing directory $IN_DIR +++"
+  arg_dir="${IN_DIR}"
+
+  [ -n "${IN_DIR##/*}" ] && IN_DIR="$PWD/$IN_DIR"
+  IN_DIR="${IN_DIR//\/.\//\/}"
+
+  # set the default package include/exclude files
+  EXCLUDE_FILE=
+  INCLUDE_FILE=
+
+  [ -r "$IN_DIR/$EXCLUDE_FILE_NAME" ] && EXCLUDE_FILE="$IN_DIR/$EXCLUDE_FILE_NAME"
+  [ -r "$IN_DIR/$INCLUDE_FILE_NAME" ] && INCLUDE_FILE="$IN_DIR/$INCLUDE_FILE_NAME"
+
+  # FIXME: we should be a bit looser on those test, so that $pkg could match
+  # arg_dir if it starts with the same directory components.
+  # eg: arg_dir="$arg_dir/"; [ -z ${arg_dir##${pkg%%:*}/} ]
+
+  # find the associated prf list from the arg list
+  prflist_args=( )
+  for prf in "${PRF[@]}"; do
+    if [ "${prf%%:*}" = "$arg_dir" ]; then
+      prflist_args=( "${prflist_args[@]:+${prflist_args[@]} -or}" -name "${prf##*:}" )
+      break
+    fi
+  done
+
+  if [ ${#prflist_args[@]} -gt 0 ]; then
+    prflist_args=( "-and" "(" "${prflist_args[@]}" ")" )
+  fi
+
+  # find the associated exclude file from the arg list
+  for pkg in "${PKGI[@]}"; do
+    if [ "${pkg%%:*}" = "$arg_dir" ]; then
+      INCLUDE_FILE="${pkg##*:}"
+      [ -n "${INCLUDE_FILE##/*}" ] && INCLUDE_FILE="$IN_DIR/$INCLUDE_FILE"
+      break
+    fi
+  done
+
+  # find the associated exclude file from the arg list
+  for pkg in "${PKGE[@]}"; do
+    if [ "${pkg%%:*}" = "$arg_dir" ]; then
+      EXCLUDE_FILE="${pkg##*:}"
+      [ -n "${EXCLUDE_FILE##/*}" ] && EXCLUDE_FILE="$IN_DIR/$EXCLUDE_FILE"
+      break
+    fi
+  done
+
+  # build exclude arg based on what is in the exclude file ('find' syntax)
+  exclude_args=( )
+  if [ -n "$EXCLUDE_FILE" ]; then
+    if [ -r "$EXCLUDE_FILE" ]; then
+      while read -r name; do
+        exclude_args=( "${exclude_args[@]}" -and -not -name "${name}" )
+      done < $EXCLUDE_FILE
+    else
+      echo "   +++ WARNING! Unreadable file in -pkge : $EXCLUDE_FILE"
+    fi
+  fi
+
+  if [ -n "$INCLUDE_FILE" -a ! -r "$INCLUDE_FILE" ]; then
+    echo "   +++ WARNING! Unreadable file in -pkgi : $INCLUDE_FILE"
+  fi
+
+  # now, we'll link or copy the files listed in the include file, except those
+  # listed in the exclude file.
+
+  not_found=( )
+  if [ -n "$INCLUDE_FILE" -a -r "$INCLUDE_FILE" ]; then
+    echo;echo "   +++ Copying all the packages in ${INCLUDE_FILE##*/} to the medium's data directory +++";echo
+    while read -r pkg_name; do
+	[ -n "${pkg_name##\#*}" ] || continue
+	list=( $(find $IN_DIR/pkg/ -type f \( -name "$pkg_name" -o -name "$pkg_name[-.]*" \) \
+		-and \( -name \*.tgz -o -name \*.lst -o -name \*.dep \) \
+		"${exclude_args[@]}" 2>/dev/null ) )
+	if [ ${#list[@]} -gt 0 ]; then
+	  # FIXME: we should first remove those files if they exist
+	  ln -v "${list[@]}" $OUT_DIR/temp/pkg/ 2>/dev/null || cp -av "${list[@]}" $OUT_DIR/temp/pkg/
+	else
+	  # We did not find this package in the original software dir. Maybe it
+	  # was provided by former software, and is already lying in the dir.
+
+	  nf=( $(find $OUT_DIR/temp/pkg -maxdepth 1 \( -name "$pkg_name" -o -name "$pkg_name[-.]*" \) 2>/dev/null) )
+	  if [ ${#nf[@]} -eq 0 ]; then
+	    echo "   -> Not found : $pkg_name"
+	    not_found=( "${not_found[@]}" "$pkg_name" )
+          fi
+	fi
+    done < $INCLUDE_FILE
+
+    if [ ${#not_found[@]} -gt 0 ]; then
+	echo
+	echo "The following packages were referenced by $INCLUDE_FILE but not found : ${not_found[@]}"
+	echo
+        echo "   +++ Press <ENTER> to continue of <Ctrl>-C to stop here +++"; read
+    fi
+  else
+    echo;echo "   +++ Package list ($INCLUDE_FILE) not found +++";echo
+  fi
+
+  # 1) we must copy all .prf files we know about
+  if [ -e "$IN_DIR/prf" ]; then
+    list=( $(find "$IN_DIR/prf/" -type f "${prflist_args[@]}" -name "*.prf" 2>/dev/null ) )
+    FULL_LIST=( "${FULL_LIST[@]}" "${list[@]##*/}" )
+    [ ${#list[@]} -gt 0 ] && cp -av "${list[@]}" "$OUT_DIR/temp/prf/"
+
+    # everything not a .prf can be copied as-is into the target directory
+    list=( $(find "$IN_DIR/prf/" -type f "${prflist_args[@]}" -not -name "*.prf" 2>/dev/null ) )
+    FULL_LIST=( "${FULL_LIST[@]}" "${list[@]##*/}" )
+    [ ${#list[@]} -gt 0 ] && cp -av "${list[@]}" "$OUT_DIR/temp/pkg/"
+  fi
+
+  # 2) then we must copy all .cnt files
+  if [ -e "$IN_DIR/cnt" ]; then
+    list=( $(find "$IN_DIR/cnt/" -type f "${prflist_args[@]}" -name "*.cnt" 2>/dev/null ) )
+    [ ${#list[@]} -gt 0 ] && cp -av "${list[@]}" "$OUT_DIR/temp/cnt/"
+  fi
+
+  # 3) we generate the .prf from .cnt, possibly overwriting the ones copied in (1)
+  if [ -n "$(echo $OUT_DIR/temp/cnt/*)" ]; then
+    for cnt in "$OUT_DIR"/temp/cnt/*.cnt; do
+      prf="${cnt%.cnt}.prf"
+      $_CNT2PRF < "$cnt" | PKGDIRS="$OUT_DIR/temp/pkg" $_FIX_PRF > "$prf"
+      FULL_LIST=( "${FULL_LIST[@]}" "${prf##*/}" )
+    done
+
+    # Now, let's fix the resulting .prf. It's important to do this before merging other packages
+    $_UPDT_PRF "$OUT_DIR/temp/cnt" "$OUT_DIR/temp/pkg"
+    if [ -n "$(echo $OUT_DIR/temp/cnt/rescan/*)" ]; then
+      echo;echo "+++++++++++++++++++++++++++++++";echo
+      echo "Some changes have been detected, please check those two directories :"
+      echo "  - $OUT_DIR/temp/cnt/rescan/"
+      echo "  - $OUT_DIR/temp/cnt/rescan.log/"
+      echo "If you need to fix files, those were initially found here : $IN_DIR/cnt"
+      exit 1
+    else
+      rmdir $OUT_DIR/temp/cnt/rescan $OUT_DIR/temp/cnt/rescan.log 2>/dev/null
+    fi
+    [ -n "$(echo $OUT_DIR/temp/cnt/*.prf)" ] && mv $OUT_DIR/temp/cnt/*.prf $OUT_DIR/temp/prf/ 2>/dev/null
+    [ -n "$(echo $OUT_DIR/temp/cnt/*.cnt)" ] && mv $OUT_DIR/temp/cnt/* $OUT_DIR/temp/cnt-ok/ 2>/dev/null
+    # the cnt dir is now empty and available for next round
+  fi
+
+  # 4) Now, let's fix the .prf. It's important to do this before merging other packages
+  $_UPDT_PRF "$OUT_DIR/temp/prf" "$OUT_DIR/temp/pkg"
+
+  if [ -n "$(echo $OUT_DIR/temp/prf/rescan/*)" ]; then
+    echo;echo "+++++++++++++++++++++++++++++++";echo
+    echo "Some changes have been detected, please check those two directories :"
+    echo "  - $OUT_DIR/temp/prf/rescan/"
+    echo "  - $OUT_DIR/temp/prf/rescan.log/"
+    echo "If you need to fix files, those were initially found here : $IN_DIR/prf"
+    exit 1
+  else
+    rmdir $OUT_DIR/temp/prf/rescan $OUT_DIR/temp/prf/rescan.log 2>/dev/null
+  fi
+
+  # move the prf to their destination now, so that we don't risk rescanning them
+  [ -n "$(echo $OUT_DIR/temp/prf/*)" ] && mv $OUT_DIR/temp/prf/* $OUT_DIR/temp/prf-ok/
+  # the prf dir is now empty and available for next round
+done
+
+chown -R root:root $OUT_DIR/temp/pkg 2>/dev/null
+chmod -R ugo+rX $OUT_DIR/temp/pkg 2>/dev/null
+
+#mv $OUT_DIR/temp/cnt-ok/* $OUT_DIR/fs/
+[ -n "$(echo $OUT_DIR/temp/pkg/*)" ] && mv $OUT_DIR/temp/pkg/* $OUT_DIR/fs/
+[ -n "$(echo $OUT_DIR/temp/prf-ok/*)" ] && mv $OUT_DIR/temp/prf-ok/* $OUT_DIR/fs/
+
+# put the full list of packages to be installed in the target dir
+# FIXME: there can be duplicates from conflicting prf & cnt.
+for prf in "${FULL_LIST[@]}"; do echo "$prf"; done | sort -u > $OUT_DIR/fs/.FULL_LIST
+
+[ $DEBUG -eq 0 ] && rm -rf $OUT_DIR/temp
+
+echo
+echo "+++ Done ! +++";
+echo "==> Selected packages are available in '$OUT_DIR/fs'."
+echo

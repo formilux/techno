@@ -1,0 +1,41 @@
+#!/bin/bash
+
+#
+# build/tools/mk-root-cd - complete a CD root FS - version 0.0.2 - 2003-08-07
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+#
+# This tool should only be launched from mk-root. It completes the build of the
+# root FS in order to make an installable CD.
+
+shopt -s nullglob dotglob
+umask 022
+
+if [ -z "$BUILD" -o -z "$MEDIUM" -o -z "$MEDIUMDIR" -o -z "$TARGETDIR" -o -z "$TOOLS" ]; then
+    echo "This script should only be used by mk-root."
+    exit 1
+fi
+
+cd $BUILD
+
+echo;echo "+++ updating misc boot files +++";echo
+# we must replace the default .preinit which is not complete (cannot copy to
+# RAM, does not support autorun nor built-in shells for example).
+rm -f $TARGETDIR/root/.preinit && cp common/boot/files/.preinit $TARGETDIR/root/.preinit
+
+if [ -n "$PROF" -a -x "$PROF/postroot" ]; then
+   echo;echo "+++ doing profile-specific configuration ($PROF) +++";echo
+   $PROF/postroot
+fi
+
+echo
+echo "+++ Done ! +++";
+echo "==> The boot/root FS is available in $TARGETDIR/root."
+echo "    You can now use mk-data and mk-image-cd to complete."
+echo
+

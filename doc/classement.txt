@@ -1,0 +1,136 @@
+2005/10/16 : ERREUR DE CLASSEMENT !!!!
+----------
+
+On ne peut pas avoir de sous-répertoire "pkg" dans un software dans
+la mesure où ce "pkg" est spécifique à la version de formilux pour
+laquelle le software a été compilé, donc le package se trouve dans
+le répertoire pkg de formilux.
+
+=> le répertoire formilux n'a rien à faire dans 'software' vu qu'il
+   ne contient pas de source mais seulement des pkg.
+
+Peut-être devrait-on se contenter de products/formilux/formilux-0.1.9 ?
+Au pire, si on trouve des src dans formilux, ils pourront rester dans
+software pour faciliter le classement, mais ça ne semble pas
+indispensable.
+
+Le "produit" formilux doit référencer des branches pour chaque soft
+à recompiler, et en particulier pour ceux qui sont fournis avec. Cela
+sous-entend qu'on devrait également gérer des branches pour ces softs,
+afin que des formilux différents puissent s'en servir. Chaque version
+de formilux (distrib) doit référencer une version de la techno à
+utiliser. => avec ceci, on doit pouvoir écrire un script de packaging
+de sources permettant de tout reconstruire (extraits de la techno +
+sources à jour).
+
+NB: il faut trouver aussi comment indiquer à 'pkg' avec quelle branche
+de formilux il travaille, sinon on ne pourra jamais faire des packages
+pour des versions multiples de formilux.
+
+
+Nouvelle proposition :
+--------------------
+
+formilux
+|
++-> products
+|   |
+|   +-> formilux
+|       |
+|       +-> trunk
+|       |   |
+|       |   +-> pkg
+|       |   +-> pool
+|       |
+|       +-> branches
+|           |
+|           +-> 0.1.9
+|               |
+|               +-> release
+|               |   |
+|               |   +-> pkg => only released versions
+|               |
+|               +-> current
+|               |   |
+|               |   +-> pkg => only updated versions
+|               |
+|               +-> archive
+|               |   |
+|               |   +-> pkg => all versions (pool)
+|               |
+|               +-> updates
+|                   |
+|                   +-> pkg => all versions later than <release>
+|
++-> software
+|   |
+|   +-> bootsect,flx,flxutils,init-scripts,system-base,system-conf ...
+|       |
+|       +-> {...}/{trunk,releases/x.y.z}/src/pkgname-pkgver
+|
++-> techno
+|   |
+|   +> formilux-0.1
+|       +-> bootstrap
+|       |
+|       +-> build  => mksp-*, mkfp-*
+|       |
+|       +-> doc
+|       |
+|       +-> media
+|       |
+|       +-> platform
+|       |
+|       +-> scripts  => pkg,lst2prf...
+|       |
+|       +-> toolchain
+|
+
+
+
+2005/10/02 : ====== version buggée =======
+----------
+
+formilux
+|
++-> products
+|   |
+|   +-> formilux-0.1.9
+|
++-> software
+|   |
+|   +-> formilux
+|   |   |
+|   |   +-> trunk
+|   |   |   |
+|   |   |   +-> pkg
+|   |   |   |
+|   |   |   +-> src  => only system-base there ?
+|   |   |
+|   |   +-> releases
+|   |       |
+|   |       +-> 0.1.8
+|   |           |
+|   |           +-> pkg,src  => only system-base in src ?
+|   |
+|   +-> bootsect,flx,flxutils,init-scripts,system-base,system-conf ...
+|       |
+|       +-> {...}/{trunk,releases/x.y.z}/{pkg,src}/pkgname-pkgver
+|
++-> techno
+|   |
+|   +> formilux-0.1
+|       +-> bootstrap
+|       |
+|       +-> build  => mksp-*, mkfp-*
+|       |
+|       +-> doc
+|       |
+|       +-> media
+|       |
+|       +-> platform
+|       |
+|       +-> scripts  => pkg,lst2prf...
+|       |
+|       +-> toolchain
+|   

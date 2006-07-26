@@ -1,0 +1,218 @@
+#!/bin/bash
+
+#
+# build/tools/mk-image-cd - build a full CD image - version 0.0.4 - 2004-08-07
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+#
+# This tool should be used after mk-root and mk-data, which generate the CD root
+# file-system and the packages data which will be installed. It results in an
+# ISO image.
+#
+# it should be run from the 'build' directory, with <medium_dir> as its argument.
+
+CMDLINE="$*"
+
+function die {
+    echo
+    echo "### $@"
+    echo "Cmdline was $CMDLINE"
+    echo
+    exit 1
+}
+
+function do_clean {
+    rm -rf $TARGETDIR/image $TARGETDIR/image.iso \
+    || die "There was an error cleaning the '$TARGETDIR' directory. Aborting."
+}
+
+shopt -s nullglob dotglob
+umask 022
+
+myname=$0
+PRINTUSAGE=0
+CLEAN_ONLY=0
+unset TARGETDIR MEDIUMDIR
+
+[ $# -gt 0 ] || PRINTUSAGE=1
+
+while [ $# -gt 0 ] ; do
+    case "$1" in 
+        -t) # -t target_dir
+            [ -n "$2" -a -d "$2/." ] || PRINTUSAGE=1
+            TARGETDIR=$2
+            shift;
+            ;; 
+        -m) # -m medium_dir
+            [ -n "$2" -a -d "$2/." ] || PRINTUSAGE=1
+            MEDIUMDIR=$2
+            shift;
+            ;; 
+        -c) # -c = clean
+	    CLEAN_ONLY=1
+            ;;
+        -h) # displays help
+            PRINTUSAGE=1
+            shift
+            ;;
+    esac
+    shift
+done
+
+if [ $PRINTUSAGE -gt 0 -o -z "$TARGETDIR" -o $CLEAN_ONLY = 0 -a -z "$MEDIUMDIR" ]; then
+    echo "Usage: ${myname##*/} -t <target_dir> { -m <medium_dir> | -c }"
+    echo "   The 'image' directory will be deleted under <target_dir>, as well as the ISO"
+    echo "   image (image.iso), and the execution will end here if '-c' is set. Otherwise,"
+    echo "   an 'image' directory will be created under <target_dir>. Every dynamic"
+    echo "   content inside <target_dir>/image will be destroyed. This tool must be"
+    echo "   located ONLY in the 'build/tools' directory."
+    echo "   eg: '${myname##*/} -t mini-cd -m cd'."
+    exit 1
+fi
+
+[ ! -d "$TARGETDIR/." -o -n "$MEDIUMDIR" -a ! -d "$MEDIUMDIR/." ] && \
+    die "Either -t or -m arguments point to something not a valid directory. Aborting."
+
+[ -n "${TARGETDIR##/*}" ] && TARGETDIR=$PWD/$TARGETDIR
+TARGETDIR=${TARGETDIR//\/.\//\/}
+[ -n "${MEDIUMDIR##/*}" ] && MEDIUMDIR=$PWD/$MEDIUMDIR
+MEDIUMDIR=${MEDIUMDIR//\/.\//\/}
+MEDIUM=$(basename ""$MEDIUMDIR)
+TOOLS=$(dirname $myname)
+[ -n "${TOOLS##/*}" ] && TOOLS=$PWD/$TOOLS
+TOOLS=${TOOLS//\/.\//\/}
+BUILD=$(dirname $TOOLS)
+
+cd $BUILD
+
+echo;echo "+++ Cleaning current common tree (common) +++";echo
+do_clean
+
+if [ $CLEAN_ONLY -gt 0 ]; then
+    echo "+++ Done ! +++";
+    echo "==> The '$TARGETDIR' directory has been cleaned."
+    echo
+    exit 0
+fi
+mkdir $TARGETDIR/image
+
+#===================================================================================
+echo;echo "+++ building the CD image into $TARGETDIR/image ++++";echo
+mkdir -p $TARGETDIR/image/isolinux $TARGETDIR/image/flx
+# these two only depend on the installation profile in fact.
+# mkdir $TARGETDIR/image/pkg $TARGETDIR/image/src
+
+rm -rf $TARGETDIR/temp
+mkdir -p $TARGETDIR/temp
+
+# build squashfs root and boot images for each kernel version
+
+echo "Copying root filesystem image..."
+tar -C $TARGETDIR --exclude=root/boot -cf - root| tar -C $TARGETDIR/temp/ -xpf -
+
+UPKRN="" ; SMPKRN=""
+
+for kdir in $TARGETDIR/root/boot/[1-9]*; do
+    kver=${kdir##*/}
+    mkdir -p $TARGETDIR/temp/$kver
+    # assign the latest SMP to SMPKRN and the latest UP to UPKRN
+    if [ -z "${kver//*smp*/}" ]; then SMPKRN=$kver; else UPKRN=$kver; fi
+    cp -al $TARGETDIR/temp/root $TARGETDIR/temp/$kver/
+
+    ### >16 MB initrd  : boot/$KVER boot/System.map-$KVER
+    ### minimal modules: boot/$KVER/kernel/arch boot/$KVER/kernel/drivers/{ide,ieee1394,net,pcmcia,scsi} boot/$KVER/kernel/{fs,lib} boot/$KVER/{pcmcia,System.map,.config*,modules.*} boot/System.map-$KVER
+    ### reasonably featured kernel
+    echo;echo "+++ Copying kernel modules for version $kver +++";echo
+    (cd $TARGETDIR/root ; tar -cf - \
+	--exclude=boot/$kver/kernel/drivers/char/{drm,ftape,joystick,mwave,agp} \
+	--exclude=boot/$kver/kernel/drivers/net/{wan,tokenring,irda,wireless,hamradio,appletalk} \
+	--exclude=boot/$kver/kernel/drivers/block/paride \
+	--exclude=boot/$kver/kernel/fs/{nls,intermezzo,cifs,ncpfs,coda,autofs,autofs4} \
+	boot/$kver/kernel/{arch,crypto,fs,lib,net} \
+	boot/$kver/kernel/drivers/{parport,block,i2c,sensors,mtd,char,ide,ieee1394,net,pcmcia,scsi,usb} \
+	boot/$kver/{pcmcia,System.map,.config*,modules.*} boot/System.map-$kver \
+    ) | tar -C $TARGETDIR/temp/$kver/root -xpf -
+
+    echo;echo "+++ Uncompressing kernel modules for version $kver +++";echo
+    find $TARGETDIR/temp/$kver/root/boot -name '*.o' -type f | while read; do \
+	if gzip -cd <$REPLY >$REPLY- 2>/dev/null; then
+	    mv $REPLY- $REPLY
+	else
+	    rm -f $REPLY-
+	fi
+    done
+
+    echo;echo "+++ Building initrd for kernel version $kver +++";echo
+    mksquashfs $TARGETDIR/temp/$kver/root \
+	$TARGETDIR/image/isolinux/$kver.ird -2.0 -noappend
+
+    echo;echo "+++ Copying kernel $kver +++";echo
+    cp $TARGETDIR/root/boot/$kver/bzImage $TARGETDIR/image/isolinux/$kver.krn
+done
+
+# put a symlink to a generic file name so that the initrd does not have to
+# know this kernel's name.
+ln -s ${UPKRN:-$SMPKRN}.ird $TARGETDIR/image/isolinux/lowmem.ird
+ln -s ${UPKRN:-$SMPKRN}.krn $TARGETDIR/image/isolinux/lowmem.krn
+
+rm -rf $TARGETDIR/temp
+
+echo;echo "+++ Building CD boot files +++";echo
+# we need to be able to boot from this CD
+#(cd $MEDIUMDIR; tar --exclude=boot/*.tmpl -cf - boot) | tar -C $TARGETDIR/image/isolinux/ -xf -
+cp -a $MEDIUMDIR/boot/* $TARGETDIR/image/isolinux/
+sed -e "s/%UPKRN%/$UPKRN/g" -e "s/%SMPKRN%/$SMPKRN/g" \
+    < $TARGETDIR/image/isolinux/isolinux.tmpl \
+    > $TARGETDIR/image/isolinux/isolinux.cfg
+rm -f $TARGETDIR/image/isolinux/isolinux.tmpl
+
+[ -e $TARGETDIR/image/isolinux/findcd.gz ] || cp common/boot/findcd.gz $TARGETDIR/image/isolinux/
+
+### not needed anymore
+
+# we put the fresh root directory to its final place
+# cp -al $TARGETDIR/root $TARGETDIR/image/
+# ln -s root/boot $TARGETDIR/image/boot
+
+# we also copy the files used to generate the CD into the 'flx' directory
+cp $MEDIUMDIR/pkg/* $TARGETDIR/image/flx/
+cp doc/COPYING $TARGETDIR/image/flx/
+
+echo;echo "+++ hard linking $TARGETDIR/data to $TARGETDIR/image/ +++";echo
+
+cp -al $TARGETDIR/data/. $TARGETDIR/image/ || die "There was an error during 'cp -al $TARGETDIR/data/. $TARGETDIR/image/'. Aborting."
+
+#(cd $TARGETDIR/image ; find * > root/boot/isofiles.ord ; prio=$(wc -l <root/boot/isofiles.ord); while read f; do echo $f $prio; prio=$[$prio-1];done < root/boot/isofiles.ord) > $TARGETDIR/isofiles.ord
+#mkisofs -b isolinux/isolinux.bin -c isolinux/boot.cat \
+#        -no-emul-boot -boot-load-size 4 -boot-info-table \
+#        -l -L -o $TARGETDIR/image.iso -R -v -m '*.iso' -sort $TARGETDIR/isofiles.ord $TARGETDIR/image
+
+# other method : see how mkisofs orders the files, and save the list so that
+# the scripts on the CD know how to read it best.
+
+# first pass : write the files
+mkisofs -b isolinux/isolinux.bin -c isolinux/boot.cat \
+        -no-emul-boot -boot-load-size 4 -boot-info-table \
+        -l -L -o $TARGETDIR/image.iso -R -v -m '*.iso' -U $TARGETDIR/image
+
+# second pass : get the list and write the image again including the list
+#echo "Scanning the new image..."
+#mkdir -p $TARGETDIR/mnt
+#mount -ro loop $TARGETDIR/image.iso $TARGETDIR/mnt
+#find $TARGETDIR/mnt/root -printf "%i %P\n"|sort -n|cut -f2- -d' '|grep -v '^$' > $TARGETDIR/image/root/boot/isofiles.ord
+#umount -d $TARGETDIR/mnt
+#
+#mkisofs -b isolinux/isolinux.bin -c isolinux/boot.cat \
+#        -no-emul-boot -boot-load-size 4 -boot-info-table \
+#        -l -L -o $TARGETDIR/image.iso -R -v -m '*.iso' -U $TARGETDIR/image
+
+echo
+echo "+++ Done ! +++";
+echo "==> You can now burn '$TARGETDIR/image.iso'."
+echo
+

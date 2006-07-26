@@ -1,0 +1,58 @@
+# to upgrade a package, check the installed files, and replace them with the new ones.
+# example :
+#   we upgrade util-linux-2.11z-flx0.1 to util-linux-2.12h
+
+# cd /
+# flx check file:/tmp/util-linux-2.11z-flx0.1-i586.lst fs:. --show-all --ignore-dot --ignore-date |grep ^=|cut -c77-|cut -f1 -d' '
+bin/dmesg
+bin/more
+bin/mount
+bin/umount
+sbin/agetty
+sbin/fdisk
+sbin/fsck.minix
+sbin/hwclock
+sbin/losetup
+sbin/mkswap
+sbin/swapoff
+sbin/swapon
+usr/bin/logger
+usr/bin/setsid
+usr/sbin/rdev
+
+# flx check file:/tmp/util-linux-2.11z-flx0.1-i586.lst fs:. --show-all --ignore-dot --ignore-date |grep ^=|cut -c77-|cut -f1 -d' '|tar -T - -zUvptf /tmp/util-linux-2.12h-flx0.1-i386.tgz
+-r-xr-x--x root/adm      26408 2004-10-25 22:41:35 bin/more
+-r-xr-x--x root/adm       7424 2004-10-25 22:41:35 bin/dmesg
+-rwsr-x--x root/root     82024 2004-10-25 22:41:35 bin/mount
+-rwsr-x--x root/root     29192 2004-10-25 22:41:35 bin/umount
+-r-xr-x--x root/adm      10760 2004-10-25 22:41:35 usr/bin/logger
+-r-xr-x--x root/adm       7008 2004-10-25 22:41:35 usr/bin/setsid
+-r-xr----- root/adm      10280 2004-10-25 22:41:35 usr/sbin/rdev
+-r-xr----- root/adm      68936 2004-10-25 22:41:35 sbin/fdisk
+-r-xr----- root/adm      37032 2004-10-25 22:41:35 sbin/losetup
+-r-xr----- root/adm      18280 2004-10-25 22:41:35 sbin/agetty
+lrwxrwxrwx root/root         0 2004-10-25 22:38:44 sbin/swapoff -> swapon
+-r-xr----- root/adm      12876 2004-10-25 22:41:35 sbin/mkswap
+-r-xr----- root/adm      22308 2004-10-25 22:41:35 sbin/swapon
+-r-xr----- root/adm      28888 2004-10-25 22:41:35 sbin/hwclock
+roxr----- root/adm      22088 2004-10-25 22:41:35 sbin/fsck.minix
+
+
+# flx check file:/tmp/util-linux-2.11z-flx0.1-i586.lst fs:. --show-all --ignore-dot --ignore-date |grep ^=|cut -c77-|cut -f1 -d' '|tar -T - -zUvpxf /tmp/util-linux-2.12h-flx0.1-i386.tgz
+
+bin/more
+bin/dmesg
+bin/mount
+bin/umount
+usr/bin/logger
+usr/bin/setsid
+usr/sbin/rdev
+sbin/fdisk
+sbin/losetup
+sbin/agetty
+sbin/swapoff
+sbin/mkswap
+sbin/swapon
+sbin/hwclock
+sbin/fsck.minix
+

@@ -1,0 +1,49 @@
+#!/bin/sh
+
+#
+# build/tools/merge-pkg - merge all packages - version 0.0.1 - 2003-06-08
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+#
+# This tool will scan all specified directories for files stored under a 'compiled'
+# directory with extensions '.lst', '.pkg' and '.dep'. All the files found will be
+# hard linked to common/pkg/, so that it's very easy to remove duplicates and even
+# to burn them on a CD.
+
+# Note that since the 'custom' directory is scanned, customer's files are put together
+# with Formilux files, easing the installation process.
+
+# It should be run from the build directory. The 'common/pkg' directory will be cleaned
+# before anything is done, to avoid any risk of file corruption.
+
+if [ $# -eq 0 ]; then
+   echo "Usage: merge-pkg <pkgdir...>"
+   echo "   eg: merge-pkg ../pkg ../custom/formicus   (from 'build' dir)"
+   exit 1
+else
+   PKGDIRS=$*
+fi
+
+shopt -s nullglob dotglob
+
+if [ ! -d common/pkg ]; then
+    echo "This tool must be run from the 'build' directory, and needs an empty"
+    echo "directory named 'common/pkg', which does not exist here."
+    exit 1
+fi
+
+# rm -f common/pkg/*
+if [ -n "$(echo common/pkg/*)" ]; then
+    echo "The 'common/pkg' directory is not empty. Please clean it yourself."
+    exit 1
+fi 
+
+for pkg in $(find $PKGDIRS -path '*/compiled/*' \( -name '*.lst' -o -name '*.dep' -o -name '*.tgz' \)); do
+    ln $pkg common/pkg/
+done
+

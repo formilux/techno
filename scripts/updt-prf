@@ -1,0 +1,89 @@
+#!/bin/sh
+
+#
+# build/tools/updt-prf - update a list of prf  - version 0.0.4 - 2006-01-27
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+#
+# This tool is used to update a list of .prf files based on a pkg repository
+# (in fact, .lst are enough). It will create a 'new' directory within the
+# prf file repository, containing the new ones.
+
+# it should be run from the build directory, because it will look for packages
+# in 'common/pkg'.
+
+#### update PATH to include this script's directory
+MYDIR="${0%/*}"
+[ "${PATH#$MYDIR:}" == "$PATH" ] && export PATH="$MYDIR:$PATH"
+
+#### source defaults file if it exists
+FLXDEFAULTS="${FLXDEFAULTS-$HOME/.flxdefaults}"
+if [ -r "$FLXDEFAULTS" ]; then
+  . "$FLXDEFAULTS"
+fi
+
+if [ $# -lt 2 ]; then
+    echo "Usage: $0 <prf_dir> <lst_dir>"
+    echo "   <prf_dir> is a directory containing the .prf files to be updated."
+    echo "   <lst_dir> is a directory containing all the .lst needed to check the .prf files."
+    echo "   eg: $0 cd/pkg common/pkg"
+    exit 1
+else
+    DIR=$1
+    LST=$2
+fi
+
+shopt -s nullglob dotglob
+
+# we want an empty $DIR/rescan directory
+if [ ! -d $DIR/rescan ]; then
+    if ! mkdir $DIR/rescan; then
+	echo "Error: cannot create an empty 'rescan' directory under '$DIR'."
+	exit 1
+    fi
+else
+    if [ -n "$(echo $DIR/rescan/*)" ]; then
+	echo "The 'rescan' directory under '$DIR' is not empty. Please check"
+	echo "if you should remove or synchronize its contents."
+	exit 1
+    fi
+fi
+
+# we can clear the logs
+if [ ! -d $DIR/rescan.log ]; then
+    if ! mkdir $DIR/rescan.log; then
+	echo "Error: cannot create a 'log' directory under '$DIR'."
+	exit 1
+    fi
+else
+    rm -f $DIR/rescan.log/*.log
+fi
+
+for prf in $DIR/*.prf; do
+    file=${prf##*/}
+    file=${file%%.prf}
+    echo "Rescanning '$file'."
+    flxrescan -i $prf -o $DIR/rescan/$file.prf -l $DIR/rescan.log/$file.log -p $LST
+    if ! grep -q '^##' $DIR/rescan.log/$file.log; then
+    	if ! diff -q $prf $DIR/rescan/$file.prf; then
+	    echo "File $prf has been updated."
+	    cat $DIR/rescan/$file.prf > $prf
+        fi
+	echo "File $prf is OK, removing the output and the log."
+	rm -f $DIR/rescan/$file.prf $DIR/rescan.log/$file.log
+    fi
+done
+
+echo
+echo "The packages have been rescanned. You have to check manually that all"
+echo "files in '$DIR/rescan' are correct by consulting '$DIR/rescan.log',"
+echo "then simply copy these files over those in '$DIR' and remove '$DIR/rescan*'."
+echo
+echo "In short, here is a simple risky copy-pastable command :"
+echo "  # grep -q '^##' $DIR/rescan.log/*.log || cp $DIR/rescan/*.prf $DIR && rm -rf $DIR/rescan*"
+echo

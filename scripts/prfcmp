@@ -1,0 +1,18 @@
+#!/bin/bash
+
+if [ $# -ne 2 ]; then
+    echo "Usage: ${0##*/} file1.prf file2.prf"
+    echo "This command will output content differences between file1.prf and file2.prf"
+    echo "on the standard output, one per line, preceeded with a '-' for a file in"
+    echo "file1 only, and a '+' for a file in file2 only."
+    exit 1
+fi
+
+F1=$1
+F2=$2
+[ -d "$F2" ] && F2=${F2%%/}/${F1##*/}
+rm -f /tmp/prfcmp.[12].$$
+cut -f1 -d' ' $F1 |sort -u >/tmp/prfcmp.1.$$
+cut -f1 -d' ' $F2 |sort -u >/tmp/prfcmp.2.$$
+diff -u /tmp/prfcmp.[12].$$ | tail +3 | grep '^[-+]'
+rm -f /tmp/prfcmp.[12].$$

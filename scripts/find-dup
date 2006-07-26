@@ -1,0 +1,38 @@
+#!/bin/bash
+#
+# build/tools/find-dup - look for duplicate pkg - version 0.0.1 - 2003-06-08
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+#
+# This tool will scan the specified directory for packages of the same radical
+# name, but with different versions. It looks for .tgz and *[0-9] entries so it
+# is compatible with package directories too.
+# When duplicates are found, a line is printed with the package's radix name and
+# all matching entries.
+# It returns 0 if there are no duplicates, 1 if any error or duplicate is found.
+
+# Note that due to the very basic algorithm used, there are some false positives
+# so each line should really be checked by a human eye. The script does not
+# modify any data, everything should be changed by hand.
+
+if [ $# -eq 0 ]; then
+   echo "Usage: find-dup <pkg_dir>"
+   echo "   eg: find-dup common/pkg   (from 'build' dir)"
+   exit 1
+else
+   cd $1
+fi
+
+shopt -s nullglob dotglob
+dups=0
+for i in *tgz *[0-9]; do
+    j=${i%%-[0-9]*}
+    k=( $(echo ${j}-[0-9]*gz ${j}-[0-9]*[0-9]) )
+    [ ${#k[@]} -gt 1 ] && { echo $j: "${k[@]}"; dups=1; }
+done | sort -u
+exit $dups

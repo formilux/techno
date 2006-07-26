@@ -1,0 +1,10 @@
+#!/bin/bash
+while read f1 f2 ; do
+  [ -z "${f1##\#*}" ] && continue
+  if [ -z "${f1##*:*}" ]; then
+    PKGNAME="${f1%:*}"
+  else
+    echo "-${f1##-*}${f2%%(*} $PKGNAME"
+  fi
+done 
+

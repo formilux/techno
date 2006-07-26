@@ -1,0 +1,250 @@
+#!/bin/bash
+
+#
+# mksp-sqfs - make a squashfs from a raw FS - version 0.0.1 - 2005-09-18
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+CMDLINE="$*"
+
+# usage: displays script usage and returns no error.
+function usage {
+  echo "MKSP-SQFS - package a root dir as a squashfs - version 0.0.1 - 2005-09-18"
+  echo "Usage: ${myname##*/} -o <target_dir> { -i <in_dir> | -c } [ -d ] [ -ve ]"
+  echo "       [ -b build_ver] [ -k kern_ver ]* [ -s size_max ] [ -kv ] [ -md dir ]*"
+  echo
+  echo "   The 'fs' directory will be deleted under <target_dir>, and the execution"
+  echo "   will end here if '-c' is set. Otherwise, an 'fs' directory will be created"
+  echo "   under <target_dir>, with a squashfs image built from <in_dir>. All paths"
+  echo "   are absolute. '-k' is used to keep only certain kernel versions. Use"
+  echo "   it several times to keep several kernels. '-s' gives hints about the"
+  echo "   expected image size in megs. Below 16, rarely used kernel modules are purged"
+  echo "   before packaging. '-kv' tells the script to keep kernel version on the"
+  echo "   resulting kernel file, even if there's only one version. '-b' is used to"
+  echo "   force the version which appears in kernel.ver. '-ve' creates a 'vetc' image"
+  echo "   by moving /etc to /usr/share/factory/base-etc. '-md' makes it possible to"
+  echo "   create new directories right before packaging, eg: mount points."
+  echo "   Use '-d' for debug."
+}
+
+function die {
+  echo
+  echo "### $@"
+  echo "Cmdline was $CMDLINE"
+  echo
+  exit 1
+}
+
+function do_clean {
+  rm -rf $OUT_DIR/{fs,base,temp} \
+  || die "There was an error cleaning the '$OUT_DIR' directory. Aborting."
+}
+
+shopt -s nullglob dotglob
+set -o pipefail
+umask 022
+
+myname=$0
+PRINTUSAGE=0
+CLEAN_ONLY=0
+DEBUG=0
+VERSIONNED_KERNEL=0
+VETC=0
+
+unset IN_DIR OUT_DIR KVER SIZE_MAX VERSIONNED_KERNEL BUILDVERSION MKDIRS
+
+# KVER is a list composed of words starting and ending with '|' so that it's
+# very easy to tell whether a word belongs to the list or not :
+# 'kver' belongs to KVER if "${KVER[*]/|$kver|/}" != "${KVER[*]}"
+KVER=( )
+MKDIRS=( )
+
+[ $# -gt 0 ] || PRINTUSAGE=1
+
+while [ $# -gt 0 ] ; do
+  case "$1" in 
+    -i) # -i in_dir
+      if [ -z "$2" -o ! -d "$2/." ]; then
+        die "-i argument '$2' point to something not a valid directory. Aborting."
+	PRINTUSAGE=1
+      fi
+      IN_DIR=$2
+      shift;
+      ;; 
+    -o) # -o out_dir : must be a directory or must not exist
+      [ -n "$2" -a \( -d "$2/." -o ! -e "$2" \) ] || PRINTUSAGE=1
+      OUT_DIR=$2
+      shift;
+      ;; 
+    -b) # -b build_version : force the version which will appear in all kernel.ver
+      [ -n "$2" ] || PRINTUSAGE=1
+      BUILDVERSION="$2"
+      shift;
+      ;; 
+    -k) # -k kernel_version : specify which kernel version(s) we want to keep.
+      [ -n "$2" ] || PRINTUSAGE=1
+      KVER=( "${KVER[@]}" "|$2|" )
+      shift;
+      ;; 
+    -md) # -md dir : directories we want to create.
+      [ -n "$2" ] || PRINTUSAGE=1
+      MKDIRS=( "${MKDIRS[@]}" "$2" )
+      shift;
+      ;; 
+    -s) # -s size_max in megabytes
+      [ -n "$2" ] || PRINTUSAGE=1
+      SIZE_MAX=$2
+      shift;
+      ;; 
+    -c) # -c = clean
+      CLEAN_ONLY=1
+      ;;
+    -d) # -d = clean
+      DEBUG=1
+      ;;
+    -ve) # -ve = virtual-etc
+      VETC=1
+      ;;
+    -kv) # -kv = keep kernel version
+      VERSIONNED_KERNEL=1
+      ;;
+    -h) # displays help
+      PRINTUSAGE=1
+      shift
+      ;;
+  esac
+  shift
+done
+
+if [ $PRINTUSAGE -gt 0 -o -z "$OUT_DIR" -o "$OUT_DIR" = "/" -o $CLEAN_ONLY = 0 -a -z "$IN_DIR" ]; then
+  usage
+  echo
+  exit 1
+fi
+
+mkdir -p $OUT_DIR || die "Cannot make directory '$OUT_DIR'. Aborting."
+
+[ -n "${OUT_DIR##/*}" ] && OUT_DIR=$PWD/$OUT_DIR
+OUT_DIR=${OUT_DIR//\/.\//\/}
+[ -n "${IN_DIR##/*}" ] && IN_DIR=$PWD/$IN_DIR
+IN_DIR=${IN_DIR//\/.\//\/}
+
+echo;echo "+++ Cleaning output dir +++";echo
+do_clean
+
+if [ $CLEAN_ONLY -gt 0 ]; then
+  echo "+++ Done ! +++";
+  echo "==> The '$OUT_DIR' directory has been cleaned."
+  echo
+  exit 0
+fi
+
+mkdir -p $OUT_DIR/fs || die "Cannot make directory '$OUT_DIR/fs'. Aborting."
+ln -s $IN_DIR $OUT_DIR/base || die "Cannot make link '$OUT_DIR/base'. Aborting."
+
+#===================================================================================
+
+mkdir -p $OUT_DIR/temp/root || die "Cannot make directory '$OUT_DIR/temp/root'. Aborting."
+
+# build squashfs root and boot images for each kernel version
+
+echo "Copying root filesystem image..."
+tar -C $IN_DIR --exclude=./boot -cf - . | tar -C $OUT_DIR/temp/root/ -xpf - \
+  || die "Error during file-system copy."
+
+# We will copy only <KVER> if it has been specified, otherwise we will
+# copy every kernel.
+
+for kdir in $IN_DIR/boot/[1-9]*; do
+  kver=${kdir##*/}
+  if [ ${#KVER[@]} = 0 -o "${KVER[*]/|$kver|/}" != "${KVER[*]}" ]; then
+    mkdir -p $OUT_DIR/temp/$kver
+    cp -al $OUT_DIR/temp/root $OUT_DIR/temp/$kver/
+
+    echo;echo "+++ Copying kernel modules for version $kver +++";echo
+
+    if [ -z "$SIZE_MAX" ] || [ "$SIZE_MAX" -gt 16 ]; then
+      # full kernel modules
+      (cd $IN_DIR ; tar -cf - \
+	--exclude=boot/$kver/bzImage \
+  	boot/$kver boot/System.map-$kver \
+      ) | tar -C $OUT_DIR/temp/$kver/root -xpf -
+    else
+      # minimal kernel modules
+      # FIXME : try the same with rsync --exclude= --include=
+      (cd $IN_DIR ; tar -cf - \
+	--exclude=boot/$kver/kernel/drivers/char/{drm,ftape,joystick,mwave,agp} \
+	--exclude=boot/$kver/kernel/drivers/net/{wan,tokenring,irda,wireless,hamradio,appletalk} \
+	--exclude=boot/$kver/kernel/drivers/block/paride \
+	--exclude=boot/$kver/kernel/fs/{nls,intermezzo,cifs,ncpfs,coda,autofs,autofs4} \
+	boot/$kver/kernel/{arch,crypto,fs,lib,net} \
+	boot/$kver/kernel/drivers/{parport,block,i2c,sensors,mtd,char,ide,ieee1394,net,pcmcia,scsi,usb} \
+	boot/$kver/{pcmcia,System.map,.config*,modules.*} boot/System.map-$kver \
+      ) | tar -C $OUT_DIR/temp/$kver/root -xpf -
+    fi
+
+    # squashfs produces a smaller image on uncompressed modules than it does on
+    # compressed modules, so we'll uncompress them if needed.
+
+    echo;echo "+++ Uncompressing kernel modules for version $kver +++";echo
+    find $OUT_DIR/temp/$kver/root/boot -name '*.o' -type f | while read; do \
+	if gzip -cd <$REPLY >$REPLY- 2>/dev/null; then
+	    mv $REPLY- $REPLY
+	else
+	    rm -f $REPLY-
+	fi
+    done
+
+    echo;echo "+++ Copying kernel $kver +++";echo
+    cp $IN_DIR/boot/$kver/bzImage $OUT_DIR/fs/kernel-$kver.img
+
+    echo ${BUILDVERSION:-$kver} > $OUT_DIR/fs/kernel-$kver.ver
+    if [ -e $IN_DIR/boot/$kver/kernel.arg ]; then
+      cp $IN_DIR/boot/$kver/kernel.arg $OUT_DIR/fs/kernel-$kver.arg
+    elif [ -e $IN_DIR/boot/kernel.arg ]; then
+      cp $IN_DIR/boot/kernel.arg $OUT_DIR/fs/kernel-$kver.arg
+    else
+      touch $OUT_DIR/fs/kernel-$kver.arg
+    fi
+  fi
+done
+
+echo;echo "+++ Building initrd +++";echo
+
+if [ "$VETC" = 1 ]; then
+  mv $OUT_DIR/temp/root/etc $OUT_DIR/temp/root/usr/share/factory/base-etc
+  mkdir -m 0755 -p $OUT_DIR/temp/root/etc
+fi
+
+# FIXME: it's not this script's role to create those entries
+for dir in "${MKDIRS[@]}"; do
+  mkdir -p "$OUT_DIR/temp/root/$dir"
+done
+
+mksquashfs $OUT_DIR/temp/root $OUT_DIR/fs/initrd.img -2.0 -noappend || die "mksquashfs returned an error."
+
+# Now we'll possibly rename the kernel if it is alone
+if [ "$VERSIONNED_KERNEL" != 1 ]; then
+  kernels=( $(echo $OUT_DIR/fs/kernel-*.img) )
+  if [ ${#kernels[@]} -eq 1 ]; then
+    kver="${kernels[0]##*/}"
+    kver="${kver##kernel-}"
+    kver="${kver%.img}"
+    echo;echo "+++ Renaming kernel $kver +++"; echo
+
+    for ext in img ver arg; do
+      mv $OUT_DIR/fs/kernel-$kver.$ext $OUT_DIR/fs/kernel.$ext
+    done
+  fi
+fi
+
+[ $DEBUG -eq 0 ] && rm -rf $OUT_DIR/temp
+
+echo
+echo "+++ Done ! +++";
+echo "==> SquashFS files are in '$OUT_DIR/fs'."
+echo

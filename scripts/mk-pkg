@@ -1,0 +1,45 @@
+#!/bin/sh
+
+#
+# build/tools/mk-pkg - build a package from files - version 0.0.2 - 2003-06-12
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+#
+# This tool is used to build install packages from directories, without requiring
+# any original package. Its main purpose is for installation media which often
+# need particular tweaks wihch don't have their place in standard packages.
+
+# it should be run from the build/<media_type> directory (eg: build/cd or build/common)
+# For each nopkg/* directory, it will build a pkg/*.{tgz,lst} couple.
+
+# only these entries will be archived.
+ROOTDIRS="${ROOTDIRS:-boot etc home mnt sbin tmp usr}"
+
+if [ $# -lt 1 -o ! -d "$1/nopkg" ]; then
+    echo "Usage: $0 <media_dir>"
+    echo "   <media_dir> should contain at least a 'nopkg' directory."
+    echo "   Maybe you want to try directly on the 'common' directory."
+    exit 1
+else
+    DIR=$1
+    BINDIR=$(dirname $0)
+fi
+
+shopt -s nullglob dotglob
+
+echo "Warning, only directories '$ROOTDIRS' will be scanned."
+
+for dir in $DIR/nopkg/*; do
+    [ -d "$dir" ] || continue
+    echo "Inspecting ${dir##*/} : "
+    if [ -n "$dir/*" ]; then
+	(cd $dir && (find $ROOTDIRS -not -type d -o -empty -o -not -user root -o -not -group root 2>/dev/null)|tar --no-recursion -T - -c |gzip -9) > ${dir}.tgz && echo " -> Built ${dir##*/}.tgz" && (cd $dir && (find $ROOTDIRS -not -type d -o -empty -o -not -user root -o -not -group root 2>/dev/null)|xargs flx sign --ignore-dot --no-depth) > ${dir}.lst && echo " -> Built ${dir##*/}.lst" && $BINDIR/lst2prf ${dir##*/} < ${dir}.lst > ${dir}.prf
+    else
+	echo " -> directory is empty."
+    fi
+done

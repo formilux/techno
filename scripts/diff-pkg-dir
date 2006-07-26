@@ -1,0 +1,1 @@
+for i in *[0-9]; do if [ -e /data/projets/formilux/dev/pkg/$i ]; then echo "$i : OK"; elif [ -e /data/projets/formilux/dev/obsolete/pkg/$i ]; then echo "$i : obsolete"; else echo "$i #### "; fi ; done

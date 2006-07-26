@@ -1,0 +1,142 @@
+#!/bin/bash
+
+#
+# mksp-pkg - make a root fs from packages - version 0.0.1 - 2005-09-23
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+CMDLINE="$*"
+
+# usage: displays script usage and returns no error.
+function usage {
+  echo "MKSP-RAW - make a root fs from packages - version 0.0.1 - 2005-09-23"
+  echo "Usage: ${myname##*/} { -c |  [ -pkg <pkg_dir> ]* [ -prf <prf_dir> ]"
+  echo "       -o <out_dir> [ -d ]"
+  echo
+  echo "   The 'fs' directory will be deleted under <out_dir>, and the execution"
+  echo "   will end here if '-c' is set. Otherwise, an 'fs' directory will be created"
+  echo "   under <out_dir>, with packages selected from <prf_dir> extracted from dirs <pkg_dir>."
+  echo "   All paths are absolute. Uses several scripts from \$SCRIPTDIR='$SCRIPTDIR'."
+  echo "   Use '-d' for debug."
+}
+
+function die {
+  echo
+  echo "### $@"
+  echo "Cmdline was $CMDLINE"
+  echo
+  exit 1
+}
+
+
+function do_clean {
+  rm -rf $OUT_DIR/{fs,base,temp,log} \
+  || die "There was an error cleaning the '$OUT_DIR' directory. Aborting."
+}
+
+shopt -s nullglob dotglob
+set -o pipefail
+umask 022
+
+myname="$0"
+PRINTUSAGE=0
+CLEAN_ONLY=0
+DEBUG=0
+
+_flxextract="${SCRIPTDIR:+$SCRIPTDIR/}flxextract"
+
+unset PKG_ARG OUT_DIR PRF
+
+PKG_ARG=( )
+
+[ $# -gt 0 ] || PRINTUSAGE=1
+
+while [ $# -gt 0 ] ; do
+  case "$1" in 
+    -prf) # -prf prf_dir
+      if [ -z "$2" -o ! -d "$2/." ]; then
+        die "-i argument '$2' point to something not a valid directory. Aborting."
+	PRINTUSAGE=1
+      fi
+      PRF="$2"
+      shift;
+      ;; 
+    -pkg) # -pkg pkg_dir
+      if [ -z "$2" -o ! -d "$2/." ]; then
+        die "-i argument '$2' point to something not a valid directory. Aborting."
+	PRINTUSAGE=1
+      fi
+      PKG_ARG=( "${PKG_ARG[@]}" "-p" "$2" )
+      shift;
+      ;; 
+    -o) # -o out_dir : must be a directory or must not exist
+      [ -n "$2" -a \( -d "$2/." -o ! -e "$2" \) ] || PRINTUSAGE=1
+      OUT_DIR="$2"
+      shift;
+      ;; 
+    -c) # -c = clean
+      CLEAN_ONLY=1
+      ;;
+    -d) # -d = clean
+      DEBUG=1
+      ;;
+    -h) # displays help
+      PRINTUSAGE=1
+      shift
+      ;;
+  esac
+  shift
+done
+
+if [ $PRINTUSAGE -gt 0 -o -z "$OUT_DIR" -o "$OUT_DIR" = "/" -o $CLEAN_ONLY = 0 -a -z "$PRF" ]; then
+  usage
+  echo
+  exit 1
+fi
+
+mkdir -p "$OUT_DIR" || die "Cannot make directory '$OUT_DIR'. Aborting."
+
+[ -n "${OUT_DIR##/*}" ] && OUT_DIR="$PWD/$OUT_DIR"
+OUT_DIR="${OUT_DIR//\/.\//\/}"
+
+echo;echo "+++ Cleaning output dir +++";echo
+do_clean
+
+if [ $CLEAN_ONLY -gt 0 ]; then
+  echo "+++ Done ! +++";
+  echo "==> The '$OUT_DIR' directory has been cleaned."
+  echo
+  exit 0
+fi
+
+mkdir -p $OUT_DIR/fs || die "Cannot make directory '$OUT_DIR/fs'. Aborting."
+mkdir -p $OUT_DIR/log || die "Cannot make directory '$OUT_DIR/log'. Aborting."
+ln -s $PRF $OUT_DIR/base || die "Cannot make link '$OUT_DIR/base'. Aborting."
+
+#===================================================================================
+
+echo;echo "+++ rebuilding the root FS +++";echo
+
+for i in "$PRF"/[0-9]*.{prf,tgz}; do
+    echo "Extracting $i..."
+    case "$i" in
+	*.prf) $_FLXEXTRACT -i "$i" -l $OUT_DIR/log/${i##*/}.log "${PKG_ARG[@]}" -R $OUT_DIR/fs \
+               || die "There was an error while extracting some files. Aborting."
+	       ;;
+	*.tgz) tar -C $OUT_DIR/fs -zUpxf $i \
+	       || die "There was an error while extracting some files. Aborting."
+	       ;;
+    esac
+done
+
+[ $DEBUG -eq 0 ] && rm -rf $OUT_DIR/temp
+
+echo
+echo "+++ Done ! +++";
+echo "==> The root FS is available in $OUT_DIR/fs"
+echo
+

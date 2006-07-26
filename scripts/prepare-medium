@@ -1,0 +1,126 @@
+#!/bin/bash
+
+#
+# build/tools/prepare-medium - prepare the medium - version 0.0.3 - 2004-08-07
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+#
+# This tool is used to prepare all the files needed to build from scratch a
+# boot/root image for an installation medium (CD, USB, ...), while still being
+# medium-independant. These files include links to standard packages, specific
+# packages, specific scripts and configuration files.
+# This has to be done only once and does not need to be done again as long as
+# neither the packages nor the medium definition change. This depends on the
+# work accomplished by the 'prepare-common' script, and must be done before
+# calling the mk-root script.
+
+CMDLINE="$*"
+
+function die {
+    echo
+    echo "### $@"
+    echo "Cmdline was $CMDLINE"
+    echo
+    exit 1
+}
+
+function do_clean {
+    rm -rf $MEDIUMDIR/pkg/rescan $MEDIUMDIR/pkg/rescan.log \
+    || die "There was an error cleaning the '$MEDIUMDIR' directory. Aborting."
+    # undoes the mk-pkg script
+    for file in $MEDIUMDIR/nopkg/*.{lst,prf,tgz}; do
+	[ -d "$file" ] && continue
+	rm -f $file
+    done
+}
+
+shopt -s nullglob dotglob
+umask 022
+
+myname=$0
+PRINTUSAGE=0
+CLEAN_ONLY=0
+
+unset MEDIUMDIR
+
+[ $# -gt 0 ] || PRINTUSAGE=1
+
+while [ $# -gt 0 ] ; do
+    case "$1" in 
+        -m) # -m medium_dir
+            [ -n "$2" -a -d "$2/." ] || PRINTUSAGE=1
+            MEDIUMDIR=$2
+            shift;
+            ;; 
+        -c) # -c = clean
+	    CLEAN_ONLY=1
+            ;;
+        -h) # displays help
+            PRINTUSAGE=1
+            shift
+            ;;
+    esac
+    shift
+done
+
+if [ $PRINTUSAGE -gt 0 -o -z "$MEDIUMDIR" ]; then
+    echo "Usage: ${myname##*/} -m <medium_dir> [ -c ]"
+    echo "   will clean, prepare and refresh some files in <medium_dir>."
+    echo "   If '-c' is set, the files will only be cleaned."
+    echo "   This tool must be located ONLY in the 'build/tools' directory."
+    echo "   eg: '${myname##*/}  -m cd'."
+    exit 1
+fi
+
+[ -n "${MEDIUMDIR##/*}" ] && MEDIUMDIR=$PWD/$MEDIUMDIR
+MEDIUMDIR=${MEDIUMDIR//\/.\//\/}
+MEDIUM=$(basename ""$MEDIUMDIR)
+TOOLS=$(dirname $myname)
+[ -n "${TOOLS##/*}" ] && TOOLS=$PWD/$TOOLS
+TOOLS=${TOOLS//\/.\//\/}
+BUILD=$(dirname $TOOLS)
+
+export MEDIUM MEDIUMDIR TOOLS BUILD
+
+cd $BUILD
+
+echo;echo "+++ Cleaning current common tree (common) +++";echo
+do_clean
+
+if [ $CLEAN_ONLY -gt 0 ]; then
+    echo "+++ Done ! +++";
+    echo "==> The '$MEDIUMDIR' directory has been cleaned."
+    echo
+    exit 0
+fi
+
+if [ -d "$MEDIUMDIR/nopkg" ]; then
+    echo;echo "+++ Rebuilding specific packages from unpackaged files ($MEDIUMDIR/nopkg) +++";echo
+    $TOOLS/mk-pkg $MEDIUMDIR || die "There was an error during mk-pkg. Aborting."
+fi
+
+echo;echo "+++ checking that the medium's .prf files are up to date +++";echo
+$TOOLS/updt-prf $MEDIUMDIR/pkg common/pkg || die "There was an error during updt-prf. Aborting."
+
+if [ -n "$(echo $MEDIUMDIR/pkg/rescan/*)" ]; then
+    echo;echo "+++++++++++++++++++++++++++++++";echo
+    echo "Some changes have been detected, please check those two directories :"
+    echo "  - $MEDIUMDIR/pkg/rescan/"
+    echo "  - $MEDIUMDIR/pkg/rescan.log/"
+    echo "Once you have finished, please clear those directories before retrying."
+    exit 1
+else
+    rmdir $MEDIUMDIR/pkg/rescan $MEDIUMDIR/pkg/rescan.log 2>/dev/null
+fi
+
+echo
+echo "+++ Done ! +++";
+echo "==> The '$MEDIUMDIR' directory has been updated."
+echo "    You can go on with 'mk-root' or clean it with 'prepare-medium -c'."
+echo
+

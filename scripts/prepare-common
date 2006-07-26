@@ -1,0 +1,141 @@
+#!/bin/bash
+
+#
+# build/tools/prepare-common - prepare common files - version 0.0.3 - 2004-08-07
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+#
+# This tool is used to prepare all the files needed to build from scratch a
+# boot/root image for an installation medium (CD, USB, ...), while still being
+# medium-independant. These files include links to standard packages, specific
+# packages, common scripts and configuration files, and initrd images.
+# This has to be done only once and does not need to be done again as long as the
+# packages don't change. This must be done prior to calling the prepare-medium
+# script.
+
+# It can be run anywhere, and assumes that the 'common' directory is located
+# above the directory hosting the script (eg: build/tools/$0 -> build/common).
+
+CMDLINE="$*"
+
+function die {
+    echo
+    echo "### $@"
+    echo "Cmdline was $CMDLINE"
+    echo
+    exit 1
+}
+
+function do_clean {
+    rm -f common/pkg/* common/boot/findcd.img common/boot/findcd.gz \
+    || die "There was an error cleaning the 'common' directory. Aborting."
+    umount -d common/boot/mnt 2>/dev/null
+    rmdir common/boot/mnt 2>/dev/null
+    # undoes the mk-pkg script
+    for file in common/nopkg/*.{lst,prf,tgz}; do
+	[ -d "$file" ] && continue
+	rm -f $file
+    done
+}
+
+shopt -s nullglob dotglob
+umask 022
+
+myname=$0
+
+PRINTUSAGE=0
+CLEAN_ONLY=0
+
+while [ $# -gt 0 ] ; do
+    case "$1" in 
+        -c) # -c = clean
+	    CLEAN_ONLY=1
+            ;;
+        -h) # displays help
+            PRINTUSAGE=1
+            shift
+            ;;
+    esac
+    shift
+done
+
+if [ $PRINTUSAGE -gt 0 ]; then
+    echo "Usage: ${myname##*/} [ -c ]"
+    echo "   will clean then rebuild the common parts between all media."
+    echo "   If '-c' is set, then the tree will only be cleaned."
+    exit 1
+fi
+
+TOOLS=$(dirname $myname)
+[ -n "${TOOLS##/*}" ] && TOOLS=$PWD/$TOOLS
+TOOLS=${TOOLS//\/.\//\/}
+BUILD=$(dirname $TOOLS)
+export TOOLS BUILD
+
+cd $BUILD
+
+echo;echo "+++ Cleaning current common tree (common) +++";echo
+do_clean
+
+if [ $CLEAN_ONLY -gt 0 ]; then
+    echo "+++ Done ! +++";
+    echo "==> The '$BUILD/common' directory has been cleaned."
+    echo
+    exit 0
+fi
+
+echo;echo "+++ Rebuilding common packages from unpackaged files (common/nopkg) +++";echo
+$TOOLS/mk-pkg common || die "There was an error rebuilding the links. Aborting."
+
+echo;echo "+++ Refreshing common packages (common/pkg)";echo
+#rm -f common/pkg/*
+$TOOLS/merge-pkg ../pkg || die "There was an error merging the packages. Aborting."
+
+# Rem: no need to remove duplicates since we won't put these files on the medium.
+
+echo;echo "+++ Rebuilding initrd +++";echo
+
+#rm -f common/boot/findcd.img common/boot/findcd.gz
+dd if=/dev/zero bs=1k count=64 of=common/boot/findcd.img
+mke2fs -N 64 -m 0 -s 1 -b 1024 -F common/boot/findcd.img  || die "There was an error doing 'mke2fs'. Aborting."
+umount -d common/boot/mnt 2>/dev/null
+mkdir -p common/boot/mnt 2>/dev/null
+mount -o loop common/boot/findcd.img common/boot/mnt || die "There was an error when mounting the new image. Aborting."
+rmdir common/boot/mnt/lost+found/
+
+### if one day it works :-)
+### PKGROOT=$PWD/common/pkg flxadd -nd -t -r $PWD/common/boot/files/tmp sbin/init sbin/findcdrom
+
+cp -a common/boot/files/.linuxrc common/boot/mnt/ || die "There was an error copying the boot files. Aborting."
+ln -s .linuxrc common/boot/mnt/init || die "There was an error copying the boot files. Aborting."
+
+flxutils=$(grep 'sbin/init ' common/prf/000_system-base.prf |cut -f2 -d' '|cut -f1 -d,)
+
+if [ -n "$flxutils" ]; then
+    tar zxOf common/pkg/$flxutils.tgz sbin/init > common/boot/mnt/linuxrc \
+    && tar zxOf common/pkg/$flxutils.tgz sbin/findcdrom > common/boot/mnt/findcdrom \
+    && chmod 755 common/boot/mnt/linuxrc common/boot/mnt/findcdrom \
+    || die "There was an error copying the boot files. Perhaps flxutils is too old in system-base, use updt-prf. Aborting."
+else
+    cp -a common/boot/files/init.default common/boot/mnt/linuxrc \
+    && cp -a common/boot/files/findcdrom.default common/boot/mnt/findcdrom \
+    || die "There was an error copying the boot files. Perhaps flxutils is too old in system-base, use updt-prf. Aborting."
+fi
+
+ln -s . common/boot/mnt/sbin && mkdir common/boot/mnt/dev && mknod common/boot/mnt/dev/console c 5 1 \
+|| die "There was an error building base system entries. Aborting."
+umount -d common/boot/mnt || die "There was an error unmounting the new image. Aborting."
+gzip -c9 < common/boot/findcd.img > common/boot/findcd.gz && rm -f common/boot/findcd.img \
+ || die "There was an error compressing the new image. Aborting."
+
+echo
+echo "+++ Done ! +++";
+echo "==> The '$BUILD/common' directory has been updated."
+echo "    You can go on with 'prepare-medium' or clean it with 'prepare-common -c'."
+echo
+

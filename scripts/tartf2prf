@@ -1,0 +1,40 @@
+#!/bin/bash
+
+#
+# build/tools/tartf2prf - Makes a .prf from a tar output - version 0.0.2 - 2006-01-27
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+# 
+# This script is used to build a valid profile from a unique signature file.
+# The only argument is the package version that will appear in the profile.
+# The tar content is read from stdin, and the .prf is printed to stdout.
+
+if [ -n "$1" -a -z "${1##-s[0-9]*}" ]; then
+    STRICT=${1#-s}
+    shift
+else
+    STRICT=4
+fi
+
+if [ $# -lt 1 ]; then
+    echo "Usage: tar zt[v]f pkg.tgz | tartf2prf [-s{1..4}] pkg_name >newname.prf"
+    echo
+    exit 1
+fi
+
+# pkgname is also accepted as a filename
+pkgname=${1##*/} ; pkgname=${pkgname%.lst}
+pkglist="$pkgname"
+[ $STRICT -gt 1 ] && pkglist="$pkglist,${pkgname%-*}"
+[ $STRICT -gt 2 ] && pkglist="$pkglist,${pkgname%-*-*}"
+[ $STRICT -gt 3 ] && pkglist="$pkglist,${pkgname%%[._-][0-9]*}"
+
+# use stdin for the .lst
+while read a b c d e f g rest; do
+    [ -n "$f" ] && echo "${f%/} $pkglist" || echo ${a%/} $pkglist
+done

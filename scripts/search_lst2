@@ -1,0 +1,38 @@
+#!/bin/bash
+
+# arg : a directory containing 256 .lst files
+# input : a server signature file
+# output : possible origins of all non-empty files
+if [ $# -eq 0 ]; then
+   echo "usage : $0 <lst directory>"
+   grep "^# " $0
+   exit 1
+fi
+DIR=${1%/}
+
+#rem : d41d8cd98f00b204e9800998ecf8427e = signature for empty file
+#grep '^-' |grep -v ' d41d8cd98f00b204e9800998ecf8427e ' |  while read; do set -- $REPLY; grep -- " $6 " $DIR/${6:0:2}.lst || echo "#no_pkg $REPLY"; done
+grep '^-' |grep -vF ' d41d8cd98f00b204e9800998ecf8427e ' |  while read; do
+    set -- $REPLY
+    REPLY="$*"
+    file="$(grep -- " $1 $2.*$3.*$4.*$5 $6" $DIR/${6:0:2}.lst | tail -1)"
+    if [ -n "$file" ]; then
+        if [ "${file##* }" = "$8" ]; then
+	    echo "$8:SAME:${file% *}"
+	else
+	    echo "$8:SAME:$file"
+	fi
+        continue
+    fi
+    file="$(grep -- " $1 .*$5 $6" $DIR/${6:0:2}.lst | tail -1)"
+    if [ -n "$file" ]; then
+        if [ "${file##* }" = "$8" ]; then
+	    echo "$8:PERM:${file% *} => $2 $3 $4"
+	else
+	    echo "$8:PERM:$file => $2 $3 $4"
+	fi
+	continue
+    fi
+    echo "$8:NONE:${REPLY% *}"
+done
+

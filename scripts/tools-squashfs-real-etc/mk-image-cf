@@ -1,0 +1,214 @@
+#!/bin/bash
+
+#
+# build/tools/mk-image-cf - build a full CF image - version 0.0.3 - 2005-07-01
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+#
+# This tool should be used after mk-root and mk-data, which generate the
+# CompactFlash root file-system and the packages data which will be installed.
+# It results in an initrd and a kernel image.
+#
+# it should be run from the 'build' directory, with <medium_dir> as its argument.
+
+CMDLINE="$*"
+
+function die {
+    echo
+    echo "### $@"
+    echo "Cmdline was $CMDLINE"
+    echo
+    exit 1
+}
+
+function do_clean {
+    rm -rf $TARGETDIR/image \
+    || die "There was an error cleaning the '$TARGETDIR' directory. Aborting."
+}
+
+shopt -s nullglob dotglob
+umask 022
+
+myname=$0
+PRINTUSAGE=0
+CLEAN_ONLY=0
+unset TARGETDIR MEDIUMDIR BUILDVERSION
+
+[ $# -gt 0 ] || PRINTUSAGE=1
+
+while [ $# -gt 0 ] ; do
+    case "$1" in 
+        -t) # -t target_dir
+            [ -n "$2" -a -d "$2/." ] || PRINTUSAGE=1
+            TARGETDIR=$2
+            shift;
+            ;; 
+        -m) # -m medium_dir
+            [ -n "$2" -a -d "$2/." ] || PRINTUSAGE=1
+            MEDIUMDIR=$2
+            shift;
+            ;; 
+        -b) # -b build_version
+            [ -n "$2" ] || PRINTUSAGE=1
+            BUILDVERSION=$2
+            shift;
+            ;; 
+        -c) # -c = clean
+	    CLEAN_ONLY=1
+            ;;
+        -h) # displays help
+            PRINTUSAGE=1
+            shift
+            ;;
+    esac
+    shift
+done
+
+if [ $PRINTUSAGE -gt 0 -o -z "$TARGETDIR" -o $CLEAN_ONLY = 0 -a -z "$MEDIUMDIR" ]; then
+    echo "Usage: ${myname##*/} -t <target_dir> { -m <medium_dir> | -c } [ -b build_ver ]"
+    echo "   The 'image' directory will be deleted under <target_dir>, and the execution"
+    echo "   will end here if '-c' is set. Otherwise, an 'image' directory will be"
+    echo "   created under <target_dir>. Every dynamic content inside <target_dir>/image"
+    echo "   will be destroyed. This tool must be located ONLY in the 'build/tools'"
+    echo "   directory. The 'build_ver' arg is used to set the image build version. If"
+    echo "   unspecified, it will use the kernel's version."
+    echo "   eg: '${myname##*/} -t minifw-cf -m cf -b fw-1.12-341'."
+    exit 1
+fi
+
+[ ! -d "$TARGETDIR/." -o -n "$MEDIUMDIR" -a ! -d "$MEDIUMDIR/." ] && \
+    die "Either -t or -m arguments point to something not a valid directory. Aborting."
+
+[ -n "${TARGETDIR##/*}" ] && TARGETDIR=$PWD/$TARGETDIR
+TARGETDIR=${TARGETDIR//\/.\//\/}
+[ -n "${MEDIUMDIR##/*}" ] && MEDIUMDIR=$PWD/$MEDIUMDIR
+MEDIUMDIR=${MEDIUMDIR//\/.\//\/}
+MEDIUM=$(basename ""$MEDIUMDIR)
+TOOLS=$(dirname $myname)
+[ -n "${TOOLS##/*}" ] && TOOLS=$PWD/$TOOLS
+TOOLS=${TOOLS//\/.\//\/}
+BUILD=$(dirname $TOOLS)
+
+cd $BUILD
+
+echo;echo "+++ Cleaning current common tree (common) +++";echo
+do_clean
+
+if [ $CLEAN_ONLY -gt 0 ]; then
+    echo "+++ Done ! +++";
+    echo "==> The '$TARGETDIR' directory has been cleaned."
+    echo
+    exit 0
+fi
+mkdir $TARGETDIR/image
+
+#===================================================================================
+echo;echo "+++ building the CF image into $TARGETDIR/image ++++";echo
+mkdir -p $TARGETDIR/image/{,boot,firmware,system,cfg}
+
+# these two only depend on the installation profile in fact.
+# mkdir $TARGETDIR/image/pkg $TARGETDIR/image/src
+
+rm -rf $TARGETDIR/temp
+mkdir -p $TARGETDIR/temp
+
+# build squashfs root and boot images for each kernel version
+
+echo "Copying root filesystem image..."
+tar -C $TARGETDIR --exclude=root/boot -cf - root | tar -C $TARGETDIR/temp/ -xpf -
+
+UPKRN="" ; SMPKRN=""
+
+# easy way to resolve the kernel name and version.
+for kdir in $TARGETDIR/root/boot/[1-9]*; do
+    kver=${kdir##*/}
+    mkdir -p $TARGETDIR/temp/$kver
+    # assign the latest SMP to SMPKRN and the latest UP to UPKRN
+    if [ -z "${kver//*smp*/}" ]; then SMPKRN=$kver; else UPKRN=$kver; fi
+    cp -al $TARGETDIR/temp/root $TARGETDIR/temp/$kver/
+
+    ### >16 MB initrd  : boot/$KVER boot/System.map-$KVER
+    ### minimal modules: boot/$KVER/kernel/arch boot/$KVER/kernel/drivers/{ide,ieee1394,net,pcmcia,scsi} boot/$KVER/kernel/{fs,lib} boot/$KVER/{pcmcia,System.map,.config*,modules.*} boot/System.map-$KVER
+    ### reasonably featured kernel
+    echo;echo "+++ Copying kernel modules for version $kver +++";echo
+    (cd $TARGETDIR/root ; tar -cf - \
+	--exclude=boot/$kver/kernel/drivers/char/{drm,ftape,joystick,mwave,agp} \
+	--exclude=boot/$kver/kernel/drivers/net/{wan,tokenring,irda,wireless,hamradio,appletalk} \
+	--exclude=boot/$kver/kernel/drivers/block/paride \
+	--exclude=boot/$kver/kernel/fs/{nls,intermezzo,cifs,ncpfs,coda,autofs,autofs4} \
+	boot/$kver/kernel/{arch,crypto,fs,lib,net} \
+	boot/$kver/kernel/drivers/{parport,block,i2c,sensors,mtd,char,ide,ieee1394,net,pcmcia,scsi,usb} \
+	boot/$kver/{pcmcia,System.map,.config*,modules.*} boot/System.map-$kver \
+    ) | tar -C $TARGETDIR/temp/$kver/root -xpf -
+
+    echo;echo "+++ Uncompressing kernel modules for version $kver +++";echo
+    find $TARGETDIR/temp/$kver/root/boot -name '*.o' -type f | while read; do \
+	if gzip -cd <$REPLY >$REPLY- 2>/dev/null; then
+	    mv $REPLY- $REPLY
+	else
+	    rm -f $REPLY-
+	fi
+    done
+
+    echo;echo "+++ Building initrd for kernel version $kver +++";echo
+    if [ -e "$TARGETDIR/image/system/backup" ]; then
+       rm -rf $TARGETDIR/image/system/backup
+       mv $TARGETDIR/image/system/{active,backup}
+    fi
+    mkdir -p $TARGETDIR/image/system/active
+    mkdir -p $TARGETDIR/temp/$kver/root/{flash,nv}
+
+    mksquashfs $TARGETDIR/temp/$kver/root \
+	$TARGETDIR/image/system/active/initrd.img -2.0 -noappend
+
+    echo;echo "+++ Copying kernel $kver +++";echo
+    cp $TARGETDIR/root/boot/$kver/bzImage $TARGETDIR/image/system/active/kernel.img
+
+    echo ${BUILDVERSION:-$kver} > $TARGETDIR/image/system/active/kernel.ver
+    if [ -e $TARGETDIR/root/boot/$kver/kernel.arg ]; then
+      cp $TARGETDIR/root/boot/$kver/kernel.arg $TARGETDIR/image/system/active/
+    elif [ -e $TARGETDIR/root/boot/kernel.arg ]; then
+      cp $TARGETDIR/root/boot/kernel.arg $TARGETDIR/image/system/active/
+    else
+      touch $TARGETDIR/image/system/active/kernel.arg
+    fi
+done
+
+echo; echo "+++ Checksumming image files +++"; echo
+(cd $TARGETDIR/image/system/active ; md5sum * > system.sig)
+chmod 400 $TARGETDIR/image/system/active/*
+
+if [ -z "$BUILDVERSION" ]; then
+  # no buildversion, we'll try to find it in the link pointed to by
+  # usr/share/factory/version (last column in the lst file)
+  set -- $(grep usr/share/factory/version $MEDIUMDIR/pkg/*.lst | tail -1)
+  eval BUILDVERSION=\${$#}
+fi
+
+if [ -n "$BUILDVERSION" ]; then
+    cd $TARGETDIR/image/system
+    cp -al active "$BUILDVERSION"
+    tar c "$BUILDVERSION"/* | gzip -9 > "$BUILDVERSION".bin
+    rm -rf "$BUILDVERSION"
+fi
+
+rm -rf $TARGETDIR/temp
+
+echo;echo "+++ Building CF boot files +++";echo
+# we need to be able to boot from this CF
+#(cd $MEDIUMDIR; tar --exclude=boot/*.tmpl -cf - boot) | tar -C $TARGETDIR/image/isolinux/ -xf -
+cp -a $MEDIUMDIR/boot/* $TARGETDIR/image/boot/
+
+echo;echo "+++ Building CF config files +++";echo
+tar -C $TARGETDIR/root -cf - etc | gzip -c9 >$TARGETDIR/image/cfg/config.fac
+
+echo
+echo "+++ Done ! +++";
+echo "==> You can now copy '$TARGETDIR/image on the CF'."
+echo
+

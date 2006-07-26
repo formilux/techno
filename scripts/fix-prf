@@ -1,0 +1,51 @@
+#!/bin/bash
+
+#
+# build/tools/fix-prf - Regenerates a .prf - version 0.0.2 - 2006-01-27
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+# Fixes a prf file by replacing all lines starting with '-' by the result
+# of the search in the PKGDIRS directories, and by expanding all first package
+# names to a list of coarser names
+
+# FIXME(WT) : Ensure that no script needs this anymore :
+# PKGDIRS=(${PKGDIRS[@]:-/data/projets/formilux/stable/pkg /nfs/projets/formilux/dev/pkg /data/projets/formilux/stable/custom/exceliance/pkg})
+
+
+if [ -n "$1" -a -z "${1##-s[0-9]*}" ]; then
+    # "Usage: fix-prf [-s{1..4}]
+    # The resulting prf will always be sent to stdout. You can use the '-s' option
+    # followed by a number to restrict the number of reductions applied to the
+    # package name. By default, 4 versions are listed (= -s4).
+    STRICT=${1#-s}
+    shift
+else
+    STRICT=4
+fi
+
+while read f p rest; do
+  f1="${f#-}"
+
+  pkglist=( "$p" )
+  [ $STRICT -gt 1 ] && pkglist=( "${pkglist[@]}" "${p%-*}" )
+  [ $STRICT -gt 2 ] && pkglist=( "${pkglist[@]}" "${p%-*-*}" )
+  [ $STRICT -gt 3 ] && pkglist=( "${pkglist[@]}" "${p%%[._-][0-9]*}" )
+
+  if [ -z "$f" -o "$f1" == "$f" ]; then
+    echo "$f ${pkglist[@]}"
+  else
+    f1=${f1#/}
+    r="$(for pkg in ${pkglist[@]}; do \
+           for dir in ${PKGDIRS[@]}; do \
+	     grep -H " \(.*/\)\{0,1\}$f1\( .*\|\)\$" $dir/$pkg[-.]*lst ||  \
+	     grep -H " \(.*/\)\{0,1\}$f1\( .*\|\)\$" $dir/$pkg/compiled/*.lst; \
+           done; \
+        done 2>/dev/null | sed -ne '1s,^\([^:]*/\)\([^:]*\)\(.lst:.\{74\}\)\([^ ]*\)\(.*\)$,\4 \2,p')"
+    [ -n "$r" ] && echo "$r" || echo "$f ${pkglist[@]}"
+  fi
+done | sort -u

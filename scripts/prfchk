@@ -1,0 +1,153 @@
+#!/bin/bash
+
+# prfchk - Formilux PRF checker - v0.1 - 2006-07-03
+#
+# Copyright (C) 2001-2006 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+# This script is used to check that an automatically rebuilt PRF file really
+# matches the original one. It will report missing files, and more importantly
+# files which come from package versions which do not match the original PRF's
+# first entry.
+
+TMPDIR=${TMPDIR-/tmp}
+TEMP=
+
+die() {
+  echo "$@"
+  exit 1
+}
+
+usage() {
+  echo
+  echo "Usage: ${0##*/} { original_dir | original.prf} { rebuilt_dir | rebuilt.prf }"
+  echo "  Will inform about differences between the original PRF and one rebuilt"
+  echo "  based on available packages. Use -h to get help. Output is :"
+  echo "  < filename for a filename only in original PRF"
+  echo "  > filename for a filename only in rebuilt PRF"
+  echo "  ! filename pkg1 =/= pkg2 when automatically selected package does not"
+  echo "    match the original rule 'pkg1*'."
+  echo "  If both <original> and <rebuilt> are directories, all the PRF files from"
+  echo "  <original> will be searched in <rebuild>."
+  echo
+  exit 1
+}
+
+
+# creates a secure empty temporary directory and returns its full path name.
+# Returns 0 if it succeeds, with the name on stdout, otherwise returns 1.
+mkstemp() {
+  local name attempts=10
+  while [ $attempts -gt 0 ]; do
+    name="$TMPDIR/$$.$RANDOM.$attempts"
+    if mkdir -m 0700 $name >/dev/null 2>/dev/null; then
+      echo "$name"
+      return 0
+    fi
+    rmdir $name >/dev/null 2>/dev/null
+    ((attempts--))
+  done
+  return 1
+}
+
+orig=""
+dest=""
+while [ $# -gt 0 ]; do
+  [ "$1" == "-h" -o "$1" == "--help" ] && usage
+  if [ -z "$orig" ]; then
+    orig="$1"
+  elif [ -z "$dest" ]; then
+    dest="$1"
+  else
+    usage
+  fi
+  shift
+done
+
+[ -n "$orig" -a -n "$dest" ] || usage
+
+if [ -d "$orig/." -a -d "$dest/." ]; then
+  # when comparing two directories, we will iterate through all the files
+  # present in $orig.
+  ret=0
+  for p in $(cd $orig && echo *.prf); do
+    echo "Checking $p for inconsistencies ..."
+    $0 "$orig/$p" "$dest/$p" || ret=1
+  done
+  exit $ret
+fi
+
+[ -d "$orig/." ] && exec "$0" "$orig/${dest##*/}" "$dest"
+[ -d "$dest/." ] && exec "$0" "$orig" "$dest/${orig##*/}"
+
+[ -r "$orig" -a -s "$orig" ] || die "unreadable original file."
+[ -r "$dest" -a -s "$dest" ] || die "unreadable rebuilt file."
+
+TEMP=$(mkstemp)
+[ $? -gt 0 -o -z "$TEMP" ] && die "Cannot make temp directory in $TMPDIR."
+if ! touch $TEMP/orig $TEMP/dest; then
+  rm -f $TEMP/orig $TEMP/dest
+  rmdir $TEMP
+  die "Cannot create files in temp dir $TEMP."
+fi
+
+sort -u < $orig > $TEMP/orig
+sort -u < $dest > $TEMP/dest
+
+exec 4<$TEMP/orig 5<$TEMP/dest
+
+# not closed
+c1=0 ; c2=0
+n1=""; n2=""
+miss1=0; miss2=0; differ=0
+
+cmp_line() {
+  local p1 p2 q1 q2
+  p1="$1"; p2="$2"
+
+  q1="${p1%%,*}"; q2="${p2%%,*}"
+  # empty package name sets an error
+  [ -z "$q1" -o -z "$q2" ] && return 1
+  # if q2 validates q1*, it's OK
+  [ -z "${q2##$q1*}" ] && return 0 
+  return 1
+}
+
+while [ $c1 -eq 0 -o $c2 -eq 0 ]; do
+  if [ $c1 -eq 0 -a $c2 -eq 0 -a "$n1" == "$n2" ]; then
+    if [ -n "$n1" ] && ! cmp_line $p1 $p2; then
+      echo "! $n1 : ${p1%%,*} =/= ${p2%%,*}"
+      ((differ++))
+    fi
+    read -u 5 n2 p2 rest || c2=1 
+    read -u 4 n1 p1 rest || c1=1
+    continue
+  elif [ $c1 -gt 0 ] || [ $c2 -eq 0 ] && [ "$n1" \> "$n2" ]; then
+    echo "> $n2"
+    read -u 5 n2 p2 rest || c2=1
+    ((miss1++))
+    continue
+  elif [ $c2 -gt 0 ] || [ $c1 -eq 0 -a "$n1" \< "$n2" ]; then
+    echo "< $n1"
+    read -u 4 n1 p1 rest || c1=1
+    ((miss2++))
+    continue
+  else
+    echo "INTERNAL ERROR in ${0} : c1=$c1  c2=$c2  n1=$n1  n2=$n2"
+    exit 1
+  fi
+done
+
+[ "$miss1" -gt 0 -o "$miss2" -gt 0 -o "$differ" -gt 0 ] && echo -n " => "
+
+[ "$miss1" -eq 0 ]  || echo -n "$miss1 unexpected files; "
+[ "$miss2" -eq 0 ]  || echo -n "$miss2 missing files; "
+[ "$differ" -eq 0 ] || echo -n "$differ inconsistencies; "
+
+if [ "$miss1" -gt 0 -o "$miss2" -gt 0 -o "$differ" -gt 0 ]; then
+  echo
+  exit 1
+fi
+exit 0

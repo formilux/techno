@@ -1,0 +1,6 @@
+#!/bin/bash
+
+cd pkg
+
+for i in */build.cfg; do l=( $(grep ^PATCH_LIST= $i | cut -f2 -d=|cut -f2 -d\")); for j in "${l[@]}"; do f=${i%/build.cfg}/patches/${j}; [ -e "$f" -o -e "$f.gz" ] || echo $f ;done ;done
+

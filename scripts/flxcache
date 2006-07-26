@@ -1,0 +1,119 @@
+#!/bin/bash
+#
+# flxcache - Formilux Command Cache Wrapper - version 0.0.1 - 2003-06-19
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+# displays usage and exits.
+function usage {
+    echo "usage: ${0##*/} <source> <destination> <command> [args]..."
+    echo "   or: ${0##*/} clean [<command>]"
+    echo "where :"
+    echo "  - <source> is either a file or a directory to be checked for modifications. It"
+    echo "    should be the source of data used by the command."
+    echo "  - <destination> is where you want to put the resulting file. It will be"
+    echo "    overwritten if it exists, and it's this part that will be cached."
+    echo "  - <command> is the command itself. It will be evaluated with 'eval' so it may"
+    echo "    also include args, pipes or redirections, provided it's in a single quoted"
+    echo "    string."
+    echo "  - <args> are passed to the command and are part of the check for cache coherency"
+    echo "The cache is located at \$FLXCACHEDIR=$FLXCACHEDIR"
+    exit 1
+}
+
+# displays all args on the same line and exits.
+function die {
+    echo "$*" >&2
+    exit 1
+}
+
+[ $# -ge 1 -a "x$1" != "x-h" ] || usage
+
+if [ $# -lt 3 ]; then
+    [ -n "$FLXCACHEDIR" ] || die "Set FLXCACHEDIR to the cache directory. It will be built if empty."
+    [ -d "$FLXCACHEDIR" ] || mkdir -p $FLXCACHEDIR || die "Aborting: cannot make FLXCACHEDIR."
+
+    [ "x$1" = "xclean" ] || usage
+    cmd=$2
+    if [ -z "$cmd" ]; then
+	cmddir="$FLXCACHEDIR"
+    else
+	set -- $cmd
+	cmddir=$FLXCACHEDIR/${1##*/}
+    fi
+    echo "Press [ENTER] to delete $cmddir now, or <Ctrl-C> to abort."
+    read
+    rm $cmddir/*
+    exit 0
+fi
+
+src=$1 ; shift
+dst=$1 ; shift
+cmd=$1 ; shift
+args="$*"
+
+if [ ! -n "$FLXCACHEDIR" ]; then
+    echo "Set FLXCACHEDIR to the cache directory, it will be built automatically." >&2
+    echo "    => running without cache !" >&2
+    eval "$cmd $args"
+    exit $?
+elif [ ! -d "$FLXCACHEDIR" ] && ! mkdir -p $FLXCACHEDIR; then
+    echo "Cannot make FLXCACHEDIR as $FLXCACHEDIR." >&2
+    echo "    => running without cache !" >&2
+    eval "$cmd $args"
+    exit $?
+fi
+
+
+# we'll see if we have a valid cache directory for the command $cmd.
+# Since it can be a complex command, we'll only use the basename of its first word.
+set -- $cmd
+cmddir=$FLXCACHEDIR/${1##*/}
+
+# let's find if we have a hash for this cmd+args
+cmdsign=$(echo "$cmd $args" | md5sum)
+[ $? -eq 0 ] || die "Error during hashing of cmd+args. Maybe md5sum is missing."
+cmdsign=${cmdsign%% *}	# eliminates the '-' meaning stdin in md5sum
+
+#echo "src=$src dst=$dst cmd=$cmd args=<$args> cmddir=$cmddir cmdsign=$cmdsign"
+
+# this while is indeed a disguised if with several abortion points :-)
+while [ -f "$cmddir/$cmdsign.sig" -a -f "$cmddir/$cmdsign.dat" -a -f "$cmddir/$cmdsign.ret" -a -e "$src" ]; do
+    #flx check --ignore-dot --ignore-date --ignore-ldate file:$cmddir/$cmdsign.sig $src >/dev/null
+
+    if [ -f $cmddir/$cmdsign.dst -a -z "$(flx check --ignore-dot --ignore-date --ignore-ldate file:$cmddir/$cmdsign.dst $dst)" ]; then
+	 # the destination has not changed (eg: same src/dst)
+	 echo "No need to rebuild $dst"
+	 exit $(cat $cmddir/$cmdsign.ret)
+    fi
+
+    if ! flx sign --ignore-dot $src|cut -c1-62,74-|md5sum --status -c $cmddir/$cmdsign.sig; then
+	echo -n "Source changed since "; find $cmddir/$cmdsign.sig -printf "%t\n"
+	break
+    fi
+
+    # everything's OK.
+    echo "Using cache to rebuild $dst"
+    rm -f $dst
+    cp -dp $cmddir/$cmdsign.dat $dst
+    exit $(cat $cmddir/$cmdsign.ret)
+done
+
+# no valid cache entry exists for this command. Let's run the command itself.
+rm -f $cmddir/$cmdsign.*
+mkdir -p $cmddir 2>/dev/null
+# sign the src now, before the command changes it in case it's the same as dst.
+flx sign --ignore-dot $src|cut -c1-62,74-| md5sum > $cmddir/$cmdsign.sig
+eval "$cmd $args"
+ret=$?
+if [ -e $src -a -e $dst ]; then
+    echo "$cmd $args" > $cmddir/$cmdsign.cmd
+    cp -dp $dst $cmddir/$cmdsign.dat
+    flx sign --ignore-dot $cmddir/$cmdsign.dat > $cmddir/$cmdsign.dst
+    echo $ret > $cmddir/$cmdsign.ret
+fi
+exit $ret

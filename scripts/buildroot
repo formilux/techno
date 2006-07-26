@@ -1,0 +1,66 @@
+#!/bin/bash
+
+#
+# build/tools/buildroot - root FS build tool - version 0.0.4 - 2003-06-08
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+# 
+# This script is used to rebuild a cdrom or usb root directory. It must be
+# launched from the build directory with the media name as an argument :
+#   cd build
+#   ./tools/buildroot usb
+
+if [ $# -ne 1 ]; then
+    echo "Usage: ./tools/buildroot <media_dir>  (from the build directory)."
+    echo "   eg: ./tools/buildroot usb"
+    echo "       \$DIR/tools/buildroot \$DIR/cdrom"
+    exit 1
+else
+    DIR=$1
+fi
+
+TOOLDIR=${0%/*}
+
+shopt -s nullglob dotglob
+
+if [ ! -d "$DIR/root" -o ! -d "$DIR/log" ]; then
+    echo "Directories 'root' and 'log' must exist in the <media> directory. Make sure"
+    echo "that you run this script from the 'build' directory. Aborting."
+    exit 1
+fi
+
+if [ "$(echo $DIR/root/*)" ]; then
+    echo "Directory '$DIR/root' must be empty. Aborting."
+    exit 1
+fi
+
+for i in $DIR/pkg/[0-9]*.prf; do
+    echo "Extracting $i..."
+    rm -f $DIR/log/${i##*/}.log
+    flxextract -i $i -l $DIR/log/${i##*/}.log -p $DIR/../common/pkg -R $DIR/root
+done
+
+for final in $DIR/pkg/999_final*.tgz; do
+    echo "Extracting $final..."
+    tar -C $DIR/root -zUpxf $final
+done
+
+# some tools take a lot of space and are not used enough to justify that
+# we keep them uncompressed. We should avoid to compress binaries that are
+# run very often (like shells) and those of which many instances are ran
+# because they cannot share their text pages (eg: agetty), so they'll eat
+# as many times as memory for each instance.
+
+for i in bin/elvis sbin/ldconfig usr/bin/lynx usr/bin/troff usr/bin/gawk usr/bin/tbl usr/bin/strace usr/bin/groff usr/bin/grotty usr/bin/mtools usr/sbin/tcpdump sbin/reiserfsck ; do
+    if [ -e $DIR/root/$i ]; then
+        $TOOLDIR/flxcache $DIR/root/$i $DIR/root/$i "upx --best --crp-ms=100000 $DIR/root/$i"
+    fi
+done
+
+echo "done."
+

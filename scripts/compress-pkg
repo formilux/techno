@@ -1,0 +1,28 @@
+#!/bin/bash
+#
+# build/tools/compress-pkg - Package compressor - version 0.0.2 - 2003-10-01
+# This is part of the Formilux project - http://formilux.ant-computing.org/
+#
+# Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+shopt -s nullglob dotglob
+
+if [ $# -eq 0 ]; then
+    echo "Usage: $0 package_directories..."
+    exit 1
+fi
+
+# we compress all directories not ending in '.tgz' or '.gz' into a file
+# of the same name, followed by ".tgz", which contains everything from
+# that directory except the files under the 'compiled' directory and the
+# root directory name itself.
+for i in $*; do
+     i=${i%/}
+     [ -d "$i" -a "${i%%*.tgz}" -a "${i%%*.gz}" ] && find $i -not -path '*/compiled/?*' -not -name .tgz -not -name .dep -not -name .lst -path '*/?*' | \
+         tar -T - --no-recursion -clpf - | gzip -9 > $i.tgz
+     ls -l $i.tgz
+done
+

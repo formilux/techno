@@ -1,0 +1,6 @@
+#!/bin/bash
+
+# input : a list of the .lst files to scan
+# output : a big .lst file with the lst name prepended on the first field
+while read; do grep -q '^. [0-7]\{4\} [ 0-9]\{5\} [ 0-9]\{5\} ' $REPLY || continue; sed -e "s/^/${REPLY##*/} /" $REPLY; done |sort -u
+

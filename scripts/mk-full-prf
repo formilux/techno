@@ -1,0 +1,7 @@
+#!/bin/bash
+
+rm -f common/prf/0000_firewall_full_p3.prf common/prf/0000_sentineo_full.prf
+cat common/prf/000_system-base.prf common/prf/010_kernel-2.4.20-wt17-firewall-p3.prf common/prf/0[2-9]* > common/prf/0000_firewall_full_p3.prf
+cat common/prf/000_system-base.prf common/prf/010_kernel-2.4.20-wt17-sentineo.prf common/prf/0[2-9]* > common/prf/0000_sentineo_full.prf
+
+

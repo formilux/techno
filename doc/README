@@ -1,0 +1,23 @@
+Reste à classer pour ne pas le perdre :
+  - archives flx-toolchain (0.1 à 0.3.1) actuellement dans 0.1.current/src
+
+
+DONE:
+  - flxutils/releases/*/{src,pkg}/flxutils-0.1.* (wtap)
+  - flxutils/trunk/{src,pkg}/flxutils-0.1.30
+  - init-scripts/releases/*/{src,pkg}/init-scripts.*
+  - init-scripts/trunk/src/init-scripts-0.3.35
+  - system-base/releases/*/{src,pkg}/system-base.*
+  - system-conf/releases/*/{src,pkg}/system-base.*
+  - formilux/trunk/pkg/*
+
+
+TODO:
+  - move flxutils/trunk/src/*/{ChangeLog,TODO} to flxutils/
+  - change init-scripts to use new pkg (like landef-files)
+  - rename trunk/src/xxxx-ver to trunk/src or trunk/src/xxxx with
+    .flxpkg/Version
+  - distro-specific packages such as system-base should move to formilux/
+    or at least we should create a new package "formilux-release" with only
+    /etc/formilux-release.
+  - move current/src/sentineo* to exosec/

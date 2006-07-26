@@ -1,0 +1,159 @@
+#!/bin/bash
+
+#
+# build/tools/mk-root - build a boot/root disk - version 0.1.3 - 2004-08-07
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+#
+# This tool is used to build from scratch a boot/root image for an installation
+# medium (CD, USB, ...). It relies on its medium-specific counterpart in the
+# same directory, under the name mk-root-<medium>. If this one exists, the
+# execution will continue from it.
+
+CMDLINE="$*"
+
+function die {
+    echo
+    echo "### $@"
+    echo "Cmdline was $CMDLINE"
+    echo
+    exit 1
+}
+
+function do_clean {
+    rm -rf $TARGETDIR/root $TARGETDIR/log \
+    || die "There was an error cleaning the '$TARGETDIR' directory. Aborting."
+}
+
+
+shopt -s nullglob dotglob
+umask 022
+
+myname=$0
+PRINTUSAGE=0
+CLEAN_ONLY=0
+unset TARGETDIR MEDIUMDIR PROF
+
+[ $# -gt 0 ] || PRINTUSAGE=1
+
+while [ $# -gt 0 ] ; do
+    case "$1" in 
+        -t) # -t target_dir
+            [ -n "$2" -a -d "$2/." ] || PRINTUSAGE=1
+            TARGETDIR=$2
+            shift;
+            ;; 
+        -m) # -m medium_dir
+            [ -n "$2" -a -d "$2/." ] || PRINTUSAGE=1
+            MEDIUMDIR=$2
+            shift;
+            ;; 
+        -p) # -p profile_dir
+            [ -n "$2" -a -d "$2/." ] || PRINTUSAGE=1
+            PROF=$2
+            shift
+            ;;
+        -c) # -c = clean
+	    CLEAN_ONLY=1
+            ;;
+        -h) # displays help
+            PRINTUSAGE=1
+            shift
+            ;;
+    esac
+    shift
+done
+
+if [ $PRINTUSAGE -gt 0 -o -z "$TARGETDIR" -o -z "$MEDIUMDIR" -a $CLEAN_ONLY = 0 ]; then
+    echo "Usage: ${myname##*/} -t <target_dir> [ -m <medium_dir> | -c ] [ -p <profile_dir> ]"
+    echo "   A 'root' directory will be created under <target_dir>."
+    echo "   Every dynamic content inside <target_dir>/{root,log} will be destroyed."
+    echo "   <medium_dir> will be used as a source for packages files, unless '-c' is"
+    echo "   set, in which case the directories will only be cleaned."
+    echo "   This tool must be located ONLY in the 'build/tools' directory."
+    echo "   eg: '${myname##*/} -t mini-cd -p /nfs/profiles/mini-firewall -m cd'."
+    echo "   If <profile_dir> is specified, a 'postroot' script present in this directory"
+    echo "   will be executed at the end, to allow a full image customization."
+    echo "   eg: '${myname##*/} cd' or '${myname##*/} usb'."
+    exit 1
+fi
+
+[ ! -d "$TARGETDIR/." -o -n "$PROF" -a ! -d "$PROF/." -o -n "$MEDIUMDIR" -a ! -d "$MEDIUMDIR/." ] && \
+    die "Either -t, -m or -p arguments point to something not a valid directory. Aborting."
+
+[ -n "${TARGETDIR##/*}" ] && TARGETDIR=$PWD/$TARGETDIR
+TARGETDIR=${TARGETDIR//\/.\//\/}
+[ -n "${MEDIUMDIR##/*}" ] && MEDIUMDIR=$PWD/$MEDIUMDIR
+MEDIUMDIR=${MEDIUMDIR//\/.\//\/}
+MEDIUM=$(basename ""$MEDIUMDIR)
+[ -n "${PROF##/*}" ] && PROF=$PWD/$PROF
+PROF=${PROF//\/.\//\/}
+TOOLS=$(dirname $myname)
+[ -n "${TOOLS##/*}" ] && TOOLS=$PWD/$TOOLS
+TOOLS=${TOOLS//\/.\//\/}
+BUILD=$(dirname $TOOLS)
+
+export TARGETDIR MEDIUM MEDIUMDIR TOOLS BUILD PROF
+
+cd $BUILD
+
+echo;echo "+++ Cleaning target tree +++";echo
+do_clean
+
+if [ $CLEAN_ONLY -gt 0 ]; then
+    echo "+++ Done ! +++";
+    echo "==> The '$TARGETDIR' directory has been cleaned."
+    echo
+    exit 0
+fi
+
+mkdir $TARGETDIR/root $TARGETDIR/log
+
+echo;echo "+++ rebuilding the $MEDIUM's root FS +++";echo
+
+for i in $MEDIUMDIR/pkg/[0-9]*; do
+    echo "Extracting $i..."
+    case "$i" in
+	*.prf) flxextract -i $i -l $TARGETDIR/log/${i##*/}.log -p common/pkg -R $TARGETDIR/root \
+               || die "There was an error while extracting some files. Aborting."
+	       ;;
+	*.tgz) tar -C $TARGETDIR/root -zUpxf $i \
+	       || die "There was an error while extracting some files. Aborting."
+	       ;;
+    esac
+done
+
+#for final in $MEDIUMDIR/pkg/999_final*.tgz; do
+#    echo "Extracting $final..."
+#    tar -C $TARGETDIR/root -zUpxf $final \
+#    || die "There was an error while extracting final files. Aborting."
+#done
+
+# some tools take a lot of space and are not used enough to justify that
+# we keep them uncompressed. We should avoid to compress binaries that are
+# run very often (like shells) and those of which many instances are ran
+# because they cannot share their text pages (eg: agetty), so they'll eat
+# as many times as memory for each instance.
+
+for i in bin/elvis sbin/ldconfig usr/bin/lynx usr/bin/troff usr/bin/gawk usr/bin/tbl usr/bin/strace usr/bin/groff usr/bin/grotty usr/bin/mtools usr/sbin/tcpdump sbin/reiserfsck ; do
+    if [ -e $TARGETDIR/root/$i ]; then
+        $TOOLS/flxcache $TARGETDIR/root/$i $TARGETDIR/root/$i "upx --best --crp-ms=100000 $TARGETDIR/root/$i"
+    fi
+done
+
+echo
+echo "+++ Done ! +++";
+echo "==> The root FS is available in $TARGETDIR/root."
+echo
+
+if [ -x "$TOOLS/mk-root-$MEDIUM" ]; then
+    echo "    Chaining to mk-root-$MEDIUM..."
+    exec $TOOLS/mk-root-$MEDIUM
+else
+    echo "    You can now use mk-data and mk-image-$MEDIUM to complete."
+fi

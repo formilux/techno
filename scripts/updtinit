@@ -1,0 +1,14 @@
+#!/bin/sh
+
+#
+# updtinit - Formilux init file translater - version 0.0.1 - 2002
+#
+# Copyright (C) 2001-2002 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+# This tool was used to convert old-style ".preinit" files to the new style. Basically,
+# all commands went from one letter to two letters. It should not have any use these days.
+
+sed -e 's/^l/lo/;s/^M/mt/;s/^B/bl/;s/^C/ch/;s/^K/mv/;s/^I/in/;s/^L/ln/;s/^O/um/;s/^E/ex/;s/^P/pr/;s/^D/md/;s/^R/rx/;s/^U/ma/;s/^F/fi/' $*

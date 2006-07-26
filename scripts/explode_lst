@@ -1,0 +1,14 @@
+#!/bin/bash
+
+# arg : an empty directory
+# input : a big lst file with the package name on 1st field
+# => produces up to 256 files extracted from the .lst, depending on the
+#    first two characters of the hash
+if [ $# -eq 0 ]; then
+   echo "usage : $0 <destination directory>"
+   grep "^# " $0
+   exit 1
+fi
+DIR=$1
+grep ' - [0-7]' | while read; do set -- $REPLY; echo $REPLY >>$DIR/${7:0:2}.lst; done
+
