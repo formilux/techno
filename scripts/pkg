@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# pkg - Formilux package builder - version 0.8.1 - 2005-12-17
+# pkg - Formilux package builder - version 0.8.2 - 2006-07-20
 #
 # Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
 #       mailto: benoit@ant-computing.com,willy@ant-computing.com
@@ -8,7 +8,7 @@
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
 
 ######## Please update this version ########
-PKG_VERSION=0.8.1
+PKG_VERSION=0.8.2
 ############################################
 
 ## WARNING ##
@@ -79,6 +79,7 @@ INSTNAME=".flxdisk"
 LINKNAME=".flxpkg"
 VERSFILE="Version"
 
+# this function must return one file per line
 FIND_CMD=pkgfilefind
 CURDIR="$(pwd)"
 
@@ -1108,7 +1109,7 @@ function do_strip {
     fi
     #find $ROOTDIR/. -type f | xargs file | grep ":.*executable.*not stripped" | cut -f1 -d: | xargs ${STRIP} -x --strip-unneeded -R .note -R .comment > /dev/null 2>&1 
     # allow executable and shared (.so), but not relocatable (.o), both stripped or not stripped
-    find $ROOTDIR/. -type f | xargs file | grep ":.*ELF.*\(executable\|\shared\).*stripped" | cut -f1 -d: | xargs ${STRIP} -x --strip-unneeded -R .note -R .comment > /dev/null 2>&1 
+    find $ROOTDIR/. -type f -print0 | xargs -0 file | grep ":.*ELF.*\(executable\|\shared\).*stripped" | cut -f1 -d: | xargs ${STRIP} -x --strip-unneeded -R .note -R .comment > /dev/null 2>&1 
     return 0
 } 
 
@@ -1154,7 +1155,7 @@ function _do_pack_files {
     local FILE_LIST=$*
 
     echo -n "Updating timestamps ... "
-    find . -not -type l | xargs touch -m
+    find . -not -type l -print0 | xargs -0 touch -m
     echo "done."
 
     # full path name of different files
@@ -1274,7 +1275,7 @@ function do_pack {
     echo "done."
 
     echo -n "Updating timestamps ... "
-    find . ! -type l | xargs touch -m
+    find . ! -type l -print0 | xargs -0 touch -m
     echo "done."
 
     # full path name of different files
@@ -1359,7 +1360,7 @@ function do_pack {
     echo "done."
 
     echo -n "Creating $FPNAME.lst ... "
-    ($FIND_CMD . | xargs flx sign --ignore-dot --no-depth > $FPNAME.lst) > /dev/null 2>&1
+    ($FIND_CMD . | tr '\n' '\000' | xargs -0 flx sign --ignore-dot --no-depth > $FPNAME.lst) > /dev/null 2>&1
     echo "done."
 
     echo -n "Creating $FPNAME.$PKGSUFF ... "
