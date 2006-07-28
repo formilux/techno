@@ -422,7 +422,7 @@ for IN_DIR in "${IN_DIRS[@]}"; do
     # Now, let's fix the resulting .prf. It's important to do this before merging other packages
     $_updt_prf "$OUT_DIR/temp/cnt" "$OUT_DIR/temp/pkg"
 
-    if [ $NOCONS -eq 0 -a -d "$IN_DIR/cnt/."]; then
+    if [ $NOCONS -eq 0 -a -d "$IN_DIR/cnt/." ]; then
       prf_consistency_check "$IN_DIR/cnt" "$OUT_DIR/temp/cnt"
     fi
 
