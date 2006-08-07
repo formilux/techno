@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# build-kernel-list - build a list of kernels - version 0.0.5 - 2006-07-05
+# build-kernel-list - build a list of kernels - version 0.0.6 - 2006-08-07
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
 # Copyright (C) 2001-2006 Benoit Dolez & Willy Tarreau
@@ -49,7 +49,7 @@ usage() {
     echo "Formilux Linux Kernel packager - (C) 2004-2006 EXOSEC"
     echo "Usage:"
     echo "    ${0##*/} [ -h, --help ] [ -i,--install,--no-compile ]"
-    echo "             [ -s, --suffix ] config_file..."
+    echo "             [ -s, --suffix ] [ -r, --rerun ] config_file..."
     echo
     echo "Output will be sent to \$OUTPUTDIR=$OUTPUTDIR"
     echo "Using: CC=$CC HOSTCC=$HOSTCC PARALLELCC=$PARALLELCC"
@@ -80,6 +80,7 @@ fi
 
 do_compile=1
 do_suffix=0
+do_rerun=0
 while [ $# -gt 0 ]; do
     case "$1" in
     -h|--help)
@@ -88,6 +89,10 @@ while [ $# -gt 0 ]; do
 	;;
     -i|--no-compile|--install-only)
 	do_compile=0
+	shift
+	;;
+    -r|--rerun)
+	do_rerun=1
 	shift
 	;;
     -s|--suffix)
@@ -157,29 +162,31 @@ for cfg in "$@"; do
     MAKEINST="sudo make $VERSTR"
 
     if [ $do_compile -eq 1 ]; then
-        echo "Doing make distclean..."
-	$MAKE distclean >/dev/null 2>&1
-	for addon in "${addons[@]}"; do
-          echo "Cleaning addon '$addon'..."
-	  addons/"build.$addon" clean "$KVER" "$PWD" "$PWD/addons/$addon"
-        done
-	echo "Done."
-	rm -f .version .config
-	rm -f include/linux/version.h include/linux/modversions.h
-	cp $cfg .config
+        if [ $do_rerun -eq 0 ]; then
+          echo "Doing make distclean..."
+	  $MAKE distclean >/dev/null 2>&1
+	  for addon in "${addons[@]}"; do
+            echo "Cleaning addon '$addon'..."
+	    addons/"build.$addon" clean "$KVER" "$PWD" "$PWD/addons/$addon"
+          done
+	  echo "Done."
+	  rm -f .version .config
+	  rm -f include/linux/version.h include/linux/modversions.h
+	  cp $cfg .config
 
-	echo "Checking configuration file" | tee -a $OUTPUTDIR/$log
-	$MAKE oldconfig </dev/null >>$OUTPUTDIR/$log 2>&1 ; err=$?
-	if [ $err -ne 0 ]; then
+	  echo "Checking configuration file" | tee -a $OUTPUTDIR/$log
+	  $MAKE oldconfig </dev/null >>$OUTPUTDIR/$log 2>&1 ; err=$?
+	  if [ $err -ne 0 ]; then
 	    echo "######### make oldconfig returned error code $err #########" | tee -a $OUTPUTDIR/$log
 	    continue
-	fi
+	  fi
 
-	echo "Building dependencies" | tee -a $OUTPUTDIR/$log
-	$MAKE -j $PARALLELDEP dep </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
-	if [ $err -ne 0 ]; then
+	  echo "Building dependencies" | tee -a $OUTPUTDIR/$log
+	  $MAKE -j $PARALLELDEP dep </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
+	  if [ $err -ne 0 ]; then
 	    echo "######### make dep returned error code $err #########" | tee -a $OUTPUTDIR/$log
 	    continue
+	  fi
 	fi
 
 	echo "Building kernel and modules" | tee -a $OUTPUTDIR/$log
