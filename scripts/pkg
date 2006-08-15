@@ -952,7 +952,7 @@ function pre_info {
     fi
 
     if [ -e "$PKGDIR/ChangeLog" ]; then
-	echo "   Last ChangeLog  : $(grep -m 1 '^[0-9]\{4\}' $PKGDIR/ChangeLog)"
+	echo "   Last ChangeLog  : $(grep '^[0-9]\{4\}' $PKGDIR/ChangeLog | head -1)"
     else
 	echo "   No ChangeLog."
     fi
@@ -1744,7 +1744,7 @@ function do_release {
     # identify last changelog entry
     last_pkg=""
     if [ -e "$PKGDIR/ChangeLog" ]; then
-	last_pkg=$(grep -m 1 $'^[\t ]*\* released' "$PKGDIR/ChangeLog")
+	last_pkg=$(grep $'^[\t ]*\* released' "$PKGDIR/ChangeLog" | head -1)
 	last_pkg=${last_pkg##*released }
     fi
 
