@@ -198,7 +198,7 @@ function resolve_link {
 #   %N:soname  : for libraries, their soname
 #   %D:libname : library it depends on (their soname)
 #   %P:provide : feature provided by a library, in the form soname/version
-#   %R:require : required feature, in the for soname/version
+#   %R:require : required feature, in the form soname/version
 function elf_get_dep {
     local elf
     for elf in "$@"; do
@@ -1182,7 +1182,17 @@ function _do_pack_files {
 		flr="$(file $REPLY)"
 		case "$flr" in
 		    *\ script\ *)
-			echo "$REPLY $(head -1 $REPLY| sed -e 's/^#\! *\([^ ]\+\).*/\1/') \$SHELL">>$DEP_FILE
+			# transform '#!/bin/sh -x -f foo' into '/bin/sh foo'
+			# If the shell is '/usr/bin/env', then also reference the executable itself
+			set -- $(head -1 $REPLY| sed -e 's/^#\! *\([^ ]\+\)\( *-[^ ] *\)*\(.*\)/\1 \3/')
+			if [ -n "$1" ]; then
+			    if [ -z "${1##*/bin/env}" -a -n "$2" ]; then
+			        echo "$REPLY %I:$1 %X:$2">>$DEP_FILE
+				[ -z "${2##*/perl}" ] && get_perl_depend $REPLY
+			    else
+			        echo "$REPLY %I:$1">>$DEP_FILE
+			    fi
+			fi
 			;;
 		    *perl\ commands*)
 			echo "$REPLY $(head -1 $REPLY| sed -e 's/^#\! *\([^ ]\+\).*/\1/') ">>$DEP_FILE
@@ -1230,9 +1240,16 @@ function _do_pack_files {
 }
 
 
-# packs the prepacked files into a new file located in $DEVROOT.
+# Packs the prepacked files into a new file located in $DEVROOT.
 # any eventual old package is removed.
-# this function relies on _do_pack_files(), get_perl_depend(), 
+# This function relies on _do_pack_files(), get_perl_depend().
+# The generated '.dep' file uses the following convention :
+#   %I:file => script needs interpreter <file> (absolute path)
+#   %X:file => script needs to execute <file> (relative to path)
+#   %N:soname  : for libraries, their soname
+#   %D:libname : library it depends on (their soname)
+#   %P:provide : feature provided by a library, in the form soname/version
+#   %R:require : required feature, in the form soname/version
 function do_pack {
     local DEP_FILE FPNAME
     local FILE_LISTS ext
@@ -1338,7 +1355,17 @@ function do_pack {
 		flr="$(file $REPLY)"
 		case "$flr" in
 		    *\ script\ *)
-			echo "$REPLY $(head -1 $REPLY| sed -e 's/^#\! *\([^ ]\+\).*/\1/') \$SHELL">>$DEP_FILE
+			# transform '#!/bin/sh -x -f foo' into '/bin/sh foo'
+			# If the shell is '/usr/bin/env', then also reference the executable itself
+			set -- $(head -1 $REPLY| sed -e 's/^#\! *\([^ ]\+\)\( *-[^ ] *\)*\(.*\)/\1 \3/')
+			if [ -n "$1" ]; then
+			    if [ -z "${1##*/bin/env}" -a -n "$2" ]; then
+			        echo "$REPLY %I:$1 %X:$2">>$DEP_FILE
+				[ -z "${2##*/perl}" ] && get_perl_depend $REPLY
+			    else
+			        echo "$REPLY %I:$1">>$DEP_FILE
+			    fi
+			fi
 			;;
 		    *perl\ commands*)
 			echo "$REPLY $(head -1 $REPLY| sed -e 's/^#\! *\([^ ]\+\).*/\1/') ">>$DEP_FILE
