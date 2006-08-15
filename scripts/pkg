@@ -1460,7 +1460,7 @@ function set_compiler_options {
     	i386)     arch=${arch:-i386}  cpu=${cpu:-i386}   basearch=${basearch:-i386} ;;
     	parisc)   arch=${arch:-1.1}   cpu=${cpu:-7100LC} basearch=${basearch:-1.1}  ;;
     	sparc)    arch=${arch:-sparc} cpu=${cpu:-sparc}  basearch=${basearch:-sparc} ;;
-    	sparc64)  arch=${arch:-ultrasparc} cpu=${cpu:-ultrasparc}  basearch=${basearch:-ultrasparc} ;;
+    	sparc64)  arch=${arch:-ultrasparc} cpu=${cpu:-ultrasparc}  basearch=${basearch:-sparc} ;;
     	ev[456]*|arm*|ppc*) arch=${arch:-$FLXARCH}   cpu=${cpu:-$FLXARCH}    basearch=${basearch:-$FLXARCH} ;;
 	*)        arch=${arch:-$FLXARCH}   cpu=${cpu:-$FLXARCH}    basearch=${basearch:-$FLXARCH} ;;
     esac
