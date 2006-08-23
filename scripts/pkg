@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# pkg - Formilux package builder - version 0.8.2 - 2006-07-20
+# pkg - Formilux package builder - version 0.8.3 - 2006-08-23
 #
 # Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
 #       mailto: benoit@ant-computing.com,willy@ant-computing.com
@@ -8,7 +8,7 @@
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
 
 ######## Please update this version ########
-PKG_VERSION=0.8.2
+PKG_VERSION=0.8.3
 ############################################
 
 ## WARNING ##
@@ -1719,7 +1719,7 @@ function do_release {
     fi
 
     # some important checks before things get wrong
-    if [ ! -d "$PKGROOT"]; then
+    if [ ! -d "$PKGROOT" ]; then
 	echo "Critical error : PKGROOT is not a directory !"
 	exit 1
     fi
