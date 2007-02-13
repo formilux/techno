@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-# mksp-sqfs - make a squashfs from a raw FS - version 0.0.2 - 2005-09-26
+# mksp-sqfs - make a squashfs from a raw FS - version 0.0.3 - 2007-02-13
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
 # Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
@@ -14,10 +14,10 @@ CMDLINE="$*"
 
 # usage: displays script usage and returns no error.
 function usage {
-  echo "MKSP-SQFS - package a root dir as a squashfs - version 0.0.2 - 2005-09-26"
+  echo "MKSP-SQFS - package a root dir as a squashfs - version 0.0.3 - 2007-02-13"
   echo "Usage: ${myname##*/} -o <target_dir> { -i <in_dir> | -c } [ -d ] [ -ve ]"
   echo "       [ -b build_ver] [ -k kern_ver ]* [ -s size_max ] [ -kv ] [ -md dir ]*"
-  echo "       [ -rm file|dir ]*"
+  echo "       [ -rm file|dir ]* [ -ln src:dst ]*"
   echo
   echo "   The 'fs' directory will be deleted under <target_dir>, and the execution"
   echo "   will end here if '-c' is set. Otherwise, an 'fs' directory will be created"
@@ -30,7 +30,8 @@ function usage {
   echo "   force the version which appears in kernel.ver. '-ve' creates a 'vetc' image"
   echo "   by moving /etc to /usr/share/factory/base-etc. '-md' makes it possible to"
   echo "   create new directories right before packaging, eg: mount points. '-rm' makes"
-  echo "   it possible to remove some files or dirs before packaging."
+  echo "   it possible to remove some files or dirs before packaging. '-ln' creates"
+  echo "   symlinks from 'src' to 'dst' at the end of the packaging (after -ve)."
   echo "   Use '-d' for debug."
 }
 
@@ -66,6 +67,7 @@ unset IN_DIR OUT_DIR KVER SIZE_MAX VERSIONNED_KERNEL BUILDVERSION MKDIRS RMDIRS
 KVER=( )
 MKDIRS=( )
 RMDIRS=( )
+SYMLINKS=( )
 
 [ $# -gt 0 ] || PRINTUSAGE=1
 
@@ -92,6 +94,11 @@ while [ $# -gt 0 ] ; do
     -k) # -k kernel_version : specify which kernel version(s) we want to keep.
       [ -n "$2" ] || PRINTUSAGE=1
       KVER=( "${KVER[@]}" "|$2|" )
+      shift;
+      ;; 
+    -ln) # -ln src:dst : create symlinks from src to dst at the end.
+      [ -n "$2" ] || PRINTUSAGE=1
+      SYMLINKS=( "${SYMLINKS[@]}" "$2" )
       shift;
       ;; 
     -md) # -md dir : directories we want to create.
@@ -255,6 +262,13 @@ done
 # FIXME: it's not this script's role to create those entries
 for dir in "${MKDIRS[@]}"; do
   mkdir -p "$OUT_DIR/temp/root/$dir"
+done
+
+# FIXME: it's not this script's role to create those entries
+for dir in "${SYMLINKS[@]}"; do
+  src="${dir%%:*}"
+  dst="${dir#*:}"
+  ln -s "$dst" "$OUT_DIR/temp/root/$src"
 done
 
 mksquashfs $OUT_DIR/temp/root $OUT_DIR/fs/initrd.img -2.0 -noappend || die "mksquashfs returned an error."
