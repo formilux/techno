@@ -1,0 +1,231 @@
+#!/bin/bash
+
+#
+# flxresolve - dependency resolver - version 0.0.1 - 2005-08-12
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+#
+# INPUT
+#
+#   - a list of valid paths to packages to be used to solve dependencies. This
+#     will be completed with the list of packages implied by the requested
+#     files. Format: one absolute path per line. Each path should contain a
+#     '.dep' or .dep.$ARCH file.
+#
+#   - a list of requested "files from packages" to install. The files MUST be
+#     present in the packages. Format: <file> <path_to_package>
+#
+#   - a list of prerequisites to be solved. They are in the form "%D:lib" or
+#     "%R:lib/version" or "%L:file", one per line
+#
+#   - a list of already available features in the form "%P:lib/version" or
+#     "%N:soname", one per line
+#
+#   - a list of already installed files in the form
+#     "<file> <path_to_package> <deps>". <deps> will be "%P/R/L/D/N" with a
+#     special "%r" indicating solved prerequisites, "%d" indicating solved
+#     dependency on a soname, and "%l" indicating a solved link ref. The deps
+#     will not be used first, and only the soname or available link will be
+#     deduced from the file's existence. Later, this should evolve to replace
+#     the list of available features.
+#
+# OUTPUT
+#   - a new list of remaining unresolved prerequisites
+#
+#   - a list of <file> <path_to_package> to be installed
+#
+#   - the new list of provided features
+#   
+
+
+# temporary file and directory
+TMPROOT=/tmp
+TMP=$TMPROOT/$(date +%y%m%d)
+SEQ=0
+SUFFIX=${$}${RANDOM}${SEQ}
+while ! mkdir -m 0700 ${TMP}${SUFFIX}; do
+    SEQ=$((SEQ+1))
+    SUFFIX=${$}${RANDOM}${SEQ}
+done
+TMPDIR=${TMP}${SUFFIX}
+FPP=$TMPDIR/files_per_package     # pkg [file*]
+NLPF=$TMPDIR/needed_libs_per_file # lib [file@pkg]*
+NVPF=$TMPDIR/needed_vers_per_file # lib/vers [file@pkg]* 
+NVPL=$TMPDIR/needed_vers_per_lib  # lib [vers]*
+ULV=$TMPDIR/unsolved_libs_vers    # liv [vers]*
+SLV=$TMPDIR/solved_libs_vers      # libs/vers [file*]
+
+# arguments
+PKGIN="$1"
+FILESIN="$2"
+
+# resolves a symlink to an absolute location
+# $1=link directory, $2=symlink value
+# returns pointed absolute location.
+function resolve_symlink {
+    local dir
+
+    if [ -z "$2" ]; then
+	dir="$1"
+    elif [ -z "${2##/*}" ]; then
+	dir="$2"
+    else
+	dir="$1/$2"
+    fi
+
+    # resolve '//', '/./', '/.$', '^./' always one at a time,
+    # from left to right, then enclose with '/'
+    while [ -n "$dir" ]; do
+        if [ -z "${dir##./*}" ]; then dir="${dir#./}"
+        elif [ -z "${dir##/*}" ]; then dir="${dir#/}"
+        elif [ -z "${dir%%*/.}" ]; then dir="${dir%/.}"
+        elif [ -z "${dir%%*/}" ]; then dir="${dir%/}"
+        elif [ -z "${dir##*//*}" ]; then dir="${dir/\/\//\/}"
+        elif [ -z "${dir##*/./*}" ]; then dir="${dir/\/.\//\/}"
+        else
+    	dir="/$dir/"
+    	break;
+        fi
+    done
+    
+    # now resolve '/../' from left to right only.
+    while [ -z "${dir##*/../*}" ]; do
+        # if dir goes past root, we must truncate it
+        if [ -z "${dir##/../*}" ]; then
+            dir="/${dir##/../}"
+        else
+    	# turn all '/x/../' into '/'
+    	odir="$dir"
+    	dir="$(echo "$dir" | sed -e 's,/[^/]*/\.\./,/,')"
+    	[ "$dir" = "$odir" ] && break
+        fi
+    done
+    
+    [ "$dir" = "/" ] || dir="${dir#/}"
+    [ "$dir" = "/" ] || dir="${dir%/}"
+    REPLY="$dir"
+    echo "$dir"
+    return 0
+}
+
+# merges $1 and $1.new and collapses them into $1
+# note: it adds a trailing space to each line in order to ease lookups.
+function merge_collapse {
+    local file=$1
+    local left list
+
+    rm -f $file.tmp >/dev/null 2>&1
+    for left in $(cut -f1 -d' ' $file $file.new | sort -u); do
+	list=$(grep -wh "^$left" $file $file.new | cut -f2- -d' ')
+	echo "$left $list " >> $file.tmp
+    done
+    mv $file.tmp $file
+}
+
+# $1 = full path to pkg containing .lst & .dep
+# $2 = soname
+# $3... = versions in the form 'soname/version'
+# returns 0 if pkg offers all the required versions of the library, and
+# $REPLY contains a space-separated list of entries needed from this package,
+# and it will be echoed on stdout.
+
+function check_lib_in_pkg {
+    local found
+    local path soname versions ver
+    local entries entry line
+    local filelist
+
+    path="$1"; shift
+    soname="$2"; shift
+    versions="$*"
+
+    # 1. we must ensure that the soname is provided by a link or file
+    entries=$(grep -w "\(^\|[^ ]*/\)$soname" $path/.lst | cut -f1 -d' ')
+    [ -n "$entries" ] || return 1
+    for entry in $entries; do
+	filelist=$entry
+	line=$(grep -w '^$entry" $path/.lst|cut -f2- -d' ')
+	while [ -n "$line" -a -z "${line##%L:*}" ]; do
+	    line=${line##*%L:}
+	    line=${line%% *}
+	    resolve_symlink ${entry%/*} ${line}
+	    filelist="$filelist $REPLY"
+	    line=$(grep -w '^$REPLY" $path/.lst|cut -f2- -d' ')
+	done
+	line=" $line "   # to ease matching
+	# now the line is not a link anymore
+	found=1
+	for ver in $versions; do
+	    if [ -n "${line##*%P:$ver *}" ]; then
+		found=0;
+		break;
+	    fi
+	done
+	if [ "$found" = 1 ]; then
+	    # we found everything
+	    REPLY="$filelist"
+	    echo $REPLY
+	    return 0
+	fi
+    done
+    # not found
+    REPLY=
+    return 1
+}
+
+
+######### MAIN
+
+changed=1
+while [ "$changed" = 1 ]; do
+    changed = 0
+    # extracts requested versions from the deps files
+    while read file pkg; do
+	echo "$pkg $file" >> $FPP.new
+        req=""; lnk=""; prv=""
+        deps=$(grep -hFw "$file" $pkg/.dep|grep -w"^$file "|cut -f2- -d' ')
+        for dep in $deps; do
+    	if [ -z "${dep##%D:*}" ]; then
+    	    echo "${dep##%D:} $file@$pkg" >> $NLPF.new
+    	elif [ -z "${dep##%R:*}" ]; then
+    	    ver=${dep##%R:}
+    	    echo "${ver} $file@$pkg" >> $NVPF.new
+    	    echo "${ver%%/}* ${ver#*/}" >> $NVPL.new
+    	fi
+        done
+    done < "$FILESIN"
+    
+    # merge and collapse new files
+    merge_collapse $FPP
+    merge_collapse $NLPF
+    merge_collapse $NVPF
+    merge_collapse $NVPL
+
+    # we should only walk through $ULV and extract
+    # everything from it to build $SLV
+    
+    rm -f $NVPL.new $NVPF.new $NLPF.new
+    
+    # now we need to look through the different packages to find missing
+    # prerequisites.
+    
+    
+    while read lib vers; do
+	for pkg in $(cut -d1 -d' ' $FPP); do
+	    if grep -qw "\(^\|[^ ]*/\)$lib" $pkg/.lst; then
+		if check_lib_in_pkg $pkg $lib $vers; then
+		    :
+		fi
+	    fi
+	done
+    done < $NVPL
+
+done
+
+exit 0
+rm -rf $TMPDIR
+
