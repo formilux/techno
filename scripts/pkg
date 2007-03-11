@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# pkg - Formilux package builder - version 0.8.3 - 2006-08-23
+# pkg - Formilux package builder - version 0.8.4 - 2007-03-11
 #
 # Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
 #       mailto: benoit@ant-computing.com,willy@ant-computing.com
@@ -1461,6 +1461,7 @@ function set_compiler_options {
     	parisc)   arch=${arch:-1.1}   cpu=${cpu:-7100LC} basearch=${basearch:-1.1}  ;;
     	sparc)    arch=${arch:-sparc} cpu=${cpu:-sparc}  basearch=${basearch:-sparc} ;;
     	sparc64)  arch=${arch:-ultrasparc} cpu=${cpu:-ultrasparc}  basearch=${basearch:-sparc} ;;
+    	alphaev[456]*) arch=${arch:-${FLXARCH#alpha}}   cpu=${cpu:-${FLXARCH#alpha}}    basearch=${basearch:-${FLXARCH#alpha}} ;;
     	ev[456]*|arm*|ppc*) arch=${arch:-$FLXARCH}   cpu=${cpu:-$FLXARCH}    basearch=${basearch:-$FLXARCH} ;;
 	*)        arch=${arch:-$FLXARCH}   cpu=${cpu:-$FLXARCH}    basearch=${basearch:-$FLXARCH} ;;
     esac
@@ -1523,7 +1524,7 @@ function set_compiler_options {
     	    GCC_OPT_SMALL="-Os -fno-align-functions -fno-align-loops -fno-align-jumps -fno-align-labels"
     	    ;;
     	    
-    	ev[456]*)
+    	alphaev[456]*|ev[456]*)
     	    CC=${CC:-gcc}
     	    CXX=${CXX:-g++}
     	    FLX_ARCH_CURRENT="$FLXARCH"
@@ -1582,7 +1583,7 @@ function set_compiler_options {
 	    HOSTCC_OPT_SMALL="$GCC_OPT_SMALL"
     	    ;;
     	    
-    	ev[456]*)
+    	alphaev[456]*|ev[456]*)
 	    HOSTCC_OPT_FASTEST="$GCC_OPT_FASTEST"
 	    HOSTCC_OPT_FAST="$GCC_OPT_FAST"
 	    HOSTCC_OPT_SMALL="$GCC_OPT_SMALL"
