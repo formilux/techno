@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-# mksp-pkg - make a pkg dir from several softwares - version 0.0.7 - 2006-07-17
+# mksp-pkg - make a pkg dir from several softwares - version 0.0.8 - 2007-08-13
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
 # Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
@@ -339,9 +339,24 @@ for IN_DIR in "${IN_DIRS[@]}"; do
     echo;echo "   +++ Copying all the packages in ${INCLUDE_FILE##*/} to the medium's data directory +++";echo
     while read -r pkg_name; do
 	[ -n "${pkg_name##\#*}" ] || continue
-	list=( $($_find $IN_DIR/pkg/ -follow -maxdepth 3 -type f \( -name "$pkg_name" -o -name "$pkg_name[-.]*" \) \
-		-and \( -name \*.tgz -o -name \*.lst -o -name \*.dep \) \
-		"${exclude_args[@]}" 2>/dev/null ) )
+	# too slow !!!
+	#list=( $($_find $IN_DIR/pkg/ -follow -maxdepth 3 -type f \( -name "$pkg_name" -o -name "$pkg_name[-.]*" \) \
+	#	-and \( -name \*.tgz -o -name \*.lst -o -name \*.dep \) \
+	#	"${exclude_args[@]}" 2>/dev/null ) )
+
+	# we'll look for packages only in directories starting with the first word of the package
+	pkg_radix="${pkg_name%%[-._0-9]*}"
+	dir_list=( $($_find $IN_DIR/pkg/ -follow -maxdepth 1 -type d -name "${pkg_radix}*" ) )
+	if [ ${#dir_list[@]} -eq 0 ]; then
+		# nothing was found, let's resort to plain old slow method
+		list=( $($_find $IN_DIR/pkg/ -follow -maxdepth 3 -type f \( -name "$pkg_name" -o -name "$pkg_name[-.]*" \) \
+			-and \( -name \*.tgz -o -name \*.lst -o -name \*.dep \) \
+			"${exclude_args[@]}" 2>/dev/null ) )
+	else
+		list=( $($_find "${dir_list[@]}" -follow -maxdepth 2 -type f \( -name "$pkg_name" -o -name "$pkg_name[-.]*" \) \
+			-and \( -name \*.tgz -o -name \*.lst -o -name \*.dep \) \
+			"${exclude_args[@]}" 2>/dev/null ) )
+	fi
 	if [ ${#list[@]} -gt 0 ]; then
 	  # FIXME: we should first remove those files if they exist
 	  $_ln -v "${list[@]}" $OUT_DIR/temp/pkg/ 2>/dev/null || $_cp -avH "${list[@]}" $OUT_DIR/temp/pkg/
