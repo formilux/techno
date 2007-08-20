@@ -31,6 +31,7 @@
 PKGDIR=${PKGDIR:-/data/projets/formilux/0.1/formilux-0.1.current/pool/pkg}
 PKGMAP=${PKGMAP:-$PWD/pkgmap}
 TMP=.tmp
+COMMITTER="build@formilux"
 
 QUIET=${QUIET-}
 DEBUG=${DEBUG-}
@@ -115,10 +116,6 @@ generate_git_patch_header() {
     echo "Date: $(date -d "$d $t")"
     echo "Subject: $a ${p##*/}"
     echo
-    if [ "$s" = "CHANGELOG" ]; then
-	get_package_changelog "$p"
-	echo
-    fi
 }
 
 # apply a generated patch. Does nothing (cat) unless FORCE is set.
@@ -147,8 +144,9 @@ merge_all_packages() {
     [ -n "$QUIET" ] || echo "Merging packages..." >&2
 
     mkdir -p "$TMP" || exit 1
-    rm -rf "$TMP/a" "$TMP/b"
+    rm -rf "$TMP/a" "$TMP/b" "$TMP/n" "$TMP/temp"
     mkdir -p $TMP/a/$DEST $TMP/b/$DEST
+    mkdir -p $TMP/n/$DEST $TMP/temp
 
     while read d t u p s rest; do
 	[ -n "$DEBUG" ] && echo "Processing $d $t $u $p $s" >&2
@@ -164,13 +162,54 @@ merge_all_packages() {
 
 	ln -s $ABS_DEST/$c $TMP/a/$DEST/$c
 	ln -s ${p} $TMP/b/$DEST/$c
+	ln -s $ABS_TMP/temp $TMP/n/$DEST/$c
+
+	# try hard to recompose changelog from previous one if it exists
+	# it will be located under $TMP/n/$DEST/$c.
+	if [ -s ${p}/ChangeLog ]; then
+	    if [ -s ${ABS_DEST}/${c}/Version ] &&
+		[ -e ${PKGDIR}/$(<${ABS_DEST}/${c}/Version)/ChangeLog ]; then
+		# we have a previous and a new changelog, let's produce cumulative
+		# changes in the "changes" file.
+		diff ${PKGDIR}/$(<${ABS_DEST}/${c}/Version)/ChangeLog ${p} |
+		    sed -ne 's/^> \(.*\)/\1/p' > $TMP/temp/ChangeLog
+	    else
+		# it is the first changelog, let's take it fully
+		cat ${p}/ChangeLog > $TMP/temp/ChangeLog 2>/dev/null
+	    fi
+	    # append what we have already queued in this package
+	    cat ${ABS_DEST}/${c}/ChangeLog >> $TMP/temp/ChangeLog 2>/dev/null
+	else
+	    # no changelog, let's build one ourselves.
+	    printf "$d $t  $u\n\n\t* released ${p##*/}\n\n" > $TMP/temp/ChangeLog
+	    # append what we have already queued in this package
+	    cat ${ABS_DEST}/${c}/ChangeLog >> $TMP/temp/ChangeLog 2>/dev/null
+	fi
 
 	(
 	    generate_git_patch_header "$a" "$d" "$t" "$u" "$p" "$s"
+
 	    cd $TMP
 
+	    # output the latest changelog in the commit message: concatenate all
+	    # the commit lines, remove the dates, and replace the tabs with
+	    # spaces. Next, dump everything and stop at the second 'released'
+	    # entry.
+	    diff -N a/$DEST/$c/ChangeLog n/$DEST/$c/ChangeLog |
+		sed -ne 's/^> \(.*\)/\1/p' |
+		sed -ne '/^[^0-9]/s/\t/    /p' |
+		sed -ne '1{p;b};/\* released .*-flx0\./q;p'
+
+	    #if [ "$s" = "CHANGELOG" ]; then
+	    #	get_package_changelog "$p"
+	    #	echo
+	    #fi
+
 	    # diff the old and new tree
-	    diff -urN --exclude=".*" --exclude="compiled" a b
+	    diff -urN --exclude=".*" --exclude="compiled" --exclude="ChangeLog" a b
+
+	    # diff previous changelog with the new crafted one.
+	    diff -urN a/$DEST/$c/ChangeLog n/$DEST/$c/ChangeLog
 
 	    # generate at least one line of diff containing the latest version.
 	    echo "--- a/$DEST/$c/Version"
@@ -203,7 +242,7 @@ merge_all_packages() {
 	    ) >&2
 	    exit 4
 	fi
-	rm -f $TMP/a/$DEST/$c $TMP/b/$DEST/$c
+	rm -f $TMP/a/$DEST/$c $TMP/b/$DEST/$c $TMP/n/$DEST/$c
     done
 }
 
@@ -247,10 +286,12 @@ if [ -z "${DEST##/*}" ]; then
   exit 2
 fi
 
-[ -n "${PKGDIR##/*}" ]  && PKGDIR="${PWD}/${PKGDIR}"
 ABS_DEST="${PWD}/${DEST}"
+ABS_TMP="${TMP}"
+[ -n "${ABS_TMP##/*}" ] && ABS_TMP="${PWD}/${ABS_TMP}"
+[ -n "${PKGDIR##/*}" ]  && PKGDIR="${PWD}/${PKGDIR}"
 
-# Note: starting from now, PKGDIR and ABS_DEST are absolute paths.
+# Note: starting from now, PKGDIR, ABS_TMP and ABS_DEST are absolute paths.
 
 
 # build package list
@@ -288,12 +329,12 @@ for pkg in ${list[@]}; do
 
     if [ -z "$date" -a -e "$pkg/RELEASED" ]; then
 	set -- $(find $pkg/RELEASED -maxdepth 0 -printf "%TY/%Tm/%Td %TH:%TM\n" 2>/dev/null)
-	[ -n "$2" ] && date="$1 $2 build@formilux $pkg RELEASED"
+	[ -n "$2" ] && date="$1 $2 ${COMMITTER} $pkg RELEASED"
     fi
     
     if [ -z "$date" -a -e "$pkg/compiled" ]; then
 	set -- $(find $pkg/compiled -maxdepth 0 -printf "%TY/%Tm/%Td %TH:%TM\n" 2>/dev/null)
-	[ -n "$2" ] && date="$1 $2 build@formilux $pkg COMPILED"
+	[ -n "$2" ] && date="$1 $2 ${COMMITTER} $pkg COMPILED"
     fi
 
     if [ -z "$date" ]; then
