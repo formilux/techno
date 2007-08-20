@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# git-import-all-packages.sh - Import packages - version 0.0.1 - 2007-08-19
+# git-import-all-packages.sh - Import packages - version 0.0.2 - 2007-08-20
 #
 # Copyright (C) 2001-2007 Benoit Dolez & Willy Tarreau
 #       mailto: benoit@ant-computing.com,willy@ant-computing.com
@@ -22,17 +22,21 @@
 #
 #    $ FORCE=1 time ./merge-all-packages.sh allpkg '*'
 #
+# To output a list of packages sorted by date, simply set JUSTSORT to 1.
+# Nothing else will be performed.
+#
 # Caveats: does not support empty files (eg: "RELEASED") which are simply
 # ignored.
 
-DIR=/data/projets/formilux/0.1/formilux-0.1.current/pool/pkg
+PKGDIR=${PKGDIR:-/data/projets/formilux/0.1/formilux-0.1.current/pool/pkg}
+PKGMAP=${PKGMAP:-$PWD/pkgmap}
 TMP=.tmp
-PKGMAP=$PWD/pkgmap
 
 QUIET=${QUIET-}
 DEBUG=${DEBUG-}
 FORCE=${FORCE-}
 BUILDMAP=${BUILDMAP-}
+JUSTSORT=${JUSTSORT-}
 
 LS="ls -1dvN --color=never"
 
@@ -135,6 +139,11 @@ merge_all_packages() {
     local a d t u p s rest
     local c
 
+    if [ -n "$JUSTSORT" ]; then
+	cat
+	return 0
+    fi
+
     [ -n "$QUIET" ] || echo "Merging packages..." >&2
 
     mkdir -p "$TMP" || exit 1
@@ -215,7 +224,7 @@ merge_all_packages() {
 
 
 if [ $# -ne 2 ]; then
-  echo "Usage: ${0##*/} <globbing expression> <directory>"
+  echo "Usage: ${0##*/} <directory> <globbing expression>"
   echo "Will merge all packages matching the expression into the directory,"
   echo "one at a time."
   echo "IMPORTANT! the directory is relative to the root of the project and"
@@ -226,7 +235,7 @@ if [ $# -ne 2 ]; then
 fi
 
 DEST="$1"
-ORIG="$2"
+GLOB="$2"
 
 if [ ! -d "$DEST/." ]; then
   echo "Fatal: $DEST is not a valid directory".
@@ -238,15 +247,15 @@ if [ -z "${DEST##/*}" ]; then
   exit 2
 fi
 
-[ -n "${DIR##/*}" ]  && DIR="${PWD}/${DIR}"
+[ -n "${PKGDIR##/*}" ]  && PKGDIR="${PWD}/${PKGDIR}"
 ABS_DEST="${PWD}/${DEST}"
 
-# Note: starting from now, DIR and ABS_DEST are absolute paths.
+# Note: starting from now, PKGDIR and ABS_DEST are absolute paths.
 
 
 # build package list
 [ -n "$QUIET" ] || echo "Building packages list..." >&2
-list=( $($LS $DIR/$ORIG) )
+list=( $($LS $PKGDIR/$GLOB) )
 
 # dates in format "<date> <time> <user> <package> <date_source> [<garbage>]"
 dates=( )
