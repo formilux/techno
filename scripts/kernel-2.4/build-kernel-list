@@ -1,0 +1,360 @@
+#!/bin/bash
+
+# build-kernel-list - build a list of kernels - version 0.0.6 - 2006-08-07
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2006 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+### TODO ###
+# add options to bypass distclean, cp config, oldconfig, dep, bzimage, modules_install, ...
+
+# This script builds kernels for all valid configurations passed on the command
+# line. The configuration MUST be completely valid, and the script rejects those
+# which are not (eg: new entries).
+# If addons are found in the directory 'addons', they will be processed in the
+# following order :
+#   - execute addons/build.<$dir> 'clean' if <$dir> exists
+#   - build kernel + modules
+#   - execute addons/build.<$dir> 'compile'
+#   - make kernel install
+#   - execute addons/build.<$dir> 'install'
+#
+# It deduces every parameter from the configuration file name. It supports
+# building several packages from a single file if the packages types are
+# delimited with a '+'.
+# Example :
+#    # $0 confdir/config-2.4.27smp-wt4.rh73-boot-flx0+rh73.1-p4
+#            |       |   | | |  |   |   |     |   |     |  |  |
+#            |       |   | | |  |   |   |     |   |     |  |  +-> arch (package)
+#            |       |   | | |  |   |   |     |   |     |  +----> build number
+#            |       |   | | |  |   |   |     |   |     +-------> second package
+#            |       |   | | |  |   |   |     |   +-------------> first package
+#            |       |   | | |  +---+---+-----+-----------------> extra version
+#            |       |   | | +----------------------------------> sublevel
+#            |       |   | +------------------------------------> minor
+#            |       |   +--------------------------------------> major
+#            |       +------------------------------------------> file type
+#            +--------------------------------------------------> ignored
+
+die() {
+    ret=$1 ; shift
+    echo "$@"
+    exit $ret
+}
+
+usage() {
+    echo "Formilux Linux Kernel packager - (C) 2004-2006 EXOSEC"
+    echo "Usage:"
+    echo "    ${0##*/} [ -h, --help ] [ -i,--install,--no-compile ]"
+    echo "             [ -s, --suffix ] [ -r, --rerun ] config_file..."
+    echo
+    echo "Output will be sent to \$OUTPUTDIR=$OUTPUTDIR"
+    echo "Using: CC=$CC HOSTCC=$HOSTCC PARALLELCC=$PARALLELCC"
+    echo "Note: this script needs sudo during the install phase."
+    echo "Use --suffix to automatically suffix the build version to the EXTRAVERSION."
+    echo
+    echo "Addons found : ${addons[@]}"
+    echo
+}
+
+OUTPUTDIR=${OUTPUTDIR:-$PWD/KERNEL-PKG}
+PARALLELDEP=${PARALLELDEP:-10}
+PARALLELCC=${PARALLELCC:-3}
+CC=${CC:-gcc}
+HOSTCC=${HOSTCC:-$CC}
+SUDO=${SUDO-sudo}
+
+mkdir -p $OUTPUTDIR || die 1 "Cannot create directory : $OUTPUTDIR"
+
+addons=( )
+if [ -d "addons/." ]; then
+  for i in $(cd addons && echo *); do
+    if [ -d "addons/$i/." -a -x "addons/build.$i" ]; then
+      addons[${#addons[@]}]="$i"
+    fi
+  done
+fi
+
+do_compile=1
+do_suffix=0
+do_rerun=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+    -h|--help)
+	usage
+	exit 0
+	;;
+    -i|--no-compile|--install-only)
+	do_compile=0
+	shift
+	;;
+    -r|--rerun)
+	do_rerun=1
+	shift
+	;;
+    -s|--suffix)
+	do_suffix=1
+	shift
+	;;
+    *)
+	break
+	;;
+    esac
+done
+
+if [ $# -eq 0 ]; then
+    usage
+    exit 1
+fi
+
+for cfg in "$@"; do
+    # cfg = dir/config-2.4.27smp-wt4.rh73-flx0.1-p4
+    ver="${cfg#*/}"				# ver=config-2.4.27smp...
+    ver="${ver#*-}"				# ver=2.4.27smp-wt4...
+    major="${ver%%.*}" ; ver="${ver#$major.}"	# ver=4.27smp-wt4.rh73-flx0.1-p4
+    minor="${ver%%.*}" ; ver="${ver#$minor.}"	# ver=27smp-wt4.rh73-flx0.1-p4
+    sub="${ver%%-*}"   ; sub="${sub%%[^0-9]*}"	# sub=27
+    ver="${ver#$sub}"				# ver=smp-wt4.rh73-flx0.1-p4
+
+    arch="${ver##*-}"  ; ver="${ver%-$arch}"	# ver=smp-wt4.rh73-flx0.1
+    build="${ver##*-}" ; extra="${ver%-$build}"	# extra=smp-wt4-rh73
+    dist="${build%.*}" ; build=${build#$dist.}	# dist=flx0, build=1
+
+    output="${major}.${minor}.${sub}${extra}${build:+.$build}${arch:+-$arch}"
+    log="build-$output.log"
+    rm -f $log
+
+    echo
+    echo "##### building $output #####"
+    echo "DATE=$(date)"
+    echo "CFG=$cfg"
+    echo "MAJOR=$major"
+    echo "MINOR=$minor"
+    echo "SUB=$sub"
+    echo "EXTRA=$extra"
+    echo "DIST=$dist"
+    echo "BUILD=$build"
+    echo "ARCH=$arch"
+    echo "LOG=$log"
+    echo
+
+    if [ -z "$arch" -o -z "$dist" -o -z "$sub" -o -z "$minor" -o -z "$major" ]; then
+	echo "Error! none of MAJOR, MINOR, SUB, DIST and ARCH can be non empty"
+	continue
+    fi
+
+    # The kernel version appearing in the package name can be a subset of
+    # the full kernel version.
+
+    KPKG="${major}.${minor}.${sub}${extra}"
+    if [ "$do_suffix" = "1" ]; then
+        extra="${extra}-${build}"
+        KVER="${major}.${minor}.${sub}${extra}"
+    else
+        KVER="${major}.${minor}.${sub}${extra}"
+    fi
+
+    VERSTR="VERSION=$major PATCHLEVEL=$minor SUBLEVEL=$sub EXTRAVERSION='$extra' CC=$CC HOSTCC=$HOSTCC"
+    MAKE="make $VERSTR"
+    MAKEINST="sudo make $VERSTR"
+
+    if [ $do_compile -eq 1 ]; then
+        if [ $do_rerun -eq 0 ]; then
+          echo "Doing make distclean..."
+	  $MAKE distclean >/dev/null 2>&1
+	  for addon in "${addons[@]}"; do
+            echo "Cleaning addon '$addon'..."
+	    addons/"build.$addon" clean "$KVER" "$PWD" "$PWD/addons/$addon"
+          done
+	  echo "Done."
+	  rm -f .version .config
+	  rm -f include/linux/version.h include/linux/modversions.h
+	  cp $cfg .config
+
+	  echo "Checking configuration file" | tee -a $OUTPUTDIR/$log
+	  $MAKE oldconfig </dev/null >>$OUTPUTDIR/$log 2>&1 ; err=$?
+	  if [ $err -ne 0 ]; then
+	    echo "######### make oldconfig returned error code $err #########" | tee -a $OUTPUTDIR/$log
+	    continue
+	  fi
+
+	  echo "Building dependencies" | tee -a $OUTPUTDIR/$log
+	  $MAKE -j $PARALLELDEP dep </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
+	  if [ $err -ne 0 ]; then
+	    echo "######### make dep returned error code $err #########" | tee -a $OUTPUTDIR/$log
+	    continue
+	  fi
+	fi
+
+	echo "Building kernel and modules" | tee -a $OUTPUTDIR/$log
+	$MAKE -j $PARALLELCC bzImage modules </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
+	if [ $err -ne 0 ]; then
+	    echo "######### make bzImage modules returned error code $err #########" | tee -a $OUTPUTDIR/$log
+	    continue
+	fi
+
+	# now build all addons
+	addon_err=0
+	for addon in "${addons[@]}"; do
+          echo "Compiling addon '$addon'..."| tee -a $OUTPUTDIR/$log
+	  addons/"build.$addon" compile "$KVER" "$PWD" "$PWD/addons/$addon" </dev/null >>$OUTPUTDIR/$log 2>&1
+	  err=$?
+	  if [ $err -ne 0 ]; then
+	    addon_err=1
+	    echo "######### compile of addon '$addon' returned error code $err #########" | tee -a $OUTPUTDIR/$log
+	  fi
+        done
+	echo "Done."
+
+	if [ $addon_err -ne 0 ]; then
+	  echo "######### errors encountered while compiling addons #########"
+	  continue
+        fi
+    else
+	echo "Skipping compilation" | tee -a $OUTPUTDIR/$log
+    fi
+
+    # we can build several packages from one distro
+    for curdist in ${dist//+/ }; do
+	echo "##### packaging for $curdist #####"
+	BUILDVERSION="${curdist}${build:+.$build}"
+	destdir="$OUTPUTDIR/$output.${BUILDVERSION}"
+	archdir="$destdir/$arch"
+	libmoddir="$archdir/lib/modules/$KVER"
+	bootdir="$archdir/boot/$KVER"
+
+	if [ "$destdir" == "/./" ]; then
+	    echo "######### DANGER !!! ##########"
+	    echo "# Something really bad happened ! destdir='$destdir'. Refusing to process further !"
+	    echo "###############################"
+	    exit 2
+	fi
+
+	$SUDO rm -rf $destdir ; $SUDO mkdir -p $archdir
+
+	echo "Installing modules" >> $OUTPUTDIR/$log
+	$SUDO $MAKE INSTALL_MOD_PATH=$archdir modules_install </dev/null >> $OUTPUTDIR/$log 2>&1; err=$?
+	if [ $err -ne 0 ]; then
+	    echo "######### make modules_install returned error code $err #########" | tee -a $OUTPUTDIR/$log
+	    $SUDO rm -rf $destdir
+	    continue
+	fi
+
+	if [ ! -d "$libmoddir" ]; then
+	    echo "######### make modules_install failed to create $libmoddir #########" | tee -a $OUTPUTDIR/$log
+	    $SUDO rm -rf $destdir
+	    continue
+	fi
+
+	# install all addons
+	addon_err=0
+	for addon in "${addons[@]}"; do
+          echo "Installing addon '$addon'..."
+
+	  $SUDO addons/"build.$addon" install "$KVER" "$PWD" "$PWD/addons/$addon" "$archdir" </dev/null >>$OUTPUTDIR/$log 2>&1
+	  err=$?
+	  if [ $err -ne 0 ]; then
+	    addon_err=1
+	    echo "######### install of addon '$addon' returned error code $err #########" | tee -a $OUTPUTDIR/$log
+	  fi
+        done
+	echo "Done."
+
+	if [ $addon_err -ne 0 ]; then
+	  echo "######### errors encountered while installing addons #########"
+	  $SUDO rm -rf $destdir
+	  continue
+        fi
+
+	# now that we have all the modules, let's generate the modules.dep file.
+        [ -r System.map ] && $SUDO depmod -ae -F System.map -b "$archdir" -r "$KVER"
+
+	curdir=$PWD
+	case $curdist in
+	flx*)
+
+	    $SUDO mv $archdir/lib/modules $archdir/boot && $SUDO rmdir $archdir/lib
+	    # now everything is under $bootdir
+
+	    $SUDO cp arch/i386/boot/bzImage .config System.map $bootdir >> $OUTPUTDIR/$log 2>&1; err=$?
+	    if [ $err -ne 0 ]; then
+		echo "######### cp bzImage .config System.map ... returned error code $err #########" | tee -a $OUTPUTDIR/$log
+		$SUDO rm -rf $destdir
+		continue
+	    fi
+
+	    $SUDO ln -s $KVER/System.map $archdir/boot/System.map-$KVER
+	    $SUDO sh -c "gzip -c9 < $bootdir/.config > $bootdir/.config.gz && rm -f $bootdir/.config"
+	    $SUDO rm -f $bootdir/build
+
+	    for i in $(find $bootdir -type f -name '*.o'); do
+		echo "Compressing $i -> $i.gz"
+		$SUDO sh -c "strip -S $i && gzip -c9 < $i > $i.gz && mv $i.gz $i"
+	    done >> $OUTPUTDIR/$log 2>&1
+
+	    $SUDO chown -R root:adm $archdir/boot
+	    $SUDO chmod -R g-w,o-rwx $archdir/boot
+
+	    # system.map is used by 'ps' to display the syscall being used (ps -o wchan)
+	    $SUDO chmod ugo+r $bootdir/System.map
+
+	    # let's build the signature file
+	    $SUDO find $archdir/ -xdev -not -path $archdir/boot -printf "%P\n" | grep -v '^$' | \
+		sh -c "( cd $archdir && xargs flx sign --ignore-dot --no-depth)" \
+		>$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-$arch.lst
+
+	    # let's build the tar.gz
+	    $SUDO find $archdir -xdev -not -path $archdir/boot -printf "%P\n" | \
+		grep -v '^$' | $SUDO tar -C $archdir --no-recursion -T - -vcf - 2>>$OUTPUTDIR/$log | \
+		gzip -c9 >$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-$arch.tgz
+
+	    cp .config $OUTPUTDIR/config-${KPKG}-${BUILDVERSION}-$arch
+	    ;;
+	rh*)
+	    $SUDO mkdir -p $archdir/boot
+	    $SUDO cp arch/i386/boot/bzImage $archdir/boot/vmlinuz-$KVER >> $OUTPUTDIR/$log 2>&1 && \
+	        $SUDO cp .config $archdir/boot/config-$KVER >> $OUTPUTDIR/$log 2>&1 && \
+	        $SUDO cp System.map $archdir/boot/System.map-$KVER >> $OUTPUTDIR/$log 2>&1; err=$?
+	    if [ $err -ne 0 ]; then
+		echo "######### cp bzImage .config System.map ... returned error code $err #########" | tee -a $OUTPUTDIR/$log
+		$SUDO rm -rf $destdir
+		continue
+	    fi
+	    $SUDO rm -f $archdir/boot/build
+
+	    for i in $($SUDO find $libmoddir -type f -name '*.o'); do
+		echo "Stripping $i"
+		$SUDO strip -S $i
+	    done >> $OUTPUTDIR/$log 2>&1
+
+
+	    $SUDO chown -R root:adm $archdir/{boot,lib}
+	    $SUDO chmod -R g-w,o-rwx $archdir/{boot,lib}
+	    # system.map is used by 'ps' to display the syscall being used (ps -o wchan)
+	    $SUDO chmod ugo+r $archdir/boot/System.map-${KVER}
+
+	    # let's build the tar.gz
+	    $SUDO find $archdir -xdev -not -path $archdir/boot -not -path $archdir/lib \
+		-not -path $archdir/lib/modules -printf "%P\n" | \
+		grep -v '^$' | $SUDO tar -C $archdir --no-recursion -T - -vcf - 2>>$OUTPUTDIR/$log | \
+		gzip -c9 >$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-$arch.tgz
+
+	    cp .config $OUTPUTDIR/config-$KPKG-$BUILDVERSION-$arch
+	    ;;
+	*)
+	    echo "######## unknown packaging method for distribution $curdist #######" | tee -a $OUTPUTDIR/$log
+	    ;;
+	esac ## case $curdist
+
+	$SUDO rm -rf $destdir
+	echo "#### package done ! ####" >> $OUTPUTDIR/$log
+    done
+done
+
+echo
+date
+echo "Done !"
+
