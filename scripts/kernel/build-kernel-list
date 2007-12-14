@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# build-kernel-list - build a list of kernels - version 0.0.6 - 2006-08-07
+# build-kernel-list - build a list of 2.6 kernels - version 0.0.7 - 2007-12-15
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
-# Copyright (C) 2001-2006 Benoit Dolez & Willy Tarreau
+# Copyright (C) 2001-2007 Benoit Dolez & Willy Tarreau
 #       mailto: benoit@ant-computing.com,willy@ant-computing.com
 #
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
@@ -26,7 +26,7 @@
 # building several packages from a single file if the packages types are
 # delimited with a '+'.
 # Example :
-#    # $0 confdir/config-2.4.27smp-wt4.rh73-boot-flx0+rh73.1-p4
+#    # $0 confdir/config-2.6.27smp-wt4.rh73-boot-flx0+rh73.1-p4
 #            |       |   | | |  |   |   |     |   |     |  |  |
 #            |       |   | | |  |   |   |     |   |     |  |  +-> arch (package)
 #            |       |   | | |  |   |   |     |   |     |  +----> build number
@@ -46,7 +46,7 @@ die() {
 }
 
 usage() {
-    echo "Formilux Linux Kernel packager - (C) 2004-2006 EXOSEC"
+    echo "Formilux Linux Kernel packager - (C) 2004-2007 EXOSEC"
     echo "Usage:"
     echo "    ${0##*/} [ -h, --help ] [ -i,--install,--no-compile ]"
     echo "             [ -s, --suffix ] [ -r, --rerun ] config_file..."
@@ -157,9 +157,8 @@ for cfg in "$@"; do
         KVER="${major}.${minor}.${sub}${extra}"
     fi
 
-    VERSTR="VERSION=$major PATCHLEVEL=$minor SUBLEVEL=$sub EXTRAVERSION='$extra' CC=$CC HOSTCC=$HOSTCC"
+    VERSTR="VERSION=$major PATCHLEVEL=$minor SUBLEVEL=$sub EXTRAVERSION=$extra CC=$CC HOSTCC=$HOSTCC LOCALVERSION= CONFIG_LOCALVERSION="
     MAKE="make $VERSTR"
-    MAKEINST="sudo make $VERSTR"
 
     if [ $do_compile -eq 1 ]; then
         if [ $do_rerun -eq 0 ]; then
@@ -181,12 +180,12 @@ for cfg in "$@"; do
 	    continue
 	  fi
 
-	  echo "Building dependencies" | tee -a $OUTPUTDIR/$log
-	  $MAKE -j $PARALLELDEP dep </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
-	  if [ $err -ne 0 ]; then
-	    echo "######### make dep returned error code $err #########" | tee -a $OUTPUTDIR/$log
-	    continue
-	  fi
+	  #echo "Building dependencies" | tee -a $OUTPUTDIR/$log
+	  #$MAKE -j $PARALLELDEP dep </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
+	  #if [ $err -ne 0 ]; then
+	  #  echo "######### make dep returned error code $err #########" | tee -a $OUTPUTDIR/$log
+	  #  continue
+	  #fi
 	fi
 
 	echo "Building kernel and modules" | tee -a $OUTPUTDIR/$log
@@ -236,7 +235,9 @@ for cfg in "$@"; do
 	$SUDO rm -rf $destdir ; $SUDO mkdir -p $archdir
 
 	echo "Installing modules" >> $OUTPUTDIR/$log
-	$SUDO $MAKE INSTALL_MOD_PATH=$archdir modules_install </dev/null >> $OUTPUTDIR/$log 2>&1; err=$?
+	$SUDO $MAKE INSTALL_MOD_PATH=$archdir \
+	            INSTALL_MOD_STRIP="--strip-unneeded" \
+	            modules_install </dev/null >> $OUTPUTDIR/$log 2>&1; err=$?
 	if [ $err -ne 0 ]; then
 	    echo "######### make modules_install returned error code $err #########" | tee -a $OUTPUTDIR/$log
 	    $SUDO rm -rf $destdir
@@ -275,6 +276,9 @@ for cfg in "$@"; do
 	curdir=$PWD
 	case $curdist in
 	flx*)
+		#### UPDATE: the modules and files are now self-contained
+		#### with the bzImage, so we do not need to package them again.
+		#### The bzImage will be enough.
 
 	    $SUDO mv $archdir/lib/modules $archdir/boot && $SUDO rmdir $archdir/lib
 	    # now everything is under $bootdir
@@ -302,13 +306,18 @@ for cfg in "$@"; do
 	    $SUDO chmod ugo+r $bootdir/System.map
 
 	    # let's build the signature file
-	    $SUDO find $archdir/ -xdev -not -path $archdir/boot -printf "%P\n" | grep -v '^$' | \
+	    #$SUDO find $archdir/ -xdev -not -path $archdir/boot -printf "%P\n" | grep -v '^$' | \
+	#	sh -c "( cd $archdir && xargs flx sign --ignore-dot --no-depth)" \
+	#	>$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-$arch.lst
+
+	    # let's build the signature file
+	    $SUDO find $archdir/ -xdev -name 'bzImage' -printf "%P\n" | \
 		sh -c "( cd $archdir && xargs flx sign --ignore-dot --no-depth)" \
 		>$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-$arch.lst
 
 	    # let's build the tar.gz
-	    $SUDO find $archdir -xdev -not -path $archdir/boot -printf "%P\n" | \
-		grep -v '^$' | $SUDO tar -C $archdir --no-recursion -T - -vcf - 2>>$OUTPUTDIR/$log | \
+	    $SUDO find $archdir/ -xdev -name 'bzImage' -printf "%P\n" | \
+		$SUDO tar -C $archdir --no-recursion -T - -vcf - 2>>$OUTPUTDIR/$log | \
 		gzip -c9 >$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-$arch.tgz
 
 	    cp .config $OUTPUTDIR/config-${KPKG}-${BUILDVERSION}-$arch
