@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# git-import-all-packages.sh - Import packages - version 0.0.2 - 2007-08-20
+# git-import-all-packages.sh - Import packages - version 0.0.3 - 2008-05-12
 #
-# Copyright (C) 2001-2007 Benoit Dolez & Willy Tarreau
+# Copyright (C) 2001-2008 Benoit Dolez & Willy Tarreau
 #       mailto: benoit@ant-computing.com,willy@ant-computing.com
 #
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
@@ -10,20 +10,24 @@
 # This tool scans a directory full of old and new formilux packages, and
 # sorts them in chronological order, then applies them by groups on top of
 # each other in a local directory, then versions them using GIT (or any other
-# versionning system).
+# versionning system). The original directory must be passed in the PKGDIR
+# variable.
 #
 # The local directory must contain a "package map" (pkgmap) which may be first
 # built by setting BUILDMAP to 1 before running this script. The automatic
 # version however, only manages to assign canonical names, it must be refined
-# by hand.
+# by hand. The absolute path to the pkgmap file may be passed in the PKGMAP
+# variable.
 #
 # No package will be committed unless the FORCE variable is set.
 # Typical usage :
 #
-#    $ FORCE=1 time ./merge-all-packages.sh allpkg '*'
+#    $ FORCE=1 PKGDIR=/pool/pkg time ./merge-all-packages.sh allpkg '*'
 #
 # To output a list of packages sorted by date, simply set JUSTSORT to 1.
 # Nothing else will be performed.
+#
+# In case of errors, setting DEBUG to 1 will help.
 #
 # Caveats: does not support empty files (eg: "RELEASED") which are simply
 # ignored.
@@ -125,6 +129,7 @@ apply_generated_patch() {
     else
 	echo "###################################################################"
 	echo "For safety reasons, this patch will only be merged if FORCE is set."
+	echo "Would apply the following patch to this directory: $PWD."
 	echo "###################################################################"
 	cat
     fi
@@ -134,7 +139,7 @@ apply_generated_patch() {
 #  $0 <date>, <time>, <user>, <package_abs_path>, <date_source>
 merge_all_packages() {
     local a d t u p s rest
-    local c
+    local c f
 
     if [ -n "$JUSTSORT" ]; then
 	cat
@@ -157,7 +162,7 @@ merge_all_packages() {
 	    a="Updated package '$c' to"
 	else
 	    a="Created package '$c' as"
-	    mkdir "$DEST/$c"
+	    mkdir -p "$DEST/$c"
 	fi
 
 	ln -s $ABS_DEST/$c $TMP/a/$DEST/$c
@@ -195,7 +200,8 @@ merge_all_packages() {
 	    # the commit lines, remove the dates, and replace the tabs with
 	    # spaces. Next, dump everything and stop at the second 'released'
 	    # entry.
-	    diff -N a/$DEST/$c/ChangeLog n/$DEST/$c/ChangeLog |
+	    [ -e a/$DEST/$c/ChangeLog ] && f=a/$DEST/$c/ChangeLog || f=/dev/null
+	    diff -N $f n/$DEST/$c/ChangeLog |
 		sed -ne 's/^> \(.*\)/\1/p' |
 		sed -ne '/^[^0-9]/s/\t/    /p' |
 		sed -ne '1{p;b};/\* released .*-flx0\./q;p'
@@ -205,11 +211,11 @@ merge_all_packages() {
 	    #	echo
 	    #fi
 
+	    # diff previous changelog with the new crafted one.
+	    diff -urN $f n/$DEST/$c/ChangeLog
+
 	    # diff the old and new tree
 	    diff -urN --exclude=".*" --exclude="compiled" --exclude="ChangeLog" a b
-
-	    # diff previous changelog with the new crafted one.
-	    diff -urN a/$DEST/$c/ChangeLog n/$DEST/$c/ChangeLog
 
 	    # generate at least one line of diff containing the latest version.
 	    echo "--- a/$DEST/$c/Version"
@@ -265,7 +271,9 @@ merge_all_packages() {
 if [ $# -ne 2 ]; then
   echo "Usage: ${0##*/} <directory> <globbing expression>"
   echo "Will merge all packages matching the expression into the directory,"
-  echo "one at a time."
+  echo "one at a time. It relies on a file called 'pkgmap' in the current"
+  echo "directory, as well as some environment variables. Please read the"
+  echo "script for more information."
   echo "IMPORTANT! the directory is relative to the root of the project and"
   echo "MUST NOT begin with a '/'."
   echo
