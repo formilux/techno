@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# git-import-all-packages.sh - Import packages - version 0.0.3 - 2008-05-12
+# git-import-all-packages.sh - Import packages - version 0.0.4 - 2008-05-12
 #
 # Copyright (C) 2001-2008 Benoit Dolez & Willy Tarreau
 #       mailto: benoit@ant-computing.com,willy@ant-computing.com
@@ -18,6 +18,9 @@
 # version however, only manages to assign canonical names, it must be refined
 # by hand. The absolute path to the pkgmap file may be passed in the PKGMAP
 # variable.
+#
+# Last, the script is now able to create individual trees (one per canonical
+# name). For this, set the INDIVIDUAL variable to 1.
 #
 # No package will be committed unless the FORCE variable is set.
 # Typical usage :
@@ -42,6 +45,7 @@ DEBUG=${DEBUG-}
 FORCE=${FORCE-}
 BUILDMAP=${BUILDMAP-}
 JUSTSORT=${JUSTSORT-}
+INDIVIDUAL=${INDIVIDUAL-}
 
 LS="ls -1dvN --color=never"
 
@@ -65,13 +69,15 @@ get_canonical_name() {
     REPLY=$x
 }
 
-# Called with a package name in $1, it will return the closest package branch
-# in $REPLY. Exceptions are taken care of because some versions of formilux
+# Called with a package name in $1, it will return the closest package name
+# in ${REPLY[0]} and the closest branch in ${REPLY[1)}.
+# Exceptions are taken care of because some versions of formilux
 # ship with multiple branches of a given package. Eg: bash, bison, autoconf...
-# This function relies on a map file $PKGMAP consisting in three columns :
+# This function relies on a map file $PKGMAP consisting in four columns :
 #  - the canonical name as computed by get_canonical_name
 #  - a matching rule for package versions, using wildcards (path expansion)
-#  - the branch name
+#  - a new name for the package (most often the canonical name)
+#  - the branch name (which normally includes the new names)
 # The first match is returned, so it's important that the $PKGMAP file is
 # sorted reversed.
 # When no branch name is found, the canonical name is returned.
@@ -81,15 +87,15 @@ get_package_branch() {
     local canon
 
     get_canonical_name "$pkg" ; canon=$REPLY
-    REPLY=$(grep -w "^$canon" "${PKGMAP}" |
-	while read c r d; do
+    REPLY=( $(grep -w "^$canon" "${PKGMAP}" |
+	while read c r n d rest; do
 	    if [ -z "${pkg##$r*}" ]; then
-		echo "$d"
+		echo "$n $d"
 		exit 0
 	    fi
-	done)
-    [ -z "$REPLY" ] && REPLY="$canon"
-    [ -z "$DEBUG" ] || echo "pkg $pkg => branch $REPLY"
+	done))
+    [ -z "${REPLY[*]}" ] && REPLY=( "$canon" "$canon" )
+    [ -z "$DEBUG" ] || echo "pkg $pkg => name ${REPLY[0]} branch ${REPLY[1]}"
 }
 
 # sort all dates and output the result on stdout.
@@ -123,9 +129,15 @@ generate_git_patch_header() {
 }
 
 # apply a generated patch. Does nothing (cat) unless FORCE is set.
+# If a directory is passed in argument, then enter that directory
+# and apply the patch with -p2 instead of -p1.
 apply_generated_patch() {
     if [ -n "${FORCE}" ]; then
-	git-am -k -3 --whitespace=nowarn
+	if [ -n "$1" ]; then
+	    (cd "$1" && git-am -k -3 -p3 --whitespace=nowarn)
+	else
+	    git-am -k -3 --whitespace=nowarn
+        fi
     else
 	echo "###################################################################"
 	echo "For safety reasons, this patch will only be merged if FORCE is set."
@@ -139,7 +151,7 @@ apply_generated_patch() {
 #  $0 <date>, <time>, <user>, <package_abs_path>, <date_source>
 merge_all_packages() {
     local a d t u p s rest
-    local c f
+    local b c f
 
     if [ -n "$JUSTSORT" ]; then
 	cat
@@ -156,13 +168,52 @@ merge_all_packages() {
     while read d t u p s rest; do
 	[ -n "$DEBUG" ] && echo "Processing $d $t $u $p $s" >&2
 
-	get_package_branch $p; c=$REPLY;
+	if [ -z "$INDIVIDUAL" ]; then
+	    get_package_branch $p; c=${REPLY[1]};
 
-	if [ -d "$DEST/$c/." -a -s "$DEST/$c/Version" ]; then
-	    a="Updated package '$c' to"
+	    if [ -d "$DEST/$c/." -a -s "$DEST/$c/Version" ]; then
+		a="Updated package '$c' to"
+	    else
+		a="Created package '$c' as"
+		mkdir -p "$DEST/$c"
+	    fi
 	else
-	    a="Created package '$c' as"
-	    mkdir -p "$DEST/$c"
+	    # individual packages: we have one directory per canonical name.
+	    # We create one GIT branch per package branch. Unnamed branches
+	    # are called "flx0" and named branches are called "<name>-flx0".
+	    # That way, the "master" branch is never used. We assume that
+	    # each newly created branch derives from last changed branch,
+	    # which more or less matches the real workflow.
+
+	    get_package_branch "$p"; c=${REPLY[0]}; b=${REPLY[1]}
+	    b=${b#$c}; b=${b#-}; b=${b:+${b}-}; b=${b}flx0
+	    
+	    [ -n "$DEBUG" ] && echo "Package $p => branch '$b' of canonical name '$c'"
+
+	    if [ -d "$DEST/$c/." -a -s "$DEST/$c/.git" ]; then
+	        a="Updated package '$c' to"
+	    else
+	        a="Created package '$c' as"
+		if [ -n "${FORCE}" ]; then
+		    mkdir -p "$DEST/$c"
+		    # create a new git tree there with an initial commit.
+		    ( cd "$DEST/$c"
+		      git-init-db &&
+		      tree=$(git-write-tree) &&
+		      commit=$(echo 'Initial commit' | git-commit-tree $tree) &&
+		      git-update-ref HEAD $commit 
+		    )
+		fi
+	    fi
+
+	    # now, we have the directory ($c) and the branch ($b).
+	    # we have to checkout branch $b into that directory, and
+	    # fork it in case of error.
+	    if [ -n "${FORCE}" ]; then
+		( cd "$DEST/$c"
+		    git checkout "$b" 2>/dev/null || git checkout -b "$b"
+		)
+	    fi
 	fi
 
 	ln -s $ABS_DEST/$c $TMP/a/$DEST/$c
@@ -236,7 +287,7 @@ merge_all_packages() {
 	    # exists, we concat a fake one (date+released "xxx") ito the on in
 	    # the dir. If both exist, we must diff between old package (found
 	    # in Version) and new one.
-	) | apply_generated_patch
+	) | apply_generated_patch "${INDIVIDUAL:+$DEST/$c}"
 
 	if [ $? != 0 ]; then
 	    (
@@ -311,12 +362,17 @@ dates=( )
 
 [ -n "$DEBUG" ] && echo "List of packages found : ${list[@]}" >&2
 
-# build a default map of (canonical_name, package_prefix, branch, full package) for
-# hand-refining.
+# build a default map of (canonical_name, package_pattern, new_name, branch, full package)
+# for hand-refining.
 if [ -n "$BUILDMAP" ]; then
     for pkg in ${list[@]}; do
 	get_canonical_name $pkg
-	echo $REPLY $REPLY $REPLY ${pkg##*/}
+	full=${pkg##*/}
+	branch=${full#$REPLY}
+	branch=${branch#-}
+	branch=${branch%-flx0.*}
+	branch=${branch:-BRANCH}
+	echo $REPLY $REPLY $REPLY $branch $full
     done | sort -r
     exit 0
 fi
