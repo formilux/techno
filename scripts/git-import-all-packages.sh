@@ -58,6 +58,17 @@ apply() {
     git-commit -a -m "merged ${pkg##*/}"
 }
 
+# removes left digits from the first argument, return the result in $REPLY.
+strip_digits() {
+    local c n
+    c="$1"
+    n="${c#[0-9]}"
+    while [ -n "$n" -a "$n" != "$c" ]; do
+	c="$n"
+	n="${c#[0-9]}"
+    done
+    REPLY="$n"
+}
 
 # called with a package name in $1, it will return the canonical package name in $REPLY.
 # Exceptions must be taken care of because some versions of formilux ship with multiple
@@ -80,7 +91,8 @@ get_canonical_name() {
 #  - the branch name (which normally includes the new names)
 # The first match is returned, so it's important that the $PKGMAP file is
 # sorted reversed.
-# When no branch name is found, the canonical name is returned.
+# When no branch name is found, the canonical name is returned in the first
+# field and the second is left blank.
 #
 get_package_branch() {
     local pkg="${1##*/}"
@@ -94,8 +106,7 @@ get_package_branch() {
 		exit 0
 	    fi
 	done))
-    [ -z "${REPLY[*]}" ] && REPLY=( "$canon" "$canon" )
-    [ -z "$DEBUG" ] || echo "pkg $pkg => name ${REPLY[0]} branch ${REPLY[1]}"
+    [ -z "${REPLY[*]}" ] && REPLY=( "$canon" "" )
 }
 
 # sort all dates and output the result on stdout.
@@ -134,7 +145,7 @@ generate_git_patch_header() {
 apply_generated_patch() {
     if [ -n "${FORCE}" ]; then
 	if [ -n "$1" ]; then
-	    (cd "$1" && git-am -k -3 -p3 --whitespace=nowarn)
+	    tee /tmp/log3 |(cd "$1" && git-am -k -3 -p3 --whitespace=nowarn)
 	else
 	    git-am -k -3 --whitespace=nowarn
         fi
@@ -151,7 +162,7 @@ apply_generated_patch() {
 #  $0 <date>, <time>, <user>, <package_abs_path>, <date_source>
 merge_all_packages() {
     local a d t u p s rest
-    local b c f
+    local b c f v
 
     if [ -n "$JUSTSORT" ]; then
 	cat
@@ -169,7 +180,7 @@ merge_all_packages() {
 	[ -n "$DEBUG" ] && echo "Processing $d $t $u $p $s" >&2
 
 	if [ -z "$INDIVIDUAL" ]; then
-	    get_package_branch $p; c=${REPLY[1]};
+	    get_package_branch $p; c=${REPLY[1]}; c=${c:-REPLY[0]}
 
 	    if [ -d "$DEST/$c/." -a -s "$DEST/$c/Version" ]; then
 		a="Updated package '$c' to"
@@ -180,15 +191,40 @@ merge_all_packages() {
 	else
 	    # individual packages: we have one directory per canonical name.
 	    # We create one GIT branch per package branch. Unnamed branches
-	    # are called "flx0" and named branches are called "<name>-flx0".
+	    # are first guessed by extracting the first two numbers from the
+	    # name, or called "flx0" if no name could be guessed. Named
+	    # branches are called "<name>-flx0".
 	    # That way, the "master" branch is never used. We assume that
 	    # each newly created branch derives from last changed branch,
 	    # which more or less matches the real workflow.
 
 	    get_package_branch "$p"; c=${REPLY[0]}; b=${REPLY[1]}
-	    b=${b#$c}; b=${b#-}; b=${b:+${b}-}; b=${b}flx0
+
+	    # get the exact package version for the tag (x.x.x-flx0.x)
+	    v=${p##*/}
+	    v=${v#$c};
+	    # remove any leading '-', '_', '.'
+	    v=${v#[-_.]};v=${v#[-_.]};v=${v#[-_.]};
+
+	    # if we find no branch, try to extract the 2 leftmost numbers and
+	    # one dot from the exact version and create a branch from it.
+	    if [ -n "$b" ]; then
+		b=${b#$c}; b=${b#-};
+	    else
+		b=${v%-flx0.*}
+		strip_digits "$b"; suf="${REPLY#[._-]}"
+		strip_digits "$suf"; suf="$REPLY"
+		b=${b%$suf}
+	    fi
+	    # remove any leading '-', '_' or '.'
+	    b=${b#[-_.]};b=${b#[-_.]};b=${b#[-_.]};
+	    # add "flx0".
+	    b=${b:+${b}-}; b=${b}flx0
 	    
-	    [ -n "$DEBUG" ] && echo "Package $p => branch '$b' of canonical name '$c'"
+	    if [ -n "$DEBUG" ]; then
+		echo "Package ${p##*/} => canonical name '$c' (first guess '${REPLY[1]}')"
+		echo "        branch '$b' / tag '$v'"
+	    fi
 
 	    if [ -d "$DEST/$c/." -a -s "$DEST/$c/.git" ]; then
 	        a="Updated package '$c' to"
@@ -211,7 +247,7 @@ merge_all_packages() {
 	    # fork it in case of error.
 	    if [ -n "${FORCE}" ]; then
 		( cd "$DEST/$c"
-		    git checkout "$b" 2>/dev/null || git checkout -b "$b"
+		  git checkout "$b" 2>/dev/null || git checkout -b "$b"
 		)
 	    fi
 	fi
@@ -299,6 +335,12 @@ merge_all_packages() {
 	    ) >&2
 	    exit 4
 	fi
+
+	# apply the tag if we had one.
+	if [ -n "$INDIVIDUAL" -a -n "${FORCE}" -a -n "$v" ]; then
+	    ( cd "$DEST/$c" && git-tag "v${v}" )
+	fi
+
 	rm -f $TMP/a/$DEST/$c $TMP/b/$DEST/$c $TMP/n/$DEST/$c
     done
 }
@@ -336,15 +378,16 @@ DEST="$1"
 GLOB="$2"
 
 if [ ! -d "$DEST/." ]; then
-  echo "Fatal: $DEST is not a valid directory".
+  echo "Fatal: '$DEST' is not a valid directory".
   exit 2
 fi
 
 if [ -z "${DEST##/*}" ]; then
-  echo "Fatal: $DEST MUST NOT be an absolute directory".
+  echo "Fatal: \$2 ('$DEST') MUST NOT be an absolute directory".
   exit 2
 fi
 
+DEST="${DEST%/}"
 ABS_DEST="${PWD}/${DEST}"
 ABS_TMP="${TMP}"
 [ -n "${ABS_TMP##/*}" ] && ABS_TMP="${PWD}/${ABS_TMP}"
