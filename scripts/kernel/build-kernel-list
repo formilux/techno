@@ -62,12 +62,19 @@ usage() {
 
 OUTPUTDIR=${OUTPUTDIR:-$PWD/KERNEL-PKG}
 PARALLELDEP=${PARALLELDEP:-10}
-PARALLELCC=${PARALLELCC:-3}
+PARALLELCC=${PARALLELCC:-6}
 CC=${CC:-gcc}
 HOSTCC=${HOSTCC:-$CC}
 SUDO=${SUDO-sudo}
 
 mkdir -p $OUTPUTDIR || die 1 "Cannot create directory : $OUTPUTDIR"
+
+# directory where this script is located
+if [ -z "${0##*/*}" ]; then
+  DIR="${0%/*}"
+else
+  DIR="$PWD"
+fi
 
 addons=( )
 if [ -d "addons/." ]; then
@@ -108,6 +115,15 @@ done
 if [ $# -eq 0 ]; then
     usage
     exit 1
+fi
+
+# Find an efficient gzip implementation
+if [ -z "$cmd_gzip" ]; then
+  if [ "$(echo yes | (7za a -tgzip -mx9 -mpass=4 -si -so . | gzip -cd) 2>/dev/null)" = "yes" ]; then
+    cmd_gzip="7za a -tgzip -mx9 -mpass=4 -si -so ."
+  else
+    cmd_gzip="gzip -c9"
+  fi
 fi
 
 for cfg in "$@"; do
@@ -189,6 +205,7 @@ for cfg in "$@"; do
 	fi
 
 	echo "Building kernel and modules" | tee -a $OUTPUTDIR/$log
+        rm -rf initramfs && mkdir initramfs
 	$MAKE -j $PARALLELCC bzImage modules </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
 	if [ $err -ne 0 ]; then
 	    echo "######### make bzImage modules returned error code $err #########" | tee -a $OUTPUTDIR/$log
@@ -280,9 +297,39 @@ for cfg in "$@"; do
 		#### with the bzImage, so we do not need to package them again.
 		#### The bzImage will be enough.
 
+            # ensure we did not previously build an initramfs
+            if [ -e initramfs/modules.tar -a -e usr/initramfs_data.o -a \
+                 usr/initramfs_data.o -nt initramfs/modules.tar ]; then
+                echo "Cleaning initramfs" >>$OUTPUTDIR/$log
+                rm -rf initramfs && mkdir initramfs
+                $MAKE -j $PARALLELCC bzImage CONFIG_INITRAMFS_SOURCE="" </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
+            fi
+            mkdir -p initramfs
+
+	    # Compress all modules
+            if [ -z "$DONT_GZIP_MODULES" ]; then
+                echo "Compressing modules for kernel $version ..."
+                du -s "${archdir}/lib/modules"
+                find "${archdir}/lib/modules" -type f -name "*.ko"| while read; do
+                    echo "Compressing module $REPLY -> $REPLY.gz"
+                    $SUDO sh -c "strip -S $REPLY && ${cmd_gzip} <$REPLY >$REPLY.gz 2>/dev/null && rm -f $REPLY"
+                done >> $OUTPUTDIR/$log 2>&1
+                du -s "${archdir}/lib/modules"
+                echo "Done."
+                [ -r System.map ] && $SUDO depmod -ae -F System.map -b "$archdir" -r "$KVER"
+            fi
+	    $SUDO rm -f ${archdir}/lib/modules/${KVER}/build ${archdir}/lib/modules/${KVER}/source
+
+            # save the modules right now for later use
+            tar --owner=root --group=root --mode=a+r,go-w -C "${archdir}/lib/modules" -cf - "${KVER}" > initramfs/modules.tar
+
 	    $SUDO mv $archdir/lib/modules $archdir/boot && $SUDO rmdir $archdir/lib
 	    # now everything is under $bootdir
 
+	    $SUDO chown -R root:adm $archdir/boot
+	    $SUDO chmod -R g-w,o-rwx $archdir/boot
+
+            # install kernel
 	    $SUDO cp arch/i386/boot/bzImage .config System.map $bootdir >> $OUTPUTDIR/$log 2>&1; err=$?
 	    if [ $err -ne 0 ]; then
 		echo "######### cp bzImage .config System.map ... returned error code $err #########" | tee -a $OUTPUTDIR/$log
@@ -291,13 +338,7 @@ for cfg in "$@"; do
 	    fi
 
 	    $SUDO ln -s $KVER/System.map $archdir/boot/System.map-$KVER
-	    $SUDO sh -c "gzip -c9 < $bootdir/.config > $bootdir/.config.gz && rm -f $bootdir/.config"
-	    $SUDO rm -f $bootdir/build
-
-	    for i in $(find $bootdir -type f -name '*.o'); do
-		echo "Compressing $i -> $i.gz"
-		$SUDO sh -c "strip -S $i && gzip -c9 < $i > $i.gz && mv $i.gz $i"
-	    done >> $OUTPUTDIR/$log 2>&1
+	    $SUDO sh -c "$cmd_gzip <$bootdir/.config >$bootdir/.config.gz 2>/dev/null && rm -f $bootdir/.config"
 
 	    $SUDO chown -R root:adm $archdir/boot
 	    $SUDO chmod -R g-w,o-rwx $archdir/boot
@@ -306,21 +347,49 @@ for cfg in "$@"; do
 	    $SUDO chmod ugo+r $bootdir/System.map
 
 	    # let's build the signature file
-	    #$SUDO find $archdir/ -xdev -not -path $archdir/boot -printf "%P\n" | grep -v '^$' | \
-	#	sh -c "( cd $archdir && xargs flx sign --ignore-dot --no-depth)" \
-	#	>$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-$arch.lst
-
-	    # let's build the signature file
-	    $SUDO find $archdir/ -xdev -name 'bzImage' -printf "%P\n" | \
+	    $SUDO find $archdir/ -xdev -not -path $archdir/boot -printf "%P\n" | grep -v '^$' | \
 		sh -c "( cd $archdir && xargs flx sign --ignore-dot --no-depth)" \
 		>$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-$arch.lst
 
 	    # let's build the tar.gz
-	    $SUDO find $archdir/ -xdev -name 'bzImage' -printf "%P\n" | \
+	    $SUDO find $archdir/ -xdev -not -path $archdir/boot -printf "%P\n" | grep -v '^$' | \
 		$SUDO tar -C $archdir --no-recursion -T - -vcf - 2>>$OUTPUTDIR/$log | \
-		gzip -c9 >$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-$arch.tgz
+		${cmd_gzip} 2>/dev/null >$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-$arch.tgz
 
 	    cp .config $OUTPUTDIR/config-${KPKG}-${BUILDVERSION}-$arch
+
+            # We now have a complete kernel + modules packaged. We also want to have a
+            # self-contained kernel image (allin1).
+
+            tools26="$DIR/inst-mod26"
+            mkdir -p initramfs/{dev,proc,root}
+            cp "${tools26}/.preinit" initramfs/
+            cp "${tools26}/init" initramfs/
+            cp "${tools26}/busybox" initramfs/tar
+
+            echo "Building initramfs for all-in-one kernel" >>$OUTPUTDIR/$log
+            $MAKE -j $PARALLELCC bzImage CONFIG_INITRAMFS_SOURCE=$PWD/initramfs </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
+
+            echo "Packaging all-in-one kernel" >>$OUTPUTDIR/$log
+	    $SUDO cp arch/i386/boot/bzImage .config System.map $bootdir >> $OUTPUTDIR/$log 2>&1; err=$?
+	    if [ $err -ne 0 ]; then
+		echo "######### cp bzImage .config System.map ... returned error code $err #########" | tee -a $OUTPUTDIR/$log
+		$SUDO rm -rf $destdir
+		continue
+	    fi
+
+	    # let's build the signature file
+	    $SUDO find $archdir/ -xdev \( -name bzImage -o -name .config -o -name System.map \) -printf "%P\n" | \
+		sh -c "( cd $archdir && xargs flx sign --ignore-dot --no-depth)" \
+		>$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-allin1-$arch.lst
+
+	    # let's build the tar.gz
+	    $SUDO find $archdir/ -xdev \( -name bzImage -o -name .config -o -name System.map \) -printf "%P\n" | \
+		$SUDO tar -C $archdir --no-recursion -T - -vcf - 2>>$OUTPUTDIR/$log | \
+		${cmd_gzip} 2>/dev/null >$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-allin1-$arch.tgz
+
+            # not needed since we already have one
+	    # cp .config $OUTPUTDIR/config-${KPKG}-${BUILDVERSION}-allin1-$arch
 	    ;;
 	rh*)
 	    $SUDO mkdir -p $archdir/boot
