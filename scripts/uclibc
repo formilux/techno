@@ -1,5 +1,5 @@
 #!/bin/bash
-# uClibc wrapper v0.4 - 2006/07/15 - Willy Tarreau
+# uClibc wrapper v0.5 - 2008/05/28 - Willy Tarreau
 # Use this script as a GCC prefix to build a source with uclibc.
 # Note that it is smart enough to build kexec-tools and busybox.
 
@@ -15,6 +15,7 @@ if [ "${args/ -c /}${args/ -E /}${args/ -S /}${args/ -M /}" \
   exec "$compilo" "$@" -isystem ${UCLIBCROOT}/usr/include
 else
   exec "$compilo" -nostdlib -static \
+     -L${UCLIBCROOT}/usr/lib \
      -L${UCLIBCROOT}/lib \
      ${UCLIBCROOT}/usr/lib/crti.o \
      ${UCLIBCROOT}/usr/lib/crt1.o \
