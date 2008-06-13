@@ -164,7 +164,8 @@ done
 
 [ $DEBUG -eq 0 ] && rm -rf $OUT_DIR/temp
 
-if [ $NOCONS -eq 0 ]; then
+set -- $OUT_DIR/log/*.log
+if [ $NOCONS -eq 0 -a $# -ne 0 ] ; then
   echo
   echo "Scanning the rootfs for missing files ..."
   # Note: each line in the log file may start with ## and may contain a package name.
