@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# build-kernel-list - build a list of kernels - version 0.0.6 - 2006-08-07
+# build-kernel-list - build a list of kernels - version 0.0.7 - 2008-12-01
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
 # Copyright (C) 2001-2006 Benoit Dolez & Willy Tarreau
@@ -303,7 +303,7 @@ for cfg in "$@"; do
 
 	    # let's build the signature file
 	    $SUDO find $archdir/ -xdev -not -path $archdir/boot -printf "%P\n" | grep -v '^$' | \
-		sh -c "( cd $archdir && xargs flx sign --ignore-dot --no-depth)" \
+		sh -c "( cd $archdir && xargs $SUDO flx sign --ignore-dot --no-depth)" \
 		>$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-$arch.lst
 
 	    # let's build the tar.gz
