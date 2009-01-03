@@ -1,0 +1,26 @@
+#!/bin/sh
+
+if [ $# -gt 1 -o "$1" = "-h" -o "$1" = "--help" ]; then
+	echo "Usage: ${0##*/} [ searchdir ]" >&2
+	echo "  - if <searchdir> is specified, repositories are looked for" >&2
+	echo "    from this location, otherwise from current directory." >&2
+	echo "  - output paths will be relative to <searchdir>" >&2
+	echo
+	exit 1
+elif [ $# -eq 1 ]; then
+	if [ ! -d "$1/." ]; then
+		echo "Fatal: $1 is not a valid directory" >&2
+		exit 2
+	fi
+	SEARCH="$1"
+else
+	SEARCH=
+fi
+
+# let's perform the chdir in a subshell, in case we later want to
+# add more features.
+(
+	[ -n "$SEARCH" ] && cd "$SEARCH" ;
+	find * -type d -name '*.git' | sed -e 's,/\?\.git$,,'
+)
+
