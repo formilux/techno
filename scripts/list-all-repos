@@ -1,13 +1,41 @@
 #!/bin/sh
 
-if [ $# -gt 1 -o "$1" = "-h" -o "$1" = "--help" ]; then
-	echo "Usage: ${0##*/} [ searchdir ]" >&2
+PROG="${0##*/}"
+OUTFILE=
+
+usage() {
+	echo "Usage: $PROG [-o <outfile>] [<searchdir>]" >&2
 	echo "  - if <searchdir> is specified, repositories are looked for" >&2
 	echo "    from this location, otherwise from current directory." >&2
 	echo "  - output paths will be relative to <searchdir>" >&2
-	echo
+	echo "  - an output file may be specified with -o instead of stdout." >&2
+	echo "    In this case, it will be atomically written to." >&2
+	echo >&2
 	exit 1
-elif [ $# -eq 1 ]; then
+}
+
+while [ $# -gt 0 ]; do
+	[ -n "$1" -a -z "${1##-*}" ] || break
+
+	if [ "$1" = "-h" ]; then
+		usage
+	elif [ "$1" = "-o" ]; then
+		[ $# -gt 1 ] || usage
+		shift
+		OUTFILE="$1"
+		if [ -e "$OUTFILE" -a ! -f "$OUTFILE" ]; then
+			echo "Fatal: output file $OUTFILE may only be a regular file." >&2
+			exit 2
+		fi
+	else
+		usage
+	fi
+	shift
+done
+
+[ $# -le 1 ] || usage
+
+if [ $# -eq 1 ]; then
 	if [ ! -d "$1/." ]; then
 		echo "Fatal: $1 is not a valid directory" >&2
 		exit 2
@@ -17,10 +45,25 @@ else
 	SEARCH=
 fi
 
-# let's perform the chdir in a subshell, in case we later want to
-# add more features.
+# If an output file is specified, we first play with a temp file that we delete
+# immediately so that if the user stops processing, we don't leave temp files.
+if [ -n "$OUTFILE" ]; then
+	rm -f ".$OUTFILE.$$.tmp"
+	touch ".$OUTFILE.$$.tmp"
+	exec 4>&1 3<".$OUTFILE.$$.tmp" >".$OUTFILE.$$.tmp"
+	rm -f ".$OUTFILE.$$.tmp"
+	# The temp file is still attached to fd #0 and #1.
+fi
+
+# let's perform the chdir in a subshell
 (
 	[ -n "$SEARCH" ] && cd "$SEARCH" ;
 	find * -type d -name '*.git' | sed -e 's,/\?\.git$,,'
 )
 
+if [ -n "$OUTFILE" ]; then
+	# by reading stdin, we read the entire deleted temp file
+	cat <&3 >".$OUTFILE.$$.tmp"
+	exec 3<&- >&4 4>&-
+	mv ".$OUTFILE.$$.tmp" "$OUTFILE"
+fi
