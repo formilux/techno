@@ -98,7 +98,7 @@ fi
 		grep -E -v "${PATTERNS[@]}" <&5
 		exec 5<&-
 	fi
-)
+) | sort
 
 if [ -n "$OUTFILE" ]; then
 	# by reading stdin, we read the entire deleted temp file
