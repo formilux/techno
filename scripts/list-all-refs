@@ -3,9 +3,10 @@
 PROG="${0##*/}"
 INFILE=
 OUTFILE=
+UPDATE=
 
 usage() {
-	echo "Usage: $PROG [-i <infile>] [-o <outfile>] [<searchdir>]" >&2
+	echo "Usage: $PROG [-u] [-i <infile>] [-o <outfile>] [<searchdir>]" >&2
 	echo "  - if <searchdir> is specified, repositories are looked for" >&2
 	echo "    from this location, otherwise from current directory." >&2
 	echo "  - output paths will be relative to <searchdir>" >&2
@@ -13,6 +14,7 @@ usage() {
 	echo "  - an output file may be specified with -o instead of stdout." >&2
 	echo "    In this case, it will be atomically written to." >&2
 	echo "  - an input file may be specified with -i instead of stdin." >&2
+	echo "  - -u just performs an update of <outfile> for input repos." >&2
 	echo >&2
 	exit 1
 }
@@ -22,6 +24,8 @@ while [ $# -gt 0 ]; do
 
 	if [ "$1" = "-h" ]; then
 		usage
+	elif [ "$1" = "-u" ]; then
+		UPDATE=1
 	elif [ "$1" = "-i" ]; then
 		[ $# -gt 1 ] || usage
 		shift
@@ -72,11 +76,28 @@ fi
 
 # let's perform the chdir in a subshell
 (
+	PATTERNS=( )
+
+	if [ -n "$UPDATE" ]; then
+		# for an update, we will need to read the output file at the
+		# end, so let's open it now on fd #5.
+		[ -r "$OUTFILE" ] && exec 5<"$OUTFILE" || exec 5</dev/null
+	fi
+
 	[ -n "$SEARCH" ] && cd "$SEARCH"
 	while read r; do
+		r="${r%/}"
 		[ -d "${r}.git" ] && g="${r}.git" || g="${r}/.git"
+		PATTERNS[${#PATTERNS[*]}]="-e"
+		PATTERNS[${#PATTERNS[*]}]="^${r}\\b"
 		GIT_DIR="$g" git show-ref --heads --tags | sed -e "s,^,${r} ,"
 	done
+	if [ -n "$UPDATE" ]; then
+		# add the contents of previous output file now for the
+		# remaining repositories.
+		grep -E -v "${PATTERNS[@]}" <&5
+		exec 5<&-
+	fi
 )
 
 if [ -n "$OUTFILE" ]; then
