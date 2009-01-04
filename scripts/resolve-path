@@ -1,0 +1,33 @@
+#!/bin/sh
+
+# resolve-path - absolute path resolution  - version 0.0.1 - 2009-01-04
+# This file is part of the Formilux project : http://www.formilux.org/
+#
+# Copyright (C) 2001-2009 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+# Iteratively resolve a complete path name from left to right.
+#  - non-absolute paths are prefixed with the current directory
+#  - multiple slashes and '/./' are turned into single slashes
+#  - careful removal of "/." and "/.." at the begginning
+#  - careful replacement of "/*/.." with "/" in the middle and at the end
+#    once we don't have "/./" anymore
+#  - removal of trailing '/' when not alone
+# This could not be written in pure shell because the shell does not have
+# any operator for replacing a shortest match needed for "/*/../".
+
+resolve_path() {
+	local dir="$1"
+	[ -z "${dir##/*}" ] || dir="${PWD}/${dir}"
+	echo "$dir" | sed -e ':b' \
+	                  -e 's,//,/,g' \
+	                  -e 's,/\.\(/\|$\),/,g;tb' \
+	                  -e 's,^/\.\.\?\(/\|$\),/,;tb' \
+	                  -e 's,/[^/]*/\.\.\(/\|$\),/,;tb' \
+	                  -e 's,\(.\)/$,\1,'
+	return 0
+}
+
+resolve_path "$1"
