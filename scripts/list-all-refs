@@ -67,10 +67,11 @@ fi
 # If an output file is specified, we first play with a temp file that we delete
 # immediately so that if the user stops processing, we don't leave temp files.
 if [ -n "$OUTFILE" ]; then
-	rm -f ".$OUTFILE.$$.tmp"
-	touch ".$OUTFILE.$$.tmp"
-	exec 4>&1 3<".$OUTFILE.$$.tmp" >".$OUTFILE.$$.tmp"
-	rm -f ".$OUTFILE.$$.tmp"
+	OUTTMP="$OUTFILE.$$.tmp"
+	rm -f "$OUTTMP"
+	touch "$OUTTMP"
+	exec 4>&1 3<"$OUTTMP" >"$OUTTMP"
+	rm -f "$OUTTMP"
 	# The temp file is still attached to fd #0 and #1.
 fi
 
@@ -102,9 +103,9 @@ fi
 
 if [ -n "$OUTFILE" ]; then
 	# by reading stdin, we read the entire deleted temp file
-	cat <&3 >".$OUTFILE.$$.tmp"
+	cat <&3 >"$OUTTMP"
 	exec 3<&- >&4 4>&-
-	mv ".$OUTFILE.$$.tmp" "$OUTFILE"
+	mv "$OUTTMP" "$OUTFILE"
 fi
 
 if [ -n "$INFILE" ]; then
