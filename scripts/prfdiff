@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# prfdiff - Formilux PRF comparator - v0.2 - 2006-07-17
+# prfdiff - Formilux PRF comparator - v0.3 - 2009-03-31
 #
-# Copyright (C) 2001-2006 Benoit Dolez & Willy Tarreau
+# Copyright (C) 2001-2009 Benoit Dolez & Willy Tarreau
 #       mailto: benoit@ant-computing.com,willy@ant-computing.com
 #
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
@@ -18,12 +18,22 @@ CMDLINE="$*"
 TMPDIR=${TMPDIR-/tmp}
 TEMP=
 
+# exit with status code $1
+clean_exit() {
+  if [ -n "$TEMP" -a -d "$TEMP/." ]; then
+    rm -f $TEMP/orig $TEMP/dest 2>/dev/null
+    rmdir $TEMP 2>/dev/null
+  fi
+  exit $1
+}
+
+# print "$@" and exit with status code 2.
 die() {
   echo
   echo "### ${MYNAME}: $@"
   echo "Cmdline was $CMDLINE"
   echo
-  exit 1
+  clean_exit 2
 }
 
 usage() {
@@ -38,7 +48,7 @@ usage() {
   echo "  If both <original> and <rebuilt> are directories, all the PRF files from"
   echo "  <original> will be searched in <rebuild>."
   echo
-  exit 1
+  clean_exit 1
 }
 
 
@@ -82,7 +92,7 @@ if [ -d "$orig/." -a -d "$dest/." ]; then
     echo "Checking $p for inconsistencies ..."
     $0 "$orig/$p" "$dest/$p" || ret=1
   done
-  exit $ret
+  clean_exit $ret
 fi
 
 [ -d "$orig/." ] && exec "$0" "$orig/${dest##*/}" "$dest"
@@ -93,11 +103,7 @@ fi
 
 TEMP=$(mkstemp)
 [ $? -gt 0 -o -z "$TEMP" ] && die "Cannot make temp directory in $TMPDIR."
-if ! touch $TEMP/orig $TEMP/dest; then
-  rm -f $TEMP/orig $TEMP/dest
-  rmdir $TEMP
-  die "Cannot create files in temp dir $TEMP."
-fi
+touch $TEMP/orig $TEMP/dest || die "Cannot create files in temp dir $TEMP."
 
 sort -u < $orig > $TEMP/orig
 sort -u < $dest > $TEMP/dest
@@ -154,6 +160,7 @@ done
 
 if [ "$miss1" -gt 0 -o "$miss2" -gt 0 -o "$differ" -gt 0 ]; then
   echo
-  exit 1
+  clean_exit 1
 fi
-exit 0
+clean_exit 0
+
