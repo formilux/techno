@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# build-kernel-list - build a list of kernels - version 0.0.7 - 2008-12-01
+# build-kernel-list - build a list of kernels - version 0.0.8 - 2009-11-12
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
 # Copyright (C) 2001-2006 Benoit Dolez & Willy Tarreau
@@ -66,6 +66,9 @@ PARALLELCC=${PARALLELCC:-3}
 CC=${CC:-gcc}
 HOSTCC=${HOSTCC:-$CC}
 SUDO=${SUDO-sudo}
+PATH=${PATH}:/sbin
+
+export PATH
 
 mkdir -p $OUTPUTDIR || die 1 "Cannot create directory : $OUTPUTDIR"
 
@@ -303,7 +306,7 @@ for cfg in "$@"; do
 
 	    # let's build the signature file
 	    $SUDO find $archdir/ -xdev -not -path $archdir/boot -printf "%P\n" | grep -v '^$' | \
-		sh -c "( cd $archdir && xargs $SUDO flx sign --ignore-dot --no-depth)" \
+		sh -c "( cd $archdir && $SUDO xargs flx sign --ignore-dot --no-depth)" \
 		>$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-$arch.lst
 
 	    # let's build the tar.gz
