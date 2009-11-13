@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# build-kernel-list - build a list of 2.6 kernels - version 0.0.8 - 2009-09-10
+# build-kernel-list - build a list of 2.6 kernels - version 0.0.9 - 2009-11-14
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
-# Copyright (C) 2001-2007 Benoit Dolez & Willy Tarreau
+# Copyright (C) 2001-2009 Benoit Dolez & Willy Tarreau
 #       mailto: benoit@ant-computing.com,willy@ant-computing.com
 #
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
@@ -53,10 +53,12 @@ usage() {
     echo "             config_file..."
     echo
     echo "Output will be sent to \$OUTPUTDIR=$OUTPUTDIR"
-    echo "Using: CC=$CC HOSTCC=$HOSTCC PARALLELCC=$PARALLELCC"
-    echo "       ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE"
+    echo "Using: CROSS_COMPILE=$CROSS_COMPILE"
+    echo "       CC=$CC HOSTCC=$HOSTCC PARALLELCC=$PARALLELCC"
+    echo "       ARCH=$USERARCH DEFAULT_ARCH=$DEFAULT_ARCH"
     echo "Note: this script needs sudo during the install phase."
     echo "Use --suffix to automatically suffix the build version to the EXTRAVERSION."
+    echo "x86_64 is used when the config's arch suffix is x86_64 or name contains smp64."
     echo
     echo "Addons found : ${addons[@]}"
     echo
@@ -68,7 +70,8 @@ PARALLELCC=${PARALLELCC:-6}
 CC=${CC:-gcc}
 HOSTCC=${HOSTCC:-$CC}
 SUDO=${SUDO-sudo}
-ARCH=${ARCH:-i386}
+USERARCH=${ARCH}
+DEFAULT_ARCH=${DEFAULT_ARCH:-i386}
 
 mkdir -p $OUTPUTDIR || die 1 "Cannot create directory : $OUTPUTDIR"
 
@@ -94,7 +97,7 @@ do_rerun=0
 while [ $# -gt 0 ]; do
     case "$1" in
     -a|--arch)
-	ARCH="$2"
+	USERARCH="$2"
 	shift; shift
 	;;
     -h|--help)
@@ -150,6 +153,22 @@ for cfg in "$@"; do
     log="build-$output.log"
     rm -f $log
 
+    if [ -n "$USERARCH" ]; then
+        ARCH="$USERARCH"
+    else
+        if [ -z "$subarch" ]; then
+            if [ -n "$extra" -a -z "${extra##*smp64*}" ]; then
+                ARCH="x86_64"
+            else
+                ARCH="${DEFAULT_ARCH}"
+            fi
+        elif [ -z "${subarch##*x86_64}" ]; then
+	    ARCH="x86_64"
+        else
+            ARCH="${DEFAULT_ARCH}"
+        fi
+    fi
+
     echo
     echo "##### building $output #####"
     echo "DATE=$(date)"
@@ -160,12 +179,13 @@ for cfg in "$@"; do
     echo "EXTRA=$extra"
     echo "DIST=$dist"
     echo "BUILD=$build"
+    echo "ARCH=$ARCH"
     echo "SUBARCH=$subarch"
     echo "LOG=$log"
     echo
 
     if [ -z "$subarch" -o -z "$dist" -o -z "$sub" -o -z "$minor" -o -z "$major" ]; then
-	echo "Error! none of MAJOR, MINOR, SUB, DIST and ARCH can be non empty"
+	echo "Error! none of MAJOR, MINOR, SUB, DIST and ARCH can be empty"
 	continue
     fi
 
