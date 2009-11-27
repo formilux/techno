@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-# scripts/flxrescan - rescans and updates a prf  - version 0.0.4 - 2006-02-25
+# scripts/flxrescan - rescans and updates a prf  - version 0.0.5 - 2009-11-27
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
 # Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
@@ -15,7 +15,7 @@
 # It will make its best to respect them.
 
 function main {
-    local file packages pack pkgsrc
+    local file packages pack pkgsrc size tot_size
     exec 3>&0
     # cette boucle permet de rechercher le package à utiliser pour trouver
     # le fichier si cela est possible
@@ -60,16 +60,21 @@ function main {
             continue
         fi
 
+	size=$((($5 + 1023)/1024))
+	tot_size=$((tot_size+size))
 	pkgsrc=${pkgsrc##*/}
 	pkgsrc=${pkgsrc%.lst}
         if [ $unversionned = 1 ]; then
 	    echo $file $pkgsrc,${pkgsrc%-*},${pkgsrc%-*-*},${pkgsrc%%[._-][0-9]*} >> $TMPDIR/OUTPUT
 	    echo $file $pkgsrc,${pkgsrc%-*},${pkgsrc%-*-*},${pkgsrc%%[._-][0-9]*} >> $LOGFILE
+	    [ -n "$RPTFILE" ] && printf "%7d $file $pkgsrc,${pkgsrc%-*},${pkgsrc%-*-*},${pkgsrc%%[._-][0-9]*}\n" $size >> $RPTFILE
 	else
 	    echo $file $pkgsrc,${pkgsrc%-*},${pkgsrc%-*-*} >> $TMPDIR/OUTPUT
 	    echo $file $pkgsrc,${pkgsrc%-*},${pkgsrc%-*-*} >> $LOGFILE
+	    [ -n "$RPTFILE" ] && printf "%7d $file $pkgsrc,${pkgsrc%-*},${pkgsrc%-*-*}\n" $size >> $RPTFILE
 	fi
     done < $LFILES
+    [ -n "$RPTFILE" ] && printf "%7d kB total size for ${OUTPUT##*/}\n" $tot_size >> $RPTFILE
     echo "." >&2
 }
 
@@ -79,6 +84,7 @@ TMP=$(date +%y%m%d)-$RANDOM
 while [ -e /tmp/pg-$TMP ] ; do TMP=$(date +%y%m%d)-$RANDOM ; done
 TMPDIR=/tmp/pg-$TMP
 PRINTUSAGE=0
+RPTFILE=
 
 # traitement des parametres
 if [ $# -eq 0 ]; then
@@ -103,6 +109,11 @@ while [ $# -gt 0 ] ; do
         -l) # <logfile> fichier de reference pour les associations fichier/package
             [ "$2" ] || PRINTUSAGE=1
             LOGFILE="$2"
+            shift
+            ;;
+        -r) # <rptfile> size reports
+            [ "$2" ] || PRINTUSAGE=1
+            RPTFILE="$2"
             shift
             ;;
         -p) # <pkgdir> repertoire de recherche pour les packages

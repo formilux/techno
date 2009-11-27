@@ -1,7 +1,7 @@
 #!/bin/sh
 
 #
-# build/tools/updt-prf - update a list of prf  - version 0.0.4 - 2006-01-27
+# build/tools/updt-prf - update a list of prf  - version 0.0.5 - 2009-11-27
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
 # Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
@@ -57,7 +57,7 @@ fi
 # we can clear the logs
 if [ ! -d $DIR/rescan.log ]; then
     if ! mkdir $DIR/rescan.log; then
-	echo "Error: cannot create a 'log' directory under '$DIR'."
+	echo "Error: cannot create a 'rescan.log' directory under '$DIR'."
 	exit 1
     fi
 else
@@ -68,7 +68,7 @@ for prf in $DIR/*.prf; do
     file=${prf##*/}
     file=${file%%.prf}
     echo "Rescanning '$file'."
-    flxrescan -i $prf -o $DIR/rescan/$file.prf -l $DIR/rescan.log/$file.log -p $LST
+    flxrescan -i $prf -o $DIR/rescan/$file.prf -l $DIR/rescan.log/$file.log -r $DIR/$file.size -p $LST
     if ! grep -q '^##' $DIR/rescan.log/$file.log; then
     	if ! diff -q $prf $DIR/rescan/$file.prf; then
 	    echo "File $prf has been updated."
@@ -79,6 +79,12 @@ for prf in $DIR/*.prf; do
     fi
 done
 
+grep -hF ' total size for ' $DIR/*.size /dev/null | sort -n | \
+   awk '{ t+=$1; print $0; } END { printf("%7d kB total size for all packages\n",t); }' \
+   > $DIR/total.summary
+
+echo "Total size by package (check total.summary and *.size) :"
+cat $DIR/total.summary
 echo
 echo "The packages have been rescanned. You have to check manually that all"
 echo "files in '$DIR/rescan' are correct by consulting '$DIR/rescan.log',"
