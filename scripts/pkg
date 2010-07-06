@@ -1146,6 +1146,7 @@ function do_patch {
     find . -name '*.rej' -o -name '*~' | xargs rm -f
 
     for i in ${PATCH_LIST}; do
+        echo "[PATCH]    Applying patch ${i##*/}"
 	[ ! -e "$PKGDIR/patches/$i" -a -e "$PKGDIR/patches/$i.gz" ] && i="$i.gz"
 	if [ -z "${i##*.gz}" ]; then
 	    gzip -cd < $PKGDIR/patches/$i | patch -Np$PATCH_LEVEL
@@ -1173,6 +1174,7 @@ function do_unpatch {
     done
 
     for i in ${UNPATCH_LIST[@]}; do
+        echo "[UNPATCH]  Reverting patch ${i##*/}"
 	[ ! -e "$PKGDIR/patches/$i" -a -e "$PKGDIR/patches/$i.gz" ] && i="$i.gz"
 	if [ -z "${i##*.gz}" ]; then
 	    gzip -cd < $PKGDIR/patches/$i | patch -RNp$PATCH_LEVEL
