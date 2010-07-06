@@ -979,6 +979,7 @@ function do_newpkg {
 
 	rm -f ${LINKNAME} && mkdir -p $new_name && ln -s $new_name ${LINKNAME} && \
 	    tar -C $pkg_name  --exclude='./compiled/*' --exclude='./RELEASED*' --exclude='./pkg.*' \
+		--exclude=".svn" \
 		--exclude='./CFLAGS' --exclude='./.dep' --exclude='./.lst' --exclude='./.tgz' \
 		--exclude="./${VERSFILE}" --one-file-system -cpf - . | \
 	    tar -C $new_name -xf - || (rmdir $new_name ; rm -f ${LINKNAME})
