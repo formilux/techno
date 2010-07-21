@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# pkg - Formilux package builder - version 0.9.0 - 2007-11-12
+# pkg - Formilux package builder - version 0.10.0 - 2010-05-17
 #
 # Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
 #       mailto: benoit@ant-computing.com,willy@ant-computing.com
@@ -8,7 +8,7 @@
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
 
 ######## Please update this version ########
-PKG_VERSION=0.9.0
+PKG_VERSION=0.10.0
 ############################################
 
 ## WARNING ##
@@ -26,6 +26,12 @@ PKG_VERSION=0.9.0
 #
 #   pkg setpkg [ new_pkg ]
 #     ex: pkg setpkg openssl-0.9.6g-flx0.1
+#
+#   pkg filesearch [ file ]
+#     ex: pkg filesearch linux.h
+#
+#   pkg search [ package ]
+#     ex: pkg search libc
 #
 #   pkg { info | cat | edit | unpack } [ pkg ] 
 #     ex: pkg info
@@ -533,13 +539,29 @@ function do_build_normal {
         export DISABLE_STATIC=y
     fi
 
-    # ACTION will be inherited by other functions
-    for ACTION in clean compile prepack strip pack ; do
-	declare -f pre_$ACTION > /dev/null && { ( pre_$ACTION $* ) || return $?; }
-	declare -f do_$ACTION > /dev/null && { ( do_$ACTION $* ) || return $?; }
-	declare -f post_$ACTION > /dev/null && { ( post_$ACTION $* ) || return $?; }
-    done
-    return 0
+    ACTION=clean
+    declare -f pre_$ACTION > /dev/null && { ( pre_$ACTION $* ) || return $?; }
+    declare -f do_$ACTION > /dev/null && { ( do_$ACTION $* ) || return $?; }
+    declare -f post_$ACTION > /dev/null && { ( post_$ACTION $* ) || return $?; }
+
+    STEPS=${STEPS:-normal}
+
+    # do the several steps
+    for STEP in "${STEPS[@]}" ; do 
+	DONTCLEAN=1
+        # ACTION will be inherited by other functions
+        for ACTION in clean compile prepack strip; do
+            declare -f pre_$ACTION > /dev/null && { ( pre_$ACTION $* ) || return $?; }
+            declare -f do_$ACTION > /dev/null && { ( do_$ACTION $* ) || return $?; }
+            declare -f post_$ACTION > /dev/null && { ( post_$ACTION $* ) || return $?; }
+        done
+     done
+     ACTION=pack
+     declare -f pre_$ACTION > /dev/null && { ( pre_$ACTION $* ) || return $?; }
+     declare -f do_$ACTION > /dev/null && { ( do_$ACTION $* ) || return $?; }
+     declare -f post_$ACTION > /dev/null && { ( post_$ACTION $* ) || return $?; }
+     unset DONTCLEAN 
+     return 0
 }
 
 function do_build_static {
@@ -1129,7 +1151,9 @@ function build_opt {
 function do_delpack {
     # WARNING! here, we don't use $ROOTDIR because we don't want to risk
     # erasing a wrong directory as root !
-    [ -d "$(pwd)/${INSTNAME}" ] && rm -rf "$(pwd)/${INSTNAME}"
+    if [ -z "$DONTCLEAN" ]; then
+        [ -d "$(pwd)/${INSTNAME}" ] && rm -rf "$(pwd)/${INSTNAME}"
+    fi
     return 0
 }
 
@@ -1529,6 +1553,121 @@ function do_pack {
     return 0
 }
 
+# this function prepares the sys-root 
+function do_prepare {
+	SYSROOTTAR=${SYSROOTTAR:-/x-tools/i386-flx0.1_gcc34_glibc23-linux-gnu/i386-flx0.1_gcc34_glibc23-linux-gnu/sysroot_i386-flx0.1_gcc34_glibc23-linux-gnu.tar.bz2}
+	SYSROOTDIR=${SYSROOTDIR:-/x-tools/i386-flx0.1_gcc34_glibc23-linux-gnu/i386-flx0.1_gcc34_glibc23-linux-gnu/}
+	TARGET="i386-flx0.1_gcc34_glibc23-linux-gnu"
+	echo $SYSROOTTAR
+	echo $SYSROOTDIR
+
+	echo ${FLXTARGARCH}
+
+	rm -rf "${SYSROOTDIR}/sys-root"
+	if [ $? -ne 0 ] ; then
+		echo "Error: Cannot clean sysroot"
+		exit 1
+	fi
+	tar -xjf "${SYSROOTTAR}" -C "${SYSROOTDIR}"
+	if [ $? -ne 0 ] ; then
+		echo "Error: Cannot untar new sysroot"
+		exit 1
+	fi
+
+        # iterate on a depends list :
+        # EXAMPLE :
+        # DEPENDS_LIST = ("package1-flx0.1:*.a *.so" "packagetoto-flx0.2:*")
+	set -o noglob
+
+
+	for i in "${DEPENDS_LIST[@]}"; do 
+		local PACKAGEDEPENDS="${i%%:*}"
+		local EXTRACTFILES="${i##*:}"
+
+		if [ -f "${PKGROOT}/${PACKAGEDEPENDS}/compiled/${PACKAGEDEPENDS}-${FLXTARGARCH}.tgz" ] ; then
+			tar xvfz "${PKGROOT}/${PACKAGEDEPENDS}/compiled/${PACKAGEDEPENDS}-${FLXTARGARCH}.tgz"  \
+			   -C "$SYSROOTDIR/sys-root/" --wildcards ${EXTRACTFILES} 
+		elif [ -f "${DEVROOT}/${PACKAGEDEPENDS}/compiled/${PACKAGEDEPENDS}-${FLXTARGARCH}.tgz" ] ; then
+			tar xvfz "${DEVROOT}/${PACKAGEDEPENDS}/compiled/${PACKAGEDEPENDS}-${FLXTARGARCH}.tgz"  \
+			  -C "$SYSROOTDIR/sys-root/" --wildcards ${EXTRACTFILES}
+		else 
+			echo "Error: Cannot untar package ${PACKAGEDEPENDS}-${FLXTARGARCH}"
+		fi
+	done
+	set +o noglob
+}
+
+
+# search file in packages
+function do_filesearch {
+  echo "searching file '$1' in $PKGROOT..."
+
+  for file in $PKGROOT/*; do
+    basefile=`basename $file`
+    awk -F ' '  '/'"$1"'/ {print "'$basefile':", $1, $8, $9}' $file/.lst 2> /dev/null
+  done
+}
+
+# search packages
+function do_search {
+  echo "searching package '$1' in $PKGROOT..."
+  ls "$PKGROOT" | grep -i "$1"
+}
+
+# get package
+function get_package {
+  case "$2" in
+	svn)
+	  svn checkout "$1" src
+ 	;;
+	git)
+	  git clone "$1" src
+	;;
+	http)
+	  wget "$1"
+	;;
+	ftp)
+	  wget "$1"
+	;;
+	*)
+	  echo "$2 is not a good method of retrieval"
+	  return 1
+	;;
+  esac
+  return $?
+}
+
+
+# get source package
+function do_get {
+  echo "Downloading source package $1..."
+  if [ -z "$ABSOLUTE_PKGSRC" -a -z "$RELATIVE_PKGSRC" ]; then
+    echo "No source package specified ABSOLUTE_PKGSRC or RELATIVE_PKGSRC"
+    return 2
+  fi
+  if [ -z "$REPOSITORY_TYPE" ]; then
+    echo "No REPOSITORY_TYPE"
+    return 1
+  fi 
+  if [ -n "$ABSOLUTE_PKGSRC" ]; then
+    get_package "$ABSOLUTE_PKGSRC" "$REPOSITORY_TYPE"
+    if [ "$?" != "0" ]; then
+      echo "Error on downloading."
+      return 1
+    fi
+    return 0  
+  fi
+  if [ -n "$RELATIVE_PKGSRC" -a -n "$REPOSITORY_PKGSRC" ]; then
+    get_package "$REPOSITORY_PKGSRC/$RELATIVE_PKGSRC" "$REPOSITORY_TYPE"
+    if [ "$?" != "0" ]; then
+      echo "Error on downloading."
+      return 1
+    fi
+  else 
+    echo "REPOSITORY_PKGSRC not defined"
+  fi 
+}
+
 
 # this function prepares all needed variables to work in a cross-compiler environment
 function set_cross_environment {
@@ -1764,6 +1903,8 @@ function usage {
     echo "PKG version $PKG_VERSION - Formilux package build utility."
     echo "Usage:"
     echo "  pkg [-options]* <action> [ pkg [ pkg2 ] ]"
+    echo
+    echo "  pkg prepare [ pkg [ pkg2 ] ]"
     echo
     echo "  pkg newpkg [ new_pkg [ old_pkg ] ]"
     echo "  pkg newpkg [ newpkg ]=[ old_pkg ]"
@@ -2027,7 +2168,7 @@ while [ $# -gt 0 ] ; do
 	    release_only=1
 	    ;;
 	--)
-	    shift
+	   
 	    ARGLIST=(${ARGLIST[*]} $*)
 	    break
 	    ;;
@@ -2059,7 +2200,25 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
     ARGLIST[0]= ; ARGLIST=( ${ARGLIST[*]} )  # gets expanded with shitty bash !
 
     case "$ACTION" in
-	newpkg)
+	prepare)
+	    CHAINCMD=0
+            KNOWNCMD=1
+	    get_name ${ARGLIST[0]} %L %P %D
+            ;;
+	search)
+	    CHAINCMD=0
+            KNOWNCMD=1
+	    ;;
+	filesearch)
+	    CHAINCMD=0
+	    KNOWNCMD=1
+	    ;;
+       	get)
+	    CHAINCMD=0
+	    KNOWNCMD=1
+	    get_name ${ARGLIST[0]} %L %P %D
+	    ;;
+         newpkg)
 	    CHAINCMD=0
 	    KNOWNCMD=1
 	    # newpkg is the only command which doesn't start by a package lookup.
@@ -2131,7 +2290,7 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
     [ $CHAINCMD -gt 0 ] && (echo;echo "===> PKG: starting [$ACTION] <===") >&2
 
     set +o noglob
-    if [ "$ACTION" != "newpkg" ]; then
+    if [ "$ACTION" != "newpkg" -a "$ACTION" != "search" -a "$ACTION" != "filesearch" ]; then
 	if [ -z "$REPLY" ]; then
 	    echo "Error: package name not found."
 	    exit 1
@@ -2160,7 +2319,7 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
     set_cross_environment
     set_compiler_options
 
-    if [ "$ACTION" != "newpkg" ]; then
+    if [ "$ACTION" != "newpkg" -a "$ACTION" != "search" -a "$ACTION" != "filesearch" ]; then
 	. $CFGFILE
     fi
 
@@ -2174,10 +2333,10 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 #    echo "ARGLIST=${ARGLIST[*]}"
 
     if [ $KNOWNCMD -gt 0 ]; then
-	known_cmd ${ARGLIST[*]} || exit 1
+	known_cmd ${ARGLIST[*]} || exit $?
     else
 	if declare -f do_$ACTION >/dev/null; then
-	    ( do_$ACTION ${ARGLIST[*]} ) || exit 1
+	    ( do_$ACTION ${ARGLIST[*]} ) || exit $?
 	fi
     fi
     [ $CHAINCMD -gt 0 ] && (echo "===> PKG:  end of  [$ACTION] <===";echo) >&2
