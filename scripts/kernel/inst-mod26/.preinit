@@ -41,14 +41,16 @@ cp /initrd.image /dev/ram0
 rm /initrd.image
 
 # mount the root device with the ro/rw flags as specified on the cmdline
-mt ${root-/dev/ram0} /root ${rootfstype-squashfs} ${ro+ro} ${rw+rw}
+mt ${root-/dev/ram0} /root ${rootfstype-squashfs3} ${ro+ro} ${rw+rw}
+|mt ${root-/dev/ram0} /root ${rootfstype-squashfs} ${ro+ro} ${rw+rw}
 |mt ${root-/dev/ram0} /root ext3 ${ro+ro} ${rw+rw}
 |mt ${root-/dev/ram0} /root ext2 ${ro+ro} ${rw+rw}
 |mt ${root-/dev/ram0} /root xfs ${ro+ro} ${rw+rw}
-|mt ${root-/dev/ram0} /root reiserfs ${ro+ro} ${rw+rw}
+|mt ${root-/dev/ram0} /root reiserfs ${ro+ro}
 |{
   ec "An error was encountered while trying to mount ${root-/dev/ram0}."
-  rd "Maybe you want to try to mount root manually into /root ?"
+  ec "Maybe you want to try to mount root manually into /root ?"
+  rd "Syntax is: mt /dev/ram0 /root <fstype> [options]"
 }
 
 st /modules.tar
