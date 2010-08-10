@@ -58,10 +58,12 @@ set -o noglob
 umask og-w
 
 # set some constants
+_SUDO=${_SUDO:-/usr/bin/sudo}
 KERNDIR=${KERNDIR:-/usr/src/linux}
 FLXHOSTOS=${FLXHOSTOS:-$(uname -s|tr 'A-Z' 'a-z')}
 FLXHOSTARCH=${FLXHOSTARCH:-$(uname -m)}
-FLXHOST=${FLXHOST:-$FLXHOSTARCH-$FLXHOSTOS}
+FLXHOST=${FLXHOST:-$FLXHOSTARCH-$FLXHO-STOS}
+FLXROOTDIR=${FLXROOTDIR:-/var/toolchains/rootdir}
 
 # FLXTARGARCH can be influenced by FLXARCH if defined
 FLXTARGOS=${FLXTARGOS:-$FLXHOSTOS}
@@ -72,6 +74,8 @@ FLXARCH=${FLXARCH:-$FLXTARGARCH}
 
 DEVROOT=${DEVROOT:-/var/flx-dev}
 PKGROOT=${PKGROOT:-/var/flx-pkg}
+
+
 # use -p1 by default to apply a patch
 PATCH_LEVEL=${PATCH_LEVEL:-1}
 # the suffix that we use to name different builds. It also matches build
@@ -596,6 +600,68 @@ function do_build_shared {
     return 0
 }
 
+
+
+# install package
+#
+# pkg install name [-p path] [-a archi]
+#  ex :
+#  pkg install openssh-4.7p1-flx1.1 -p /var/flx
+#
+
+function do_install {
+
+  if [ "${1:0:1}" != "-" ]; then
+    shift
+  fi
+
+  while getopts "a:p:" OPTION; do
+    case $OPTION in
+        a)
+		INSTALLARCH=$OPTARG
+	;;
+        p)
+		INSTALLPATH=$OPTARG
+	;;
+    esac
+    if [ -z "$OPTARG" ]; then
+      echo "Bad arguments"
+      return 1
+    fi
+  done
+
+
+  FLXARCH=${FLXARCH:-$INSTALLARCH}
+  OLDROOTDIR=$ROOTDIR
+  ROOTDIR=${FLXROOTDIR:-$INSTALLPATH}
+  do_unpack
+  RET=$?
+  ROOTDIR=$OLDROOTDIR
+  return $RET
+}
+
+
+## check dependencies and launch build of dependencies
+function do_deps {
+ local arch
+  for dep in "${MAKEDEPENDS[@]}"; do
+    get_name "${dep%%:*}" 
+    name=$REPLY
+    arch=${dep##*:}
+    FILE=($PKGDIR/compiled/$name-$arch.$PKGSUFF)
+    if [ -z "$FILE" ]; then
+      if [ -n "build_.$name" ]; then
+        ( mkdir -p "build_.${name}"
+	  echo "Package ${name}-$arch not found, preparing tree."
+          cd "build_.${name}"
+          pkg setpkg "${name}"
+          pkg deps ) || return $?
+      fi
+    fi
+  done
+  return 0
+}
+
 function do_build {
     local model models ret oldmod
 
@@ -642,14 +708,14 @@ function do_build {
 #   %V => use the Version file in ${LINKNAME} if it exists
 # If several packages match a given pattern, the user is asked to select the
 # desired one.
-# The resulting package name is returned in REPLY, and the package directoryy
+# The resulting package name is returned in REPLY, and the package directory
 # is returned in PKGDIR whenever possible.
 function get_name {
     local pattern pkg_name
     local radix ver build
     local -a rel_list dev_list sort_list
     local i search_dir
-
+    
     REPLY=
     for pattern in $*; do
 	search_dir=
@@ -658,6 +724,7 @@ function get_name {
 	    pattern="$(basename $CURDIR)"
 	elif [ "$pattern" = "%L" ]; then
 	    if [ -r "${LINKNAME}/${VERSFILE}" -a -s "${LINKNAME}/${VERSFILE}" ]; then
+	        echo "STEP 1"
 		REPLY="$(cat ${LINKNAME}/${VERSFILE})"
 		REPLY="${REPLY##*/}"
 		PKGDIR="$CURDIR/${LINKNAME}/."
@@ -665,7 +732,7 @@ function get_name {
 	    elif [ -L "${LINKNAME}" -a -d "${LINKNAME}/." ]; then
 		# the link is always an EXACT name, so we return it as-is.
 		pattern="$(readlink ${LINKNAME})"
-		PKGDIR="$pattern/."
+	        PKGDIR="$pattern/."
 		REPLY="${pattern##*/}"
 		return
 	    else
@@ -692,11 +759,15 @@ function get_name {
 	    # are still a lot of old ones without this entry. We'll reduce the
 	    # original name until either we have a non-empty list or the package
 	    # name is void.
-	    rel_list=( ); dev_list=( )
+	    rel_list=( ); dev_list=( );
 	    while [ "$pkg_name" -a -z "$rel_list" -a -z "$dev_list" ]; do
 		#rel_list=( $(find ${search_dir:+$search_dir/} $PKGROOT/ -maxdepth 2 -type f -path ${pkg_name}/build.cfg -printf "%h\n" 2>/dev/null) )
 		#rel_list=( ${search_dir:+$CURDIR} $(find $PKGROOT/ -maxdepth 2 -type f -path ${pkg_name}/build.cfg -printf "%h\n" 2>/dev/null) )
 		rel_list=( $(find ${search_dir:+$CURDIR/} $PKGROOT/ -maxdepth 2 -type f -path "*/${pkg_name}/build.cfg" -printf "%h\n" 2>/dev/null | uniq) )
+		for DIR in "${LISTPKGROOT[@]}"; do
+		  rel_list=( $(find ${search_dir:+$CURDIR/} $DIR/ -maxdepth 2 -type f -path "*/${pkg_name}/build.cfg" -printf "%h\n" 2>/dev/null | uniq) "${rel_list[@]}" )
+		done
+
 		if [ "$release_only" != "1" ]; then
 		    dev_list=( $(find $DEVROOT/ -maxdepth 2 -type f -path "*/${pkg_name}/build.cfg" -printf "%h\n" 2>/dev/null) )
 		fi
@@ -726,14 +797,14 @@ function get_name {
 	    # we're prepared to break the big loop, unless someone sets pkg_name again.
 	    pkg_name=
 	    sort_list=( $(sortnames ${dev_list[*]} ${rel_list[*]}) )
-	    
+
 	    # if we matched nothing, we jump to the next pattern, and if we matched
 	    # exactly one result, we return it immediately.
 	    if [ ${#sort_list[*]} -eq 0 ]; then
 		continue
 	    elif [ ${#sort_list[*]} -eq 1 ]; then
 		REPLY="${sort_list[0]}"
-		PKGDIR="${REPLY/*}"
+		PKGDIR="$REPLY"
 		REPLY="${REPLY##*/}"
 		return
 	    fi
@@ -1067,6 +1138,15 @@ function pre_info {
     else
 	echo "does not exist yet."
     fi
+    if [ -n "${MAKEDEPENDS}" ]; then
+      echo "   Build dependencies: (\$MAKEDEPENDS): "
+      for DEP in "${MAKEDEPENDS[@]}"; do
+        echo "     $DEP" 
+      done
+    else
+      echo "   No build dependencies."
+    fi
+
     if [ -n "${PATCH_LIST}" ]; then
 	echo "   Patches list : ${PATCH_LIST}"
     else
@@ -1219,11 +1299,17 @@ function do_unpack {
     local FILE=$PKGDIR/compiled/${EXACTPKG##*/}-$FLXARCH.$PKGSUFF
     mkdir -p $ROOTDIR
     cd $ROOTDIR
-
-    echo -n "Extracting $FILE into $ROOTDIR ... "
-    tar zUxpf $FILE >/dev/null 2>&1
-    echo "done."
-    return 0
+    if [ ! -f $FILE ]; then
+      echo "No such file or directory $FILE"
+      return 1
+    fi
+    echo "Extracting ${FILE##*/} into $ROOTDIR ..."
+    tar zUxpf $FILE 2>&1
+    RET=$?
+    if [ $RET -eq 0 ]; then
+      echo "done."
+    fi
+    return $RET
 }
 
 # strips symbols from executables before building the package.
@@ -1555,48 +1641,61 @@ function do_pack {
 
 # this function prepares the sys-root 
 function do_prepare {
-	SYSROOTTAR=${SYSROOTTAR:-/x-tools/i386-flx0.1_gcc34_glibc23-linux-gnu/i386-flx0.1_gcc34_glibc23-linux-gnu/sysroot_i386-flx0.1_gcc34_glibc23-linux-gnu.tar.bz2}
-	SYSROOTDIR=${SYSROOTDIR:-/x-tools/i386-flx0.1_gcc34_glibc23-linux-gnu/i386-flx0.1_gcc34_glibc23-linux-gnu/}
-	TARGET="i386-flx0.1_gcc34_glibc23-linux-gnu"
-	echo $SYSROOTTAR
-	echo $SYSROOTDIR
+#
+#	rm -rf "${FLXROOTDIR}"
+#	if [ $? -ne 0 ] ; then
+#		echo "Error: Cannot clean sysroot"
+#		exit 1
+#	fi
+#	tar -xjf "${SYSROOTTAR}" -C "${FLXROOTDIR}"
+#	if [ $? -ne 0 ] ; then
+#		echo "Error: Cannot untar new sysroot"
+#		exit 1
+#	fi
 
-	echo ${FLXTARGARCH}
-
-	rm -rf "${SYSROOTDIR}/sys-root"
-	if [ $? -ne 0 ] ; then
-		echo "Error: Cannot clean sysroot"
-		exit 1
+ # iterate on a depends list :
+ # EXAMPLE :
+ # MAKEDEPENDS=( 'tplparser-0local-flx0.0:*.h *.a:i?86'
+ #   	         'mo-0local-flx0.0:*.h *.a:i?86' )
+ RET=0
+  set -o noglob
+    for depend in "${MAKEDEPENDS[@]}"; do 
+      local oldifs=$IFS
+      IFS=:
+      set -- $depend
+      depend=( "$@" )
+      IFS=$oldifs
+      get_name ${depend[0]} %P
+      if [ -n "$REPLY" ]; then
+        set +o noglob
+        FILE=($PKGDIR/compiled/${depend[0]}-${depend[2]}.$PKGSUFF)
+        if [ -z "$FILE" ]; then
+	  RET=$(($RET|1))
+          echo "${depend[0]}-${depend[2]}.$PKGSUFF Not found !"
+        else
+	  set -o noglob 
+	  wildcards="${depend[1]}"
+	  set -- $wildcards
+	  wildcards=( "$@" )
+	  wildcards_=
+	  for dep in "${wildcards[@]}"; do
+		wildcards_="$wildcards_ '$dep'" 
+	  done
+	  set +o noglob
+      	    echo "Untar ${depend[1]} from ${FILE##*/}"
+	    tar xfz $FILE  \
+	        -C "$FLXROOTDIR/" --wildcards $wildcards_ || return $?
 	fi
-	tar -xjf "${SYSROOTTAR}" -C "${SYSROOTDIR}"
-	if [ $? -ne 0 ] ; then
-		echo "Error: Cannot untar new sysroot"
-		exit 1
-	fi
 
-        # iterate on a depends list :
-        # EXAMPLE :
-        # DEPENDS_LIST = ("package1-flx0.1:*.a *.so" "packagetoto-flx0.2:*")
-	set -o noglob
-
-
-	for i in "${DEPENDS_LIST[@]}"; do 
-		local PACKAGEDEPENDS="${i%%:*}"
-		local EXTRACTFILES="${i##*:}"
-
-		if [ -f "${PKGROOT}/${PACKAGEDEPENDS}/compiled/${PACKAGEDEPENDS}-${FLXTARGARCH}.tgz" ] ; then
-			tar xvfz "${PKGROOT}/${PACKAGEDEPENDS}/compiled/${PACKAGEDEPENDS}-${FLXTARGARCH}.tgz"  \
-			   -C "$SYSROOTDIR/sys-root/" --wildcards ${EXTRACTFILES} 
-		elif [ -f "${DEVROOT}/${PACKAGEDEPENDS}/compiled/${PACKAGEDEPENDS}-${FLXTARGARCH}.tgz" ] ; then
-			tar xvfz "${DEVROOT}/${PACKAGEDEPENDS}/compiled/${PACKAGEDEPENDS}-${FLXTARGARCH}.tgz"  \
-			  -C "$SYSROOTDIR/sys-root/" --wildcards ${EXTRACTFILES}
-		else 
-			echo "Error: Cannot untar package ${PACKAGEDEPENDS}-${FLXTARGARCH}"
-		fi
-	done
-	set +o noglob
+        set -o noglob
+      else
+        RET=$(($RET|1))
+        echo "Package not found ${depend[0]}"
+      fi
+    done
+  set +o noglob
+  return $RET
 }
-
 
 # search file in packages
 function do_filesearch {
@@ -1618,7 +1717,11 @@ function do_search {
 function get_package {
   case "$2" in
 	svn)
-	  svn checkout "$1" src
+	  if [ -e ".flxpkg" ]; then
+	    svn checkout "$1" .
+	  else
+	    svn checkout "$1" "$3" 
+	  fi
  	;;
 	git)
 	  git clone "$1" src
@@ -1639,8 +1742,10 @@ function get_package {
 
 
 # get source package
-function do_get {
-  echo "Downloading source package $1..."
+function do_source {
+ echo "Re-using package ${REPLY}"
+
+  echo "Downloading source package ${REPLY}..."
   if [ -z "$ABSOLUTE_PKGSRC" -a -z "$RELATIVE_PKGSRC" ]; then
     echo "No source package specified ABSOLUTE_PKGSRC or RELATIVE_PKGSRC"
     return 2
@@ -1650,7 +1755,7 @@ function do_get {
     return 1
   fi 
   if [ -n "$ABSOLUTE_PKGSRC" ]; then
-    get_package "$ABSOLUTE_PKGSRC" "$REPOSITORY_TYPE"
+    get_package "$ABSOLUTE_PKGSRC" "$REPOSITORY_TYPE" "$1"
     if [ "$?" != "0" ]; then
       echo "Error on downloading."
       return 1
@@ -1658,7 +1763,7 @@ function do_get {
     return 0  
   fi
   if [ -n "$RELATIVE_PKGSRC" -a -n "$REPOSITORY_PKGSRC" ]; then
-    get_package "$REPOSITORY_PKGSRC/$RELATIVE_PKGSRC" "$REPOSITORY_TYPE"
+    get_package "$REPOSITORY_PKGSRC/$RELATIVE_PKGSRC" "$REPOSITORY_TYPE" "$1"
     if [ "$?" != "0" ]; then
       echo "Error on downloading."
       return 1
@@ -2128,9 +2233,9 @@ function install-ln {
 ######
 
 function known_cmd {
-    declare -f pre_$ACTION > /dev/null && { ( pre_$ACTION $* ) || return $?; }
-    declare -f do_$ACTION > /dev/null && { ( do_$ACTION $* ) || return $?; }
-    declare -f post_$ACTION > /dev/null && { ( post_$ACTION $* ) || return $?; }
+    declare -f pre_$ACTION > /dev/null && { ( pre_$ACTION "$@" ) || return $?; }
+    declare -f do_$ACTION > /dev/null && { ( do_$ACTION "$@" ) || return $?; }
+    declare -f post_$ACTION > /dev/null && { ( post_$ACTION "$@" ) || return $?; }
     return 0
 }
 
@@ -2138,6 +2243,7 @@ function known_cmd {
 ######
 ###### here is the main entry point
 ######
+
 
 # scan the command line
 
@@ -2172,12 +2278,15 @@ while [ $# -gt 0 ] ; do
 	    ARGLIST=(${ARGLIST[*]} $*)
 	    break
 	    ;;
-	-* )
-	    PRINTUSAGE=1
-	    ;;
 	*)
-	    ARGLIST=(${ARGLIST[*]} "$1")
+	    if [ ${1:0:1} == '-' -a -z "${ARGLIST[*]}" ]; then  # allows usage of getopts
+	      PRINTUSAGE=1
+	      break
+	    else
+	      ARGLIST=(${ARGLIST[*]} "$1")
+	    fi
 	    ;;
+
     esac
     shift
 done
@@ -2197,14 +2306,26 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
     ACTION=${ARGLIST[0]}
     TESTGCC=0
     #    unset ARGLIST[0]  ### doesn't work in scripts with this shitty bash !!!
-    ARGLIST[0]= ; ARGLIST=( ${ARGLIST[*]} )  # gets expanded with shitty bash !
+    set -- "${ARGLIST[@]}"
+    shift
+    ARGLIST=( "$@" )
 
     case "$ACTION" in
 	prepare)
+	   CHAINCMD=0
+           KNOWNCMD=1
+	   get_name ${ARGLIST[0]} %L %P %D
+           ;;
+	deps)
+	   CHAINCMD=0
+	   KNOWNCMD=1
+	   get_name ${ARGLIST[0]} %L %P 
+	   ;;
+	install)
 	    CHAINCMD=0
-            KNOWNCMD=1
-	    get_name ${ARGLIST[0]} %L %P %D
-            ;;
+	    KNOWNCMD=1
+	    get_name ${ARGLIST[0]} %L %P
+	    ;;
 	search)
 	    CHAINCMD=0
             KNOWNCMD=1
@@ -2213,12 +2334,12 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 	    CHAINCMD=0
 	    KNOWNCMD=1
 	    ;;
-       	get)
+       	source)
 	    CHAINCMD=0
 	    KNOWNCMD=1
-	    get_name ${ARGLIST[0]} %L %P %D
+	    get_name ${ARGLIST[0]} %L %P 
 	    ;;
-         newpkg)
+        newpkg)
 	    CHAINCMD=0
 	    KNOWNCMD=1
 	    # newpkg is the only command which doesn't start by a package lookup.
@@ -2328,15 +2449,15 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
     FLXPMAKE="${FLXPMAKE:-$FLXMAKE}"
 
     export DISTVER PKGRADIX PKGVER FLXMAKE FLXPMAKE PATCH_LIST FILE_LIST
-
+ 
 #    echo "ACTION=$ACTION, KNOWNCMD=$KNOWNCMD, CHAINCMD=$CHAINCMD"
 #    echo "ARGLIST=${ARGLIST[*]}"
 
     if [ $KNOWNCMD -gt 0 ]; then
-	known_cmd ${ARGLIST[*]} || exit $?
+	known_cmd "${ARGLIST[@]}" || exit $?
     else
 	if declare -f do_$ACTION >/dev/null; then
-	    ( do_$ACTION ${ARGLIST[*]} ) || exit $?
+	    ( do_$ACTION "${ARGLIST[@]}" ) || exit $?
 	fi
     fi
     [ $CHAINCMD -gt 0 ] && (echo "===> PKG:  end of  [$ACTION] <===";echo) >&2
