@@ -12,6 +12,9 @@
 MYNAME="${0##*/}"
 CMDLINE="$*"
 
+# variables below are inherited from the caller
+_MKSQUASHFS=${_MKSQUASHFS:-mksquashfs}
+
 # usage: displays script usage and returns no error.
 function usage {
   echo "MKSP-SQFS - package a root dir as a squashfs - version 0.0.3 - 2007-02-13"
@@ -271,7 +274,7 @@ for dir in "${SYMLINKS[@]}"; do
   ln -s "$dst" "$OUT_DIR/temp/root/$src"
 done
 
-mksquashfs $OUT_DIR/temp/root $OUT_DIR/fs/initrd.img -2.0 -noappend || die "mksquashfs returned an error."
+${_MKSQUASHFS} $OUT_DIR/temp/root $OUT_DIR/fs/initrd.img -2.0 -noappend || die "mksquashfs returned an error."
 
 # Now we'll possibly rename the kernel if it is alone
 if [ "$VERSIONNED_KERNEL" != 1 ]; then
