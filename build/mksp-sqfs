@@ -1,10 +1,10 @@
 #!/bin/bash
 
 #
-# mksp-sqfs - make a squashfs from a raw FS - version 0.0.3 - 2007-02-13
+# mksp-sqfs - make a squashfs from a raw FS - version 0.0.4 - 2010-08-27
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
-# Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
+# Copyright (C) 2001-2010 Benoit Dolez & Willy Tarreau
 #       mailto: benoit@ant-computing.com,willy@ant-computing.com
 #
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
@@ -17,7 +17,7 @@ _MKSQUASHFS=${_MKSQUASHFS:-mksquashfs}
 
 # usage: displays script usage and returns no error.
 function usage {
-  echo "MKSP-SQFS - package a root dir as a squashfs - version 0.0.3 - 2007-02-13"
+  echo "MKSP-SQFS - package a root dir as a squashfs - version 0.0.4 - 2010-08-27"
   echo "Usage: ${myname##*/} -o <target_dir> { -i <in_dir> | -c } [ -d ] [ -ve ]"
   echo "       [ -b build_ver] [ -k kern_ver ]* [ -s size_max ] [ -kv ] [ -md dir ]*"
   echo "       [ -rm file|dir ]* [ -ln src:dst ]*"
@@ -249,6 +249,10 @@ for kdir in $IN_DIR/boot/[1-9]*; do
     fi
   fi
 done
+
+# create at least the /boot directory if no kernel module was copied above
+# (eg: this happens with 2.6 kernels using embedded modules).
+mkdir -p $OUT_DIR/temp/root/boot
 
 echo;echo "+++ Building initrd +++";echo
 
