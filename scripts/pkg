@@ -63,7 +63,7 @@ _SUDO=${_SUDO:-/usr/bin/sudo}
 KERNDIR=${KERNDIR:-/usr/src/linux}
 FLXHOSTOS=${FLXHOSTOS:-$(uname -s|tr 'A-Z' 'a-z')}
 FLXHOSTARCH=${FLXHOSTARCH:-$(uname -m)}
-FLXHOST=${FLXHOST:-$FLXHOSTARCH-$FLXHO-STOS}
+FLXHOST=${FLXHOST:-$FLXHOSTARCH-$FLXHOSTOS}
 FLXROOTDIR=${FLXROOTDIR:-/var/toolchains/rootdir}
 
 # FLXTARGARCH can be influenced by FLXARCH if defined
@@ -155,6 +155,13 @@ function check_pkg_version {
 }
 
 
+function do_filefind {
+  pkgfilefind "$1"
+  return 0
+
+}
+
+
 # find packageable files (that can't be automaticaly created) and return only
 # their relative path to the argument.
 
@@ -167,7 +174,7 @@ function pkgfilefind {
         exclude_args=( "${exclude_args[@]}" -and -not -path "${start}/${dir}" )
     done
 
-   find ${start} -not -path ${start} \( -empty -o \! -type d -o \! -uid 0 -o \! -gid 0 -o \! -perm 0755 \) "${exclude_args[@]}" -printf "%P\n"
+   find ${start} \( -name '.svn' -prune \) -or -not -path ${start} \( -empty -o \! -type d -o \! -uid 0 -o \! -gid 0 -o \! -perm 0755 \) "${exclude_args[@]}" -printf "%P\n" 
 }
 
 
@@ -1352,6 +1359,7 @@ function do_unpatch {
     find . -name '*.rej' -o -name '*~' | xargs rm -f
 
     for i in ${PATCH_LIST}; do
+        echo "[UNPATCH]  Reverting patch ${i##*/}"
 	UNPATCH_LIST=( $i ${UNPATCH_LIST[@]} )
     done
 
@@ -1716,20 +1724,24 @@ function do_pack {
     return 0
 }
 
-# this function prepares the sys-root 
+# this function extract the sys-root and dependencies into it
 function do_prepare {
-#
-#	rm -rf "${FLXROOTDIR}"
-#	if [ $? -ne 0 ] ; then
-#		echo "Error: Cannot clean sysroot"
-#		exit 1
-#	fi
-#	tar -xjf "${SYSROOTTAR}" -C "${FLXROOTDIR}"
-#	if [ $? -ne 0 ] ; then
-#		echo "Error: Cannot untar new sysroot"
-#		exit 1
-#	fi
-
+  SYSROOTTAR=/x-tools/i386-flx0.1_gcc34_glibc23-linux-gnu/i386-flx0.1_gcc34_glibc23-linux-gnu/sysroot_i386-flx0.1_gcc34_glibc23-linux-gnu.tar.bz2
+  if [ -n "$CLEANSYSROOT" ]; then
+        echo "* Cleaning sysroot"
+	rm -rf "${FLXROOTDIR}"
+	if [ $? -ne 0 ] ; then
+		echo "Error: Cannot clean sysroot"
+		exit 1
+	fi
+	echo "* Extracting sysroot"
+	mkdir -p "${FLXROOTDIR}"
+	tar -xjf "${SYSROOTTAR}" -C "${FLXROOTDIR}/../"
+	if [ $? -ne 0 ] ; then
+		echo "Error: Cannot untar new sysroot"
+		exit 1
+	fi
+  fi
  # iterate on a depends list :
  # EXAMPLE :
  # MAKEDEPENDS=( 'tplparser-0local-flx0.0:*.h *.a:i?86'
@@ -1754,16 +1766,11 @@ function do_prepare {
 	  wildcards="${depend[1]}"
 	  set -- $wildcards
 	  wildcards=( "$@" )
-	  wildcards_=
-	  for dep in "${wildcards[@]}"; do
-		wildcards_="$wildcards_ '$dep'" 
-	  done
 	  set +o noglob
       	    echo "Untar ${depend[1]} from ${FILE##*/}"
 	    tar xfz $FILE  \
-	        -C "$FLXROOTDIR/" --wildcards $wildcards_ || return $?
+	        -C "$FLXROOTDIR/" --wildcards "${wildcards[@]}" || return $?
 	fi
-
         set -o noglob
       else
         RET=$(($RET|1))
@@ -2269,61 +2276,6 @@ function do_release {
     return 0
 }
 
-# usage: install-files <owner> <perm> <dest> file...
-#
-function install-files {
-  local owner="$1" ; shift
-  local perm="$1" ; shift
-  local dst="$1" ; shift
-  local file
-
-  [ -n "${dst##*/*}" -o -d "$ROOTDIR/${dst%/*}" ] || mkdir -p "$ROOTDIR/${dst%/*}"
-  cp -dpfP "$@" "$ROOTDIR/$dst/" && \
-    ( cd "$ROOTDIR/$dst" && chown -h $owner "${@##*/}" && chmod $perm "${@##*/}" )
-
-  [ -n "$FILE_LIST" ] && for file in "$@"; do echo "$dst/$file $owner $perm"; done  >> $FILE_LIST
-}
-
-# usage: install-file <owner> <perm> <file> <dest>
-#
-function install-file {
-  local owner="$1" ; shift
-  local perm="$1" ; shift
-  local src="$1" ; shift
-  local dst="$1" ; shift
-
-  [ -n "${dst##*/*}" -o -d "$ROOTDIR/${dst%/*}" ] || mkdir -p "$ROOTDIR/${dst%/*}"
-  if cp -dpfP "$src" "$ROOTDIR/$dst" && chown -h $owner "$ROOTDIR/$dst" \
-    && [ ! -L "$ROOTDIR/$dst" ]; then chmod $perm "$ROOTDIR/$dst"; fi
-
-  [ -n "$FILE_LIST" ] && echo $dst $owner $perm >> $FILE_LIST
-}
-
-# usage: install-dir <owner> <perm> <dir>...
-#
-function install-dir {
-  local owner="$1" ; shift
-  local perm="$1" ; shift
-  local dst
-
-  for dst in "$@"; do
-    mkdir -pm $perm "$ROOTDIR/$dst" && chown -h $owner "$ROOTDIR/$dst"
-    [ -n "$FILE_LIST" ] && echo $dst $owner $perm >> $FILE_LIST
-  done
-}
-
-# usage: install-ln <owner> <target> <dest>
-#
-function install-ln {
-  local owner="$1" ; shift
-  local target="$1" ; shift
-  local dst="$1" ; shift
-
-  [ -n "${dst##*/*}" -o -d "$ROOTDIR/${dst%/*}" ] || mkdir -p "$ROOTDIR/${dst%/*}"
-  ln -s "$target" "$ROOTDIR/$dst" && chown -h $owner "$ROOTDIR/$dst"
-  [ -n "$FILE_LIST" ] && echo $dst $owner 000 >> $FILE_LIST
-}
-
 
 ######
 ###### here are some functions used only from main
@@ -2446,6 +2398,10 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 	    KNOWNCMD=1
 	    get_name $1 %P default
 	    ;;
+	do_findfile)
+	    KNOWNCMD=1
+	    pkgfilefind $1
+	    ;;
 	info|edit|cat|unpack|changelog)
 	    CHAINCMD=0
 	    KNOWNCMD=1
@@ -2508,7 +2464,7 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
     [ $CHAINCMD -gt 0 ] && (echo;echo "===> PKG: starting [$ACTION] <===") >&2
 
     set +o noglob
-    if [ "$ACTION" != "newpkg" -a "$ACTION" != "install" -a "$ACTION" != "search" -a "$ACTION" != "filesearch" ]; then
+    if [ "$ACTION" != "newpkg" -a "$ACTION" != "install" -a "$ACTION" != "search" -a "$ACTION" != "filesearch" -a "$ACTION" != "filefind" ]; then
 	if [ -z "$REPLY" ]; then
 	    echo "Error: package name not found."
 	    exit 1
@@ -2537,7 +2493,7 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
     set_cross_environment
     set_compiler_options
 
-    if [ "$ACTION" != "newpkg" -a "$ACTION" != "install" -a "$ACTION" != "search" -a "$ACTION" != "filesearch" ]; then
+    if [ "$ACTION" != "newpkg" -a "$ACTION" != "install" -a "$ACTION" != "search" -a "$ACTION" != "filesearch" -a "$ACTION" != "filefind" ]; then
 	. $CFGFILE
     fi
 
