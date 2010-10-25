@@ -1,4 +1,4 @@
-#!/bin/bash
+#/bin/bash
 
 # pkg - Formilux package builder - version 0.10.0 - 2010-05-17
 #
@@ -76,6 +76,10 @@ FLXARCH=${FLXARCH:-$FLXTARGARCH}
 DEVROOT=${DEVROOT:-/var/flx-dev}
 PKGROOT=${PKGROOT:-/var/flx-pkg}
 
+PKG_EXACTPKG=${PKG_EXACTPKG:-0}
+PKG_NOCHOICE=${PKG_NOCHOICE:-0}
+
+_PKG=$0
 
 # use -p1 by default to apply a patch
 PATCH_LEVEL=${PATCH_LEVEL:-1}
@@ -83,6 +87,7 @@ PATCH_LEVEL=${PATCH_LEVEL:-1}
 # versions with this name followed by a number (BUILDVER)
 BUILDSFX=${BUILDSFX:-flx}
 BUILDVER=${BUILDVER:-0}
+VERSFX=${VERSFX:-}
 
 # supported build models are "normal", "static", "shared"
 BUILDMODELS=( "${BUILDMODELS[@]}" )
@@ -160,7 +165,6 @@ function do_filefind {
   return 0
 
 }
-
 
 # find packageable files (that can't be automaticaly created) and return only
 # their relative path to the argument.
@@ -713,29 +717,69 @@ function do_install {
   return $RET
 }
 
-
-## check dependencies and launch build of dependencies
+# print dependencies 
+#
+#  MAKEDEPENDS format :
+#  'packagename:versfx:architecture:globbing'
+#
+#  example :
+#  'tplparser-0local-flx0.0:albdev:i586:*.a *.h'
+#
+# PKG_ONLYUNBUILDDEPS
 function do_deps {
- local arch
-  curpkg=$REPLY
-  for dep in "${MAKEDEPENDS[@]}"; do
-    get_name "${dep%%:*}" 
-    name=$REPLY
-    arch=${dep##*:}
+  CURPKG=$PKGDIR
+  CURPKGNAME=$REPLY
+  if [ -z "$REPLY" ]; then
+    echo "ERROR:$1"
+    return 1
+  fi
+  PKGRADIX="$(get_pkg_radix ${CURPKGNAME})"
+  PKGVER="$(get_pkg_ver ${CURPKGNAME})"
+  DISTVER="$(get_build_num ${CURPKGNAME})"
+  TARBALL=($PKGDIR/compiled/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH.$PKGSUFF)
+  if [ -n "$TARBALL" -a -f "$TARBALL" ]; then
+    if [ "$PKG_ONLYUNBUILDDEPS" == "1" ]; then
+    # don't search dependencies if tarball exists.
+      return 0
+    fi
+  fi
+  set -o noglob
+  for MAKEDEPEND in "${MAKEDEPENDS[@]}"; do
+    local OLDIFS=$IFS
+    IFS=":"
+    set -- $MAKEDEPEND
+    IFS=$OLDIFS
+    local PACKAGENAME VERSFX ARCH GLOBTAR
+    PACKAGENAME=$1
+    VERSFX=$2
+    GLOBARCH=$3
+    GLOBTAR=$4
     if [ -z "$PKGDIR" ]; then
-      echo "Can't find dependencies ${dep%%:*}"
+      echo "ERROR:${PACKAGENAME}"
       return 1
     fi
-    FILE=($PKGDIR/compiled/$name-$arch.$PKGSUFF)
-    if [ -z "$FILE" ]; then
-      DEPS=$($0 deps $name)|| exit $?
-      local OLDIFS=$IFS
-      IFS=' '
-      while read line; do echo "$PKGDIR|$arch:$line" ; done <<< $DEPS
-      IFS=$OLDIFS
-    fi
+    # fork for children
+    DEPS=$($_PKG deps $PACKAGENAME) 
+    local OLDIFS=$IFS
+    IFS=" "
+    # read lines of fork
+    while read line; do
+      if [ -n "$line" ]; then
+	if [ "$line" == "Error: package name not found." ]; then
+	  echo "ERROR:$CURPKGNAME|$PACKAGENAME"
+	  return 1
+	elif [ "${line%:*}" == "ERROR" ]; then
+	  echo "$line<-$CURPKGNAME"
+	else
+	  line=${line:+|$line}
+          echo "$CURPKG:$VERSFX:$ARCH$line"
+	fi
+      fi
+    done <<< $DEPS
   done
-  return 0
+  IFS=$OLDIFS
+  echo "$CURPKG:$VERSFX:$FLXARCH"
+  set +o noglob
 }
 
 function do_build {
@@ -787,8 +831,8 @@ function do_build {
 # The resulting package name is returned in REPLY, and the package directory
 # is returned in PKGDIR whenever possible.
 #
-# The environnement variable PKG_NOCHOICE exit pkg if there isn't exact match
-#
+# The environnement variable PKG_NOCHOICE=1 exit pkg if there are multiples matches
+#                            PKG_EXACTPKG=1 select only the exact mactch
 
 function get_name {
     local pattern pkg_name
@@ -840,30 +884,27 @@ function get_name {
 	    # name is void.
 	    rel_list=( ); dev_list=( );
 	    while [ "$pkg_name" -a -z "$rel_list" -a -z "$dev_list" ]; do
-		#rel_list=( $(find ${search_dir:+$search_dir/} $PKGROOT/ -maxdepth 2 -type f -path ${pkg_name}/build.cfg -printf "%h\n" 2>/dev/null) )
-		#rel_list=( ${search_dir:+$CURDIR} $(find $PKGROOT/ -maxdepth 2 -type f -path ${pkg_name}/build.cfg -printf "%h\n" 2>/dev/null) )
 		rel_list=( $(find ${search_dir:+$CURDIR/} $PKGROOT/ ${LISTPKGROOT[*]} -maxdepth 2 -type f -path "*/${pkg_name}/build.cfg" -printf "%h\n" 2>/dev/null | uniq) )
-#		for DIR in ${LISTPKGROOT[@]}; do
-#			echo $DIR
-#		  rel_list=( $(find ${search_dir:+$CURDIR/} $DIR/ -maxdepth 2 -type f -path "*/${pkg_name}/build.cfg" -printf "%h\n" 2>/dev/null | uniq) "${rel_list[@]}" )
-#		done
 
 		if [ "$release_only" != "1" ]; then
 		    dev_list=( $(find $DEVROOT/ -maxdepth 2 -type f -path "*/${pkg_name}/build.cfg" -printf "%h\n" 2>/dev/null) )
 		fi
-		
+	
+		if [ "$PKG_EXACTPKG" == "1" ]; then
+		  break;
+		fi
+
 		if [ -z "${rel_list[*]}" -a -z "${dev_list[*]}" ]; then
 		    radix=$(get_pkg_radix $pkg_name)
 		    ver=$(get_pkg_ver $pkg_name)
 		    build=$(get_build_num $pkg_name)
-		    
 		    if [ "$ver" -a "$ver" != "*" -a "$radix" != "$pkg_name" ]; then
 			if [ "$build" -a "$build" != "*" ]; then
 			    pkg_name=${radix}-${ver}-*
 			elif [ "${ver%.*}" != "$ver" ]; then
 			    # let's reduce the version precision
-			    pkg_name=${radix}-${ver%.*}-*
-			else
+			      pkg_name=${radix}-${ver%.*}-*
+			else 
 			    pkg_name=${radix}-*
 			fi
 		    else
@@ -890,7 +931,7 @@ function get_name {
 	    fi
 
 	    # now, we'll present the possible names to the user.
-	    if [ -n "$PKG_NOCHOICE" ]; then
+	    if [ "$PKG_NOCHOICE" -eq 1 ]; then
 #	      echo "Can't find exact package $pattern" >&2
 	      return 1
 	    fi
@@ -1188,11 +1229,9 @@ function do_edit {
 function do_cat {
     cat $CFGFILE
 }
-
 function do_lst {
     local FPNAME
-
-    FPNAME=$PKGDIR/compiled/${EXACTPKG##*/}-$FLXARCH
+    FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
     cat $FPNAME.lst
 }
 
@@ -1323,8 +1362,8 @@ function do_delpack {
 
 # does a full clean
 function do_clean {
-    make distclean || make mrproper || make clean
     ( do_delpack )
+    make distclean || make mrproper || make clean
     return 0
 }
 
@@ -1332,6 +1371,9 @@ function do_clean {
 # files which match *.rej and *~ will be deleted
 function do_patch {
     local i
+    if [ -f .patched ]; then
+      echo "Error: Already patched."
+    fi
     find . -name '*.rej' -o -name '*~' | xargs rm -f
 
     for i in ${PATCH_LIST}; do
@@ -1347,6 +1389,7 @@ function do_patch {
     if [ -z "$(find . -name '*.rej')" ]; then
 	find . -name '*~' | xargs rm -f
     fi
+    touch .patched
     return 0
 }
 
@@ -1376,6 +1419,7 @@ function do_unpatch {
     if [ -z "$(find . -name '*.rej')" ]; then
 	find . -name '*~' | xargs rm -f
     fi
+    rm -f .patched
     return 0
 }
 
@@ -1406,7 +1450,7 @@ function do_strip {
     fi
     #find $ROOTDIR/. -type f | xargs file | grep ":.*executable.*not stripped" | cut -f1 -d: | xargs ${STRIP} -x --strip-unneeded -R .note -R .comment > /dev/null 2>&1 
     # allow executable and shared (.so), but not relocatable (.o), both stripped or not stripped
-    find $ROOTDIR/. -type f -print0 | xargs -0 file | grep ":.*ELF.*\(executable\|\shared\).*stripped" | cut -f1 -d: | xargs ${STRIP} -x --strip-unneeded -R .note -R .comment > /dev/null 2>&1 
+    find $ROOTDIR/. -type f -print0 | xargs -0 file | grep ":.*ELF.*\(executable\|shared\).*stripped" | cut -f1 -d: | xargs ${STRIP} -x --strip-unneeded -R .note -R .comment > /dev/null 2>&1 
     return 0
 } 
 
@@ -1456,7 +1500,7 @@ function _do_pack_files {
     echo "done."
 
     # full path name of different files
-    FPNAME=$PKGDIR/compiled/${EXACTPKG##*/}-$FLXARCH
+    FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
     DEP_FILE=$FPNAME.dep
 
     # If we're currently building a "build" model, we just want the tgz with
@@ -1603,7 +1647,8 @@ function do_pack {
     echo "done."
 
     # full path name of different files
-    FPNAME=$PKGDIR/compiled/${EXACTPKG##*/}-$FLXARCH
+    FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
+#    FPNAME=$PKGDIR/compiled/${EXACTPKG##*/}-$FLXARCH
     DEP_FILE=$FPNAME.dep
 
     # If we're currently building a "build" model, we just want the tgz with
@@ -1726,7 +1771,6 @@ function do_pack {
 
 # this function extract the sys-root and dependencies into it
 function do_prepare {
-  SYSROOTTAR=/x-tools/i386-flx0.1_gcc34_glibc23-linux-gnu/i386-flx0.1_gcc34_glibc23-linux-gnu/sysroot_i386-flx0.1_gcc34_glibc23-linux-gnu.tar.bz2
   if [ -n "$CLEANSYSROOT" ]; then
         echo "* Cleaning sysroot"
 	rm -rf "${FLXROOTDIR}"
@@ -1742,34 +1786,40 @@ function do_prepare {
 		exit 1
 	fi
   fi
- # iterate on a depends list :
+
+# iterate on a depends list :
  # EXAMPLE :
- # MAKEDEPENDS=( 'tplparser-0local-flx0.0:*.h *.a:i?86'
- #   	         'mo-0local-flx0.0:*.h *.a:i?86' )
+ #  'packagename:versfx:architecture:globbing'
+ 
  RET=0
   set -o noglob
-    for depend in "${MAKEDEPENDS[@]}"; do 
-      local oldifs=$IFS
+    for DEPEND in "${MAKEDEPENDS[@]}"; do 
+      local OLDIFS=$IFS
       IFS=:
-      set -- $depend
-      depend=( "$@" )
-      IFS=$oldifs
-      get_name ${depend[0]} %P
+      set -- $DEPEND
+      PKGNAME=$1
+      VERSFX=$2
+      ARCH=$3
+      TARGLOB=$4
+      IFS=$OLDIFS
+      get_name ${PKGNAME} %P
       if [ -n "$REPLY" ]; then
         set +o noglob
-        FILE=($PKGDIR/compiled/${depend[0]}-${depend[2]}.$PKGSUFF)
+      	PKGRADIX="$(get_pkg_radix ${PKGNAME})"
+	PKGVER="$(get_pkg_ver ${PKGNAME})"
+	DISTVER="$(get_build_num ${PKGNAME})"
+        FILE="$PKGDIR/compiled/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-${ARCH:-$FLXARCH}.$PKGSUFF"
         if [ -z "$FILE" ]; then
 	  RET=$(($RET|1))
-          echo "${depend[0]}-${depend[2]}.$PKGSUFF Not found !"
+         echo "$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-${ARCH:-$FLXARCH}.$PKGSUFF Not found !"
         else
 	  set -o noglob 
-	  wildcards="${depend[1]}"
-	  set -- $wildcards
-	  wildcards=( "$@" )
+	  set -- $TARGLOB
+	  TARGLOB=( "$@" )
 	  set +o noglob
-      	    echo "Untar ${depend[1]} from ${FILE##*/}"
+      	    echo "Untar ${TARGLOB[@]} from ${FILE##*/}"
 	    tar xfz $FILE  \
-	        -C "$FLXROOTDIR/" --wildcards "${wildcards[@]}" || return $?
+	        -C "$FLXROOTDIR/" --wildcards "${TARGLOB[@]}" || return $?
 	fi
         set -o noglob
       else
@@ -1841,14 +1891,17 @@ function get_package {
 	  return 1
 	;;
   esac
-  return $?
+  RET=$?
+  if [ "$RET" == "0" ]; then
+    touch .unpacked
+  fi
+  return $RET
 }
 
 
 # get source package
 function do_source {
- echo "Re-using package ${REPLY}"
-
+  echo "Re-using package ${REPLY}"
   echo "Downloading source package ${REPLY}..."
   if [ -z "$ABSOLUTE_PKGSRC" -a -z "$RELATIVE_PKGSRC" ]; then
     echo "No source package specified ABSOLUTE_PKGSRC or RELATIVE_PKGSRC"
@@ -1874,6 +1927,7 @@ function do_source {
     fi
   else 
     echo "REPOSITORY_PKGSRC not defined"
+    return 1
   fi 
 }
 
@@ -2368,6 +2422,8 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 	deps)
 	   CHAINCMD=0
 	   KNOWNCMD=1
+	   PKG_NOCHOICE=1
+	   PKG_EXACTPKG=1
 	   get_name ${ARGLIST[0]} %L %P 
 	   ;;
 	install)
@@ -2375,9 +2431,10 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 	    KNOWNCMD=1
 	    ;;
 	search)
-	    get_name ${ARGLIST[0]}
 	    CHAINCMD=0
-            KNOWNCMD=1
+	    KNOWNCMD=1
+	    get_name ${ARGLIST[0]} %L %P %D
+	    [ -d "$PKGDIR" ] || PKGDIR=
 	    ;;
 	filesearch)
 	    CHAINCMD=0
@@ -2398,7 +2455,7 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 	    KNOWNCMD=1
 	    get_name $1 %P default
 	    ;;
-	do_findfile)
+	findfile)
 	    KNOWNCMD=1
 	    pkgfilefind $1
 	    ;;
@@ -2446,6 +2503,7 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 	    fi
 	    # get_name %L
 	    ;;
+	
 	*)
 	    CHAINCMD=0
 	    KNOWNCMD=0
@@ -2465,7 +2523,7 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 
     set +o noglob
     if [ "$ACTION" != "newpkg" -a "$ACTION" != "install" -a "$ACTION" != "search" -a "$ACTION" != "filesearch" -a "$ACTION" != "filefind" ]; then
-	if [ -z "$REPLY" ]; then
+	if [ -z "$REPLY" -a "$ACTION" != "deps" ]; then
 	    echo "Error: package name not found."
 	    exit 1
 	fi
@@ -2494,7 +2552,9 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
     set_compiler_options
 
     if [ "$ACTION" != "newpkg" -a "$ACTION" != "install" -a "$ACTION" != "search" -a "$ACTION" != "filesearch" -a "$ACTION" != "filefind" ]; then
-	. $CFGFILE
+      if [ -n "$REPLY" ]; then
+	 . $CFGFILE
+      fi
     fi
 
     # FLXMAKE is used for sequential make and FLXPMAKE for parallel make
