@@ -60,7 +60,7 @@ umask og-w
 
 # set some constants
 _PKG=$0
-_SUDO=${_SUDO:-"/usr/bin/sudo PATH=$PATH"}
+_SUDO=${_SUDO:-"/usr/bin/sudo -E PATH=$PATH"}
 KERNDIR=${KERNDIR:-/usr/src/linux}
 FLXHOSTOS=${FLXHOSTOS:-$(uname -s|tr 'A-Z' 'a-z')}
 FLXHOSTARCH=${FLXHOSTARCH:-$(uname -m)}
