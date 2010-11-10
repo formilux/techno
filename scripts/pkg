@@ -634,7 +634,9 @@ function do_build_normal {
     
     # ACTION will be inherited by other functions
      
-    declare -f do_clean > /dev/null && { ( $_SUDO $_PKG clean $* ) || return $?; }
+    declare -f do_delpack > /dev/null && { ( $_SUDO $_PKG delpack $* ) || return $?; }
+    
+    declare -f do_clean > /dev/null && { ( do_clean $* ) || return $?; }
 
     declare -f pre_compile > /dev/null && { ( pre_compile $* ) || return $?; }
     declare -f do_compile > /dev/null && { ( do_compile $* ) || return $?; }
