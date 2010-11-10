@@ -1,4 +1,4 @@
-#/bin/bash
+#!/bin/bash
 
 # pkg - Formilux package builder - version 0.10.0 - 2010-05-17
 #
@@ -59,7 +59,8 @@ set -o noglob
 umask og-w
 
 # set some constants
-_SUDO=${_SUDO:-/usr/bin/sudo}
+_PKG=$0
+_SUDO=${_SUDO:-"/usr/bin/sudo PATH=$PATH"}
 KERNDIR=${KERNDIR:-/usr/src/linux}
 FLXHOSTOS=${FLXHOSTOS:-$(uname -s|tr 'A-Z' 'a-z')}
 FLXHOSTARCH=${FLXHOSTARCH:-$(uname -m)}
@@ -630,30 +631,19 @@ function do_build_normal {
         export ENABLE_STATIC=
         export DISABLE_STATIC=y
     fi
+    
+    # ACTION will be inherited by other functions
+     
+    declare -f do_clean > /dev/null && { ( $_SUDO $_PKG clean $* ) || return $?; }
 
-    ACTION=clean
-    declare -f pre_$ACTION > /dev/null && { ( pre_$ACTION $* ) || return $?; }
-    declare -f do_$ACTION > /dev/null && { ( do_$ACTION $* ) || return $?; }
-    declare -f post_$ACTION > /dev/null && { ( post_$ACTION $* ) || return $?; }
-
-    STEPS=${STEPS:-normal}
-
-    # do the several steps
-    for STEP in "${STEPS[@]}" ; do 
-	DONTCLEAN=1
-        # ACTION will be inherited by other functions
-        for ACTION in clean compile prepack strip; do
-            declare -f pre_$ACTION > /dev/null && { ( pre_$ACTION $* ) || return $?; }
-            declare -f do_$ACTION > /dev/null && { ( do_$ACTION $* ) || return $?; }
-            declare -f post_$ACTION > /dev/null && { ( post_$ACTION $* ) || return $?; }
-        done
-     done
-     ACTION=pack
-     declare -f pre_$ACTION > /dev/null && { ( pre_$ACTION $* ) || return $?; }
-     declare -f do_$ACTION > /dev/null && { ( do_$ACTION $* ) || return $?; }
-     declare -f post_$ACTION > /dev/null && { ( post_$ACTION $* ) || return $?; }
-     unset DONTCLEAN 
-     return 0
+    declare -f pre_compile > /dev/null && { ( pre_compile $* ) || return $?; }
+    declare -f do_compile > /dev/null && { ( do_compile $* ) || return $?; }
+    declare -f post_compile > /dev/null && { ( post_compile $* ) || return $?; }
+     
+    for ACTION in prepack strip pack; do
+       declare -f do_$ACTION > /dev/null && { ( $_SUDO $_PKG $ACTION $* ) || return $?; }
+       done
+    return 0
 }
 
 function do_build_static {
@@ -725,7 +715,7 @@ function do_install {
 #  example :
 #  'tplparser-0local-flx0.0:albdev:i586:*.a *.h'
 #
-# PKG_ONLYUNBUILDDEPS
+# PKG_ONLYUNBUILDDEPS=true show only unbuild dependencies
 function do_deps {
   CURPKG=$PKGDIR
   CURPKGNAME=$REPLY
@@ -1879,7 +1869,7 @@ function get_package {
 	ftp)
 	  wget "$1"
 	;;
-	file)
+	filesystem)
 	  if [ -e ".flxpkg" ]; then
 	    cp -a "$1"/* . 
 	  else
@@ -1903,32 +1893,22 @@ function get_package {
 function do_source {
   echo "Re-using package ${REPLY}"
   echo "Downloading source package ${REPLY}..."
-  if [ -z "$ABSOLUTE_PKGSRC" -a -z "$RELATIVE_PKGSRC" ]; then
-    echo "No source package specified ABSOLUTE_PKGSRC or RELATIVE_PKGSRC"
+  if [ -z "$SRC_FETCH_PATH" ]; then
+    echo "No source package specified SRC_FETCH_PATH"
     return 2
   fi
-  if [ -z "$REPOSITORY_TYPE" ]; then
-    echo "No REPOSITORY_TYPE"
+  if [ -z "$SRC_FETCH_METHOD" ]; then
+    echo "No SRC_FETCH_METHOD"
     return 1
   fi 
-  if [ -n "$ABSOLUTE_PKGSRC" ]; then
-    get_package "$ABSOLUTE_PKGSRC" "$REPOSITORY_TYPE" "$1"
+  if [ -n "$SRC_FETCH_PATH" ]; then
+    get_package "$SRC_FETCH_PATH" "$SRC_FETCH_METHOD" "$1"
     if [ "$?" != "0" ]; then
       echo "Error on downloading."
       return 1
     fi
     return 0  
   fi
-  if [ -n "$RELATIVE_PKGSRC" -a -n "$REPOSITORY_PKGSRC" ]; then
-    get_package "$REPOSITORY_PKGSRC/$RELATIVE_PKGSRC" "$REPOSITORY_TYPE" "$1"
-    if [ "$?" != "0" ]; then
-      echo "Error on downloading."
-      return 1
-    fi
-  else 
-    echo "REPOSITORY_PKGSRC not defined"
-    return 1
-  fi 
 }
 
 
