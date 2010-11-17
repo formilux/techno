@@ -60,7 +60,7 @@ umask og-w
 
 # set some constants
 _PKG=$0
-_SUDO=${_SUDO:-"/usr/bin/sudo -E PATH=$PATH"}
+_SUDO=${_SUDO:-"/var/flx-toolchain/sudo/bin/sudo -E"}
 KERNDIR=${KERNDIR:-/usr/src/linux}
 FLXHOSTOS=${FLXHOSTOS:-$(uname -s|tr 'A-Z' 'a-z')}
 FLXHOSTARCH=${FLXHOSTARCH:-$(uname -m)}
@@ -179,7 +179,7 @@ function pkgfilefind {
         exclude_args=( "${exclude_args[@]}" -and -not -path "${start}/${dir}" )
     done
 
-   find ${start} \( -name '.svn' -prune \) -or -not -path ${start} \( -empty -o \! -type d -o \! -uid 0 -o \! -gid 0 -o \! -perm 0755 \) "${exclude_args[@]}" -printf "%P\n" 
+    find ${start} \( -name '.svn' -prune \) -or -not -path ${start} \( -empty -o \! -type d -o \! -uid 0 -o \! -gid 0 -o \! -perm 0755 \) "${exclude_args[@]}" -printf "%P\n" 
 }
 
 
@@ -430,7 +430,7 @@ function install-file {
   [ -n "${dst##*/*}" -o -d "$ROOTDIR/${dst%/*}" ] \
         || mkdir -p "$ROOTDIR/${dst%/*}"
 
-  if cp -dpfPL "$src" "$ROOTDIR/$dst" \
+  if  cp -dpfPL "$src" "$ROOTDIR/$dst" \
         && chown -h $owner "$ROOTDIR/$dst" \
     && [ ! -L "$ROOTDIR/$dst" ]; then
         chmod $perm "$ROOTDIR/$dst"
@@ -462,7 +462,7 @@ function install-ln {
   [ -n "${dst##*/*}" -o -d "$ROOTDIR/${dst%/*}" ] \
       || mkdir -p "$ROOTDIR/${dst%/*}"
 
-  ln -snf "$target" "$ROOTDIR/$dst" \
+    ln -snf "$target" "$ROOTDIR/$dst" \
       && chown -h $owner "$ROOTDIR/$dst"
 
   [ -n "$FILE_LIST" ] && echo $dst >> $FILE_LIST
@@ -634,17 +634,11 @@ function do_build_normal {
     
     # ACTION will be inherited by other functions
      
-    declare -f do_delpack > /dev/null && { ( $_SUDO $_PKG delpack $* ) || return $?; }
-    
-    declare -f do_clean > /dev/null && { ( do_clean $* ) || return $?; }
-
-    declare -f pre_compile > /dev/null && { ( pre_compile $* ) || return $?; }
-    declare -f do_compile > /dev/null && { ( do_compile $* ) || return $?; }
-    declare -f post_compile > /dev/null && { ( post_compile $* ) || return $?; }
-     
-    for ACTION in prepack strip pack; do
-       declare -f do_$ACTION > /dev/null && { ( $_SUDO $_PKG $ACTION $* ) || return $?; }
-       done
+    for ACTION in clean compile prepack strip pack; do
+       declare -f pre_$ACTION > /dev/null && { ( pre_$ACTION $* ) || return $?; }
+       declare -f do_$ACTION > /dev/null && { ( do_$ACTION $* ) || return $?; }
+       declare -f post_$ACTION > /dev/null && { ( post_$ACTION $* ) || return $?; }
+    done
     return 0
 }
 
@@ -1309,10 +1303,10 @@ function do_compile {
 
 # preparatory work for prepack()
 function pre_prepack {
-    if [ "$UID" != "0" -a "$force" != "1" ]; then
-	echo "You must specify '--force' to install as non-root"
-	exit 1
-    fi
+#    if [ "$UID" != "0" -a "$force" != "1" ]; then
+#	echo "You must specify '--force' to install as non-root"
+#	exit 1
+#   fi
     # WARNING! here, we don't use $ROOTDIR because we don't want to risk
     # erasing a wrong directory as root !
     [ -d "$(pwd)/${INSTNAME}" ] && rm -rf "$(pwd)/${INSTNAME}"
@@ -1442,7 +1436,7 @@ function do_strip {
     fi
     #find $ROOTDIR/. -type f | xargs file | grep ":.*executable.*not stripped" | cut -f1 -d: | xargs ${STRIP} -x --strip-unneeded -R .note -R .comment > /dev/null 2>&1 
     # allow executable and shared (.so), but not relocatable (.o), both stripped or not stripped
-    find $ROOTDIR/. -type f -print0 | xargs -0 file | grep ":.*ELF.*\(executable\|shared\).*stripped" | cut -f1 -d: | xargs ${STRIP} -x --strip-unneeded -R .note -R .comment > /dev/null 2>&1 
+     find $ROOTDIR/. -type f -print0 | xargs -0 file | grep     ":.*ELF.*\(executable\|shared\).*stripped" | cut -f1 -d: | xargs ${STRIP} -x --strip-unneeded -R .note -R .comment > /dev/null 2>&1 
     return 0
 } 
 
@@ -1500,7 +1494,7 @@ function _do_pack_files {
     if [ "$BUILDMODEL" == "shared" -o "$BUILDMODEL" == "static" ]; then
         echo -n "Creating $FPNAME.$BUILDMODEL ... "
         # we want everything, including directories.
-        cut -f1 -d' ' $FILE_LIST|sed -e 's,/$,,' | tar -T - --no-recursion --numeric-owner -cf - | gzip -9 >$FPNAME.$BUILDMODEL 2>/dev/null
+        cut -f1 -d' ' $FILE_LIST|sed -e 's,/$,,' |  tar -T - --no-recursion --numeric-owner -cf - | gzip -9 >$FPNAME.$BUILDMODEL 2>/dev/null
 	echo "done."
 	return 0
     fi
@@ -1510,7 +1504,7 @@ function _do_pack_files {
 
     echo -n "Creating $DEP_FILE ... "
     touch $DEP_FILE
-    ( set +f; shopt -s nullglob ; shopt -s dotglob ; find * -type f -o -type l ) | while read ; do
+    ( set +f; shopt -s nullglob ; shopt -s dotglob ;  find * -type f -o -type l ) | while read ; do
 	case $REPLY in
 	    *.pm|*.pl|*.ph)
 		get_perl_depend $REPLY
@@ -1565,13 +1559,13 @@ function _do_pack_files {
 	group=${2##*:}
 	echo "d $3 $owner $group          0 -------------------------------- 0 ."
     fi > $FPNAME.lst
-    (flx sign --no-depth --ignore-dot $(cut -f1 -d' ' $FILE_LIST|sed -e 's,/$,,') >> $FPNAME.lst) > /dev/null 2>&1
+    ( flx sign --no-depth --ignore-dot $(cut -f1 -d' ' $FILE_LIST|sed -e 's,/$,,') >> $FPNAME.lst) > /dev/null 2>&1
     echo "done."
 
     echo -n "Creating $FPNAME.$PKGSUFF ... "
 
     # we want everything, including directories.
-    cut -f1 -d' ' $FILE_LIST|sed -e 's,/$,,' | tar -T - --no-recursion --numeric-owner -cf - | gzip -9 >$FPNAME.$PKGSUFF 2>/dev/null
+    cut -f1 -d' ' $FILE_LIST|sed -e 's,/$,,' |  tar -T - --no-recursion --numeric-owner -cf - | gzip -9 >$FPNAME.$PKGSUFF 2>/dev/null
 
     # create shortcuts ".*" for tgz, dep and lst files
     for ext in dep lst tgz; do
@@ -1612,7 +1606,7 @@ function do_pack {
     fi
 
     # Check that flx is really here
-    flx sign --no-depth / >/dev/null 2>&1
+     flx sign --no-depth / >/dev/null 2>&1
     if [ $? -ne 0 ] ; then
 	echo "Error: the 'flx' tool does not seem to be usable. Check your PATH."
 	exit 1
@@ -1650,7 +1644,7 @@ function do_pack {
         # we want everything, and directories only if they're empty. 
         # All this without './' we shouldn't get an empty line since . 
         # should contain at least what we want to tar !
-        $FIND_CMD . | tar --no-recursion -T - --numeric-owner -cf - | gzip -9 >$FPNAME.$BUILDMODEL 2>/dev/null
+         $FIND_CMD . | tar --no-recursion -T - --numeric-owner -cf - |  gzip -9 >$FPNAME.$BUILDMODEL 2>/dev/null
 	echo "done."
 	return 0
     fi
@@ -1690,9 +1684,9 @@ function do_pack {
 	    */man/man*/*.[0-9n])
 		if [ "${REPLY/*gz}" ] ; then
 		    if [ -L $REPLY ] ; then
-			LINK=$(readlink $REPLY)
-			rm $REPLY
-			ln -s $LINK.gz $REPLY.gz
+			LINK=$( readlink $REPLY)
+			 rm $REPLY
+			 ln -s $LINK.gz $REPLY.gz
 		    else
 			gzip -f -9 $REPLY
 			chmod 644 $REPLY.gz
@@ -1750,7 +1744,7 @@ function do_pack {
     # we want everything, and directories only if they're empty. 
     # All this without './' we shouldn't get an empty line since . 
     # should contain at least what we want to tar !
-    $FIND_CMD . | tar --no-recursion -T - --numeric-owner -cf - | gzip -9 >$FPNAME.$PKGSUFF 2>/dev/null
+     $FIND_CMD . | tar --no-recursion -T - --numeric-owner -cf - | gzip -9 >$FPNAME.$PKGSUFF 2>/dev/null
 
     # create shortcuts ".*" for tgz, dep and lst files
     for ext in dep lst tgz; do
@@ -2504,6 +2498,16 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
     [ $CHAINCMD -gt 0 ] && (echo;echo "===> PKG: starting [$ACTION] <===") >&2
 
     set +o noglob
+
+    # launch pkg with sudo before setting env variable
+    if [ "$ACTION" == "sudobuild" ]; then
+       $_SUDO $_PKG delpack || $?
+       $_PKG clean || exit $?
+       $_PKG compile || exit $?
+       $_SUDO $_PKG strip prepack pack || exit $?
+       exit 0
+    fi
+
     if [ "$ACTION" != "newpkg" -a "$ACTION" != "install" -a "$ACTION" != "search" -a "$ACTION" != "filesearch" -a "$ACTION" != "filefind" ]; then
 	if [ -z "$REPLY" -a "$ACTION" != "deps" ]; then
 	    echo "Error: package name not found."
