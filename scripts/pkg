@@ -1849,27 +1849,21 @@ function get_package {
 	git)
 	  git clone "$1" src
 	;;
-	http)
-	  (  FILE=${1##*/} 
-	    wget -c "$1" -O "$FILE" || return 1
-	    if [ "${FILE##*.}" == "gz" ]; then
-	      tar xvfz $FILE || return 1
-	      cd ${FILE%%.tar.gz} || return 1
-	    else
-	      tar xvjf $FILE || return 1
-	      cd ${FILE%%.tar.bz2} || return 1
-	    fi
-	    mv * ..
-	   )
-	;;
-	ftp)
-	  wget "$1"
+	http|ftp)
+	  (   
+	    wget -c "$1" -O .src || return 1
+	    tar --exclude=".flxpkg" --strip-components=1 -xvf .src || return 1
+	  )
 	;;
 	filesystem)
-	  if [ -e ".flxpkg" ]; then
-	    cp -a "$1"/* . 
+	  if [ -d "$1" ] ; then
+	    if [ -e ".flxpkg" ]; then
+	      cp -a "$1"/* . 
+	    else
+	      cp -a "$1" .
+	    fi
 	  else
-	    cp -a "$1" .
+	    tar --exclude=".flxpkg" --strip-components=1 -xvf "$1"
 	  fi
 	;;
 	*)
@@ -1925,6 +1919,7 @@ function set_cross_environment {
         NM=${NM:-nm}
         RANLIB=${RANLIB:-ranlib}
         STRIP=${STRIP:-strip}
+        SSTRIP=${SSTRIP:-sstrip}
         OBJDUMP=${OBJDUMP:-objdump}
 
         HOSTCC=${HOSTCC:-$CC}
@@ -1934,6 +1929,7 @@ function set_cross_environment {
         HOSTAR=${HOSTAR:-$AR}
         HOSTNM=${HOSTNM:-$NM}
         HOSTSTRIP=${HOSTSTRIP:-$STRIP}
+        HOSTSSTRIP=${HOSTSSTRIP:-$SSTRIP}
         HOSTOBJDUMP=${HOSTOBJDUMP:-$OBJDUMP}
 
         if [ -n "$FLXCROSS" ]; then
@@ -1945,6 +1941,7 @@ function set_cross_environment {
             NM=${FLXCROSS}${NM} ; NM=${FLXCROSSNM:-$NM}
             RANLIB=${FLXCROSS}${RANLIB} ; RANLIB=${FLXCROSSRANLIB:-$RANLIB}
             STRIP=${FLXCROSS}${STRIP} ; STRIP=${FLXCROSSSTRIP:-$STRIP}
+            SSTRIP=${FLXCROSS}${SSTRIP} ; SSTRIP=${FLXCROSSSSTRIP:-$SSTRIP}
             OBJDUMP=${FLXCROSS}${OBJDUMP} ; OBJDUMP=${FLXCROSSOBJDUMP:-$OBJDUMP}
         fi
         # specify that we don't want to do this again
@@ -2504,7 +2501,7 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
        $_SUDO $_PKG delpack || $?
        $_PKG clean || exit $?
        $_PKG compile || exit $?
-       $_SUDO $_PKG strip prepack pack || exit $?
+       $_SUDO $_PKG prepack strip pack || exit $?
        exit 0
     fi
 
