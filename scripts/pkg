@@ -1757,7 +1757,7 @@ function do_pack {
 
 # this function extract the sys-root and dependencies into it
 function do_prepare {
-  if [ -n "$CLEANSYSROOT" ]; then
+  if [ -z "$DONTCLEANSYSROOT" ]; then
         echo "* Cleaning sysroot"
 	rm -rf "${FLXROOTDIR}"
 	if [ $? -ne 0 ] ; then
@@ -1841,9 +1841,21 @@ function get_package {
   case "$2" in
 	svn)
 	  if [ -e ".flxpkg" ]; then
-	    svn checkout "$1" .
+	    if [ ${1//\/releases\//} != "$1" ] ; then
+		# released version , no modification authorized
+		svn export "$1" .srcexport
+		tar -cf .src .srcexport
+	    	tar --exclude=".flxpkg" --strip-components=1 -xvf .src || return 1
+	    else
+		svn checkout "$1" .
+	    fi
 	  else
-	    svn checkout "$1" "$3" 
+	    if [ ${1//\/releases\//} != "$1" ] ; then
+		# released version , no modification authorized
+	    	svn export "$1" "$3" 
+	    else
+		svn checkout "$1" "$3"
+	    fi
 	  fi
  	;;
 	git)
