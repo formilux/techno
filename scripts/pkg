@@ -1591,6 +1591,12 @@ function do_pack {
     local DEP_FILE FPNAME
     local FILE_LISTS ext
 
+    if [ -e "$PKGDIR/RELEASED" ]; then
+      echo "Can't pack, the package is already released."
+      exit 1
+    fi
+
+
     # normalize the list with an absolute path for each entry
     for file in $FILE_LIST ; do
 	if [ -z "${file##/*}" ]; then
