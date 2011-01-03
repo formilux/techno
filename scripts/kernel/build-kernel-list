@@ -69,10 +69,10 @@ PARALLELDEP=${PARALLELDEP:-10}
 PARALLELCC=${PARALLELCC:-6}
 CC=${CC:-gcc}
 HOSTCC=${HOSTCC:-$CC}
-SUDO=${SUDO-sudo}
+_SUDO=${_SUDO-sudo}
 USERARCH=${ARCH}
 DEFAULT_ARCH=${DEFAULT_ARCH:-i386}
-DEPMOD=${DEPMOD:-depmod}
+_DEPMOD=${_DEPMOD:-depmod}
 
 
 mkdir -p $OUTPUTDIR || die 1 "Cannot create directory : $OUTPUTDIR"
@@ -278,21 +278,21 @@ for cfg in "$@"; do
 	    exit 2
 	fi
 
-	$SUDO rm -rf $destdir ; $SUDO mkdir -p $subarchdir
+	$_SUDO rm -rf $destdir ; $_SUDO mkdir -p $subarchdir
 
 	echo "Installing modules" >> $OUTPUTDIR/$log
-	$SUDO $MAKE INSTALL_MOD_PATH=$subarchdir \
+	$_SUDO $MAKE INSTALL_MOD_PATH=$subarchdir \
 	            INSTALL_MOD_STRIP="--strip-unneeded" \
 	            modules_install </dev/null >> $OUTPUTDIR/$log 2>&1; err=$?
 	if [ $err -ne 0 ]; then
 	    echo "######### make modules_install returned error code $err #########" | tee -a $OUTPUTDIR/$log
-	    $SUDO rm -rf $destdir
+	    $_SUDO rm -rf $destdir
 	    continue
 	fi
 
 	if [ ! -d "$libmoddir" ]; then
 	    echo "######### make modules_install failed to create $libmoddir #########" | tee -a $OUTPUTDIR/$log
-	    $SUDO rm -rf $destdir
+	    $_SUDO rm -rf $destdir
 	    continue
 	fi
 
@@ -301,7 +301,7 @@ for cfg in "$@"; do
 	for addon in "${addons[@]}"; do
           echo "Installing addon '$addon'..."
 
-	  $SUDO addons/"build.$addon" install "$KVER" "$PWD" "$PWD/addons/$addon" "$subarchdir" </dev/null >>$OUTPUTDIR/$log 2>&1
+	  $_SUDO addons/"build.$addon" install "$KVER" "$PWD" "$PWD/addons/$addon" "$subarchdir" </dev/null >>$OUTPUTDIR/$log 2>&1
 	  err=$?
 	  if [ $err -ne 0 ]; then
 	    addon_err=1
@@ -312,12 +312,12 @@ for cfg in "$@"; do
 
 	if [ $addon_err -ne 0 ]; then
 	  echo "######### errors encountered while installing addons #########"
-	  $SUDO rm -rf $destdir
+	  $_SUDO rm -rf $destdir
 	  continue
         fi
 
 	# now that we have all the modules, let's generate the modules.dep file.
-        [ -r System.map ] && $SUDO $DEPMOD -ae -F System.map -b "$subarchdir" -r "$KVER"
+        [ -r System.map ] && $_SUDO $_DEPMOD -ae -F System.map -b "$subarchdir" -r "$KVER"
 
 	curdir=$PWD
 	case $curdist in
@@ -341,48 +341,48 @@ for cfg in "$@"; do
                 du -s "${subarchdir}/lib/modules"
                 find "${subarchdir}/lib/modules" -type f -name "*.ko"| while read; do
                     echo "Compressing module $REPLY -> $REPLY.gz"
-                    $SUDO sh -c "strip -S $REPLY && ${cmd_gzip} <$REPLY >$REPLY.gz 2>/dev/null && rm -f $REPLY"
+                    $_SUDO sh -c "strip -S $REPLY && ${cmd_gzip} <$REPLY >$REPLY.gz 2>/dev/null && rm -f $REPLY"
                 done >> $OUTPUTDIR/$log 2>&1
                 du -s "${subarchdir}/lib/modules"
                 echo "Done."
-                [ -r System.map ] && $SUDO $DEPMOD -ae -F System.map -b "$subarchdir" -r "$KVER"
+                [ -r System.map ] && $_SUDO $_DEPMOD -ae -F System.map -b "$subarchdir" -r "$KVER"
             fi
-	    $SUDO rm -f ${subarchdir}/lib/modules/${KVER}/build ${subarchdir}/lib/modules/${KVER}/source
+	    $_SUDO rm -f ${subarchdir}/lib/modules/${KVER}/build ${subarchdir}/lib/modules/${KVER}/source
 
             # save the modules right now for later use
             tar --owner=root --group=root --mode=a+r,go-w -C "${subarchdir}/lib/modules" -cf - "${KVER}" > initramfs/modules.tar
 
-	    $SUDO mv $subarchdir/lib/modules $subarchdir/boot && $SUDO rmdir $subarchdir/lib
+	    $_SUDO mv $subarchdir/lib/modules $subarchdir/boot && $_SUDO rmdir $subarchdir/lib
 	    # now everything is under $bootdir
 
-	    $SUDO chown -R root:adm $subarchdir/boot
-	    $SUDO chmod -R g-w,o-rwx $subarchdir/boot
+	    $_SUDO chown -R root:adm $subarchdir/boot
+	    $_SUDO chmod -R g-w,o-rwx $subarchdir/boot
 
             # install kernel
-	    $SUDO cp arch/${ARCH}/boot/bzImage .config System.map $bootdir >> $OUTPUTDIR/$log 2>&1; err=$?
+	    $_SUDO cp arch/${ARCH}/boot/bzImage .config System.map $bootdir >> $OUTPUTDIR/$log 2>&1; err=$?
 	    if [ $err -ne 0 ]; then
 		echo "######### cp bzImage .config System.map ... returned error code $err #########" | tee -a $OUTPUTDIR/$log
-		$SUDO rm -rf $destdir
+		$_SUDO rm -rf $destdir
 		continue
 	    fi
 
-	    $SUDO ln -s $KVER/System.map $subarchdir/boot/System.map-$KVER
-	    $SUDO sh -c "$cmd_gzip <$bootdir/.config >$bootdir/.config.gz 2>/dev/null && rm -f $bootdir/.config"
+	    $_SUDO ln -s $KVER/System.map $subarchdir/boot/System.map-$KVER
+	    $_SUDO sh -c "$cmd_gzip <$bootdir/.config >$bootdir/.config.gz 2>/dev/null && rm -f $bootdir/.config"
 
-	    $SUDO chown -R root:adm $subarchdir/boot
-	    $SUDO chmod -R g-w,o-rwx $subarchdir/boot
+	    $_SUDO chown -R root:adm $subarchdir/boot
+	    $_SUDO chmod -R g-w,o-rwx $subarchdir/boot
 
 	    # system.map is used by 'ps' to display the syscall being used (ps -o wchan)
-	    $SUDO chmod ugo+r $bootdir/System.map
+	    $_SUDO chmod ugo+r $bootdir/System.map
 
 	    # let's build the signature file
-	    $SUDO find $subarchdir/ -xdev -not -path $subarchdir/boot -printf "%P\n" | grep -v '^$' | \
-		sh -c "( cd $subarchdir && xargs $SUDO flx sign --ignore-dot --no-depth)" \
+	    $_SUDO find $subarchdir/ -xdev -not -path $subarchdir/boot -printf "%P\n" | grep -v '^$' | \
+		sh -c "( cd $subarchdir && xargs $_SUDO flx sign --ignore-dot --no-depth)" \
 		>$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-$subarch.lst
 
 	    # let's build the tar.gz
-	    $SUDO find $subarchdir/ -xdev -not -path $subarchdir/boot -printf "%P\n" | grep -v '^$' | \
-		$SUDO tar -C $subarchdir --no-recursion -T - -vcf - 2>>$OUTPUTDIR/$log | \
+	    $_SUDO find $subarchdir/ -xdev -not -path $subarchdir/boot -printf "%P\n" | grep -v '^$' | \
+		$_SUDO tar -C $subarchdir --no-recursion -T - -vcf - 2>>$OUTPUTDIR/$log | \
 		${cmd_gzip} 2>/dev/null >$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-$subarch.tgz
 
 	    cp .config $OUTPUTDIR/config-${KPKG}-${BUILDVERSION}-$subarch
@@ -400,53 +400,53 @@ for cfg in "$@"; do
             $MAKE -j $PARALLELCC bzImage CONFIG_INITRAMFS_SOURCE=$PWD/initramfs </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
 
             echo "Packaging all-in-one kernel" >>$OUTPUTDIR/$log
-	    $SUDO cp arch/${ARCH}/boot/bzImage .config System.map $bootdir >> $OUTPUTDIR/$log 2>&1; err=$?
+	    $_SUDO cp arch/${ARCH}/boot/bzImage .config System.map $bootdir >> $OUTPUTDIR/$log 2>&1; err=$?
 	    if [ $err -ne 0 ]; then
 		echo "######### cp bzImage .config System.map ... returned error code $err #########" | tee -a $OUTPUTDIR/$log
-		$SUDO rm -rf $destdir
+		$_SUDO rm -rf $destdir
 		continue
 	    fi
 
 	    # let's build the signature file
-	    $SUDO find $subarchdir/ -xdev \( -name bzImage -o -name .config -o -name System.map \) -printf "%P\n" | \
-		sh -c "( cd $subarchdir && xargs $SUDO flx sign --ignore-dot --no-depth)" \
+	    $_SUDO find $subarchdir/ -xdev \( -name bzImage -o -name .config -o -name System.map \) -printf "%P\n" | \
+		sh -c "( cd $subarchdir && xargs $_SUDO flx sign --ignore-dot --no-depth)" \
 		>$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-allin1-$subarch.lst
 
 	    # let's build the tar.gz
-	    $SUDO find $subarchdir/ -xdev \( -name bzImage -o -name .config -o -name System.map \) -printf "%P\n" | \
-		$SUDO tar -C $subarchdir --no-recursion -T - -vcf - 2>>$OUTPUTDIR/$log | \
+	    $_SUDO find $subarchdir/ -xdev \( -name bzImage -o -name .config -o -name System.map \) -printf "%P\n" | \
+		$_SUDO tar -C $subarchdir --no-recursion -T - -vcf - 2>>$OUTPUTDIR/$log | \
 		${cmd_gzip} 2>/dev/null >$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-allin1-$subarch.tgz
 
             # not needed since we already have one
 	    # cp .config $OUTPUTDIR/config-${KPKG}-${BUILDVERSION}-allin1-$subarch
 	    ;;
 	rh*)
-	    $SUDO mkdir -p $subarchdir/boot
-	    $SUDO cp arch/${ARCH}/boot/bzImage $subarchdir/boot/vmlinuz-$KVER >> $OUTPUTDIR/$log 2>&1 && \
-	        $SUDO cp .config $subarchdir/boot/config-$KVER >> $OUTPUTDIR/$log 2>&1 && \
-	        $SUDO cp System.map $subarchdir/boot/System.map-$KVER >> $OUTPUTDIR/$log 2>&1; err=$?
+	    $_SUDO mkdir -p $subarchdir/boot
+	    $_SUDO cp arch/${ARCH}/boot/bzImage $subarchdir/boot/vmlinuz-$KVER >> $OUTPUTDIR/$log 2>&1 && \
+	        $_SUDO cp .config $subarchdir/boot/config-$KVER >> $OUTPUTDIR/$log 2>&1 && \
+	        $_SUDO cp System.map $subarchdir/boot/System.map-$KVER >> $OUTPUTDIR/$log 2>&1; err=$?
 	    if [ $err -ne 0 ]; then
 		echo "######### cp bzImage .config System.map ... returned error code $err #########" | tee -a $OUTPUTDIR/$log
-		$SUDO rm -rf $destdir
+		$_SUDO rm -rf $destdir
 		continue
 	    fi
-	    $SUDO rm -f $subarchdir/boot/build
+	    $_SUDO rm -f $subarchdir/boot/build
 
-	    for i in $($SUDO find $libmoddir -type f -name '*.o'); do
+	    for i in $($_SUDO find $libmoddir -type f -name '*.o'); do
 		echo "Stripping $i"
-		$SUDO strip -S $i
+		$_SUDO strip -S $i
 	    done >> $OUTPUTDIR/$log 2>&1
 
 
-	    $SUDO chown -R root:adm $subarchdir/{boot,lib}
-	    $SUDO chmod -R g-w,o-rwx $subarchdir/{boot,lib}
+	    $_SUDO chown -R root:adm $subarchdir/{boot,lib}
+	    $_SUDO chmod -R g-w,o-rwx $subarchdir/{boot,lib}
 	    # system.map is used by 'ps' to display the syscall being used (ps -o wchan)
-	    $SUDO chmod ugo+r $subarchdir/boot/System.map-${KVER}
+	    $_SUDO chmod ugo+r $subarchdir/boot/System.map-${KVER}
 
 	    # let's build the tar.gz
-	    $SUDO find $subarchdir -xdev -not -path $subarchdir/boot -not -path $subarchdir/lib \
+	    $_SUDO find $subarchdir -xdev -not -path $subarchdir/boot -not -path $subarchdir/lib \
 		-not -path $subarchdir/lib/modules -printf "%P\n" | \
-		grep -v '^$' | $SUDO tar -C $subarchdir --no-recursion -T - -vcf - 2>>$OUTPUTDIR/$log | \
+		grep -v '^$' | $_SUDO tar -C $subarchdir --no-recursion -T - -vcf - 2>>$OUTPUTDIR/$log | \
 		gzip -c9 >$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-$subarch.tgz
 
 	    cp .config $OUTPUTDIR/config-$KPKG-$BUILDVERSION-$subarch
@@ -456,7 +456,7 @@ for cfg in "$@"; do
 	    ;;
 	esac ## case $curdist
 
-	$SUDO rm -rf $destdir
+	$_SUDO rm -rf $destdir
 	echo "#### package done ! ####" >> $OUTPUTDIR/$log
     done
 done
