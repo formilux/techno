@@ -72,6 +72,8 @@ HOSTCC=${HOSTCC:-$CC}
 SUDO=${SUDO-sudo}
 USERARCH=${ARCH}
 DEFAULT_ARCH=${DEFAULT_ARCH:-i386}
+DEPMOD=${DEPMOD:-depmod}
+
 
 mkdir -p $OUTPUTDIR || die 1 "Cannot create directory : $OUTPUTDIR"
 
@@ -315,7 +317,7 @@ for cfg in "$@"; do
         fi
 
 	# now that we have all the modules, let's generate the modules.dep file.
-        [ -r System.map ] && $SUDO depmod -ae -F System.map -b "$subarchdir" -r "$KVER"
+        [ -r System.map ] && $SUDO $DEPMOD -ae -F System.map -b "$subarchdir" -r "$KVER"
 
 	curdir=$PWD
 	case $curdist in
@@ -343,7 +345,7 @@ for cfg in "$@"; do
                 done >> $OUTPUTDIR/$log 2>&1
                 du -s "${subarchdir}/lib/modules"
                 echo "Done."
-                [ -r System.map ] && $SUDO depmod -ae -F System.map -b "$subarchdir" -r "$KVER"
+                [ -r System.map ] && $SUDO $DEPMOD -ae -F System.map -b "$subarchdir" -r "$KVER"
             fi
 	    $SUDO rm -f ${subarchdir}/lib/modules/${KVER}/build ${subarchdir}/lib/modules/${KVER}/source
 
@@ -375,7 +377,7 @@ for cfg in "$@"; do
 
 	    # let's build the signature file
 	    $SUDO find $subarchdir/ -xdev -not -path $subarchdir/boot -printf "%P\n" | grep -v '^$' | \
-		sh -c "( cd $subarchdir && xargs flx sign --ignore-dot --no-depth)" \
+		sh -c "( cd $subarchdir && xargs $SUDO flx sign --ignore-dot --no-depth)" \
 		>$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-$subarch.lst
 
 	    # let's build the tar.gz
@@ -407,7 +409,7 @@ for cfg in "$@"; do
 
 	    # let's build the signature file
 	    $SUDO find $subarchdir/ -xdev \( -name bzImage -o -name .config -o -name System.map \) -printf "%P\n" | \
-		sh -c "( cd $subarchdir && xargs flx sign --ignore-dot --no-depth)" \
+		sh -c "( cd $subarchdir && xargs $SUDO flx sign --ignore-dot --no-depth)" \
 		>$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-allin1-$subarch.lst
 
 	    # let's build the tar.gz
