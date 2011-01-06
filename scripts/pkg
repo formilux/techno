@@ -420,8 +420,8 @@ function install-file {
   local src="$1" ; shift
   local dst="$1" ; shift
 
-  if [ -e "$src.$MODEL" ] ; then
-	src="$src.$MODEL"
+  if [ -e "$src.$VERSFX" ] ; then
+	src="$src.$VERSFX"
   fi
 
   # replace %% by $dst in src
