@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #
-# install-image - install boot image on a device - version 0.0.4 - 2010-07-23
+# install-image - install boot image on a device - version 0.0.5 - 2011-01-19
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
 # Copyright (C) 2001-2010 Benoit Dolez & Willy Tarreau
@@ -18,9 +18,9 @@ CMDLINE="$*"
 
 # usage: displays script usage and returns no error.
 function usage {
-  echo "install-image - install boot image on a device - version 0.0.4 - 2010-07-23"
+  echo "install-image - install boot image on a device - version 0.0.5 - 2011-01-19"
   echo "Usage: ${MYNAME##*/} -d <mbr_dev> [ -l <loader_dir> ] [ -f <img_dir> ]"
-  echo "       [ -i <image> ] [ -c <config> ] [ -g <grub_dir> ] [ -m <mbrdef> ]"
+  echo "       [ -i <image> ]* [ -c <config> ] [ -g <grub_dir> ] [ -m <mbrdef> ]"
   echo "       [ -t <targ_dev> ] [ -fstab ] [ -Fl ] [ -nl ] [ -Fi ] [ -ni ] [ -nc ]"
   echo
   echo "  <mbr_dev> is the name of the block device as seen from the installer's OS."
@@ -117,7 +117,7 @@ while [ $# -gt 0 ] ; do
 
     -i) # -i <image>
       [ -n "$2" -a -s "$2" ] || die "FATAL: '$2' is not a valid image file"
-      IMAGE="$2"
+      IMAGE[${#IMAGE[@]}]="$2"
       shift;
       ;; 
 
@@ -203,12 +203,12 @@ GRUB_DIR="${GRUB_DIR:-/usr/share/grub/i386-pc}"
 MBRDEF="${MBRDEF:-/sbin/grub-mbr-default}"
 [ -n "$TARG_DEV" ] || TARG_DEV="$MBR"
 
-[ -z "$IMAGE" -a -n "$IMG_DIR" ] && IMAGE="$IMG_DIR/image.bin"
+[ -z "${IMAGE[*]}" -a -n "$IMG_DIR" ] && IMAGE[0]="$IMG_DIR/image.bin"
 [ "$IGNORE_CONFIG" != 1 -a -z "$CONFIG" -a -n "$IMG_DIR" ] && CONFIG="$IMG_DIR/config.cur"
 
 [ -n "$MNT" -a -n "$MBR" -a \( -n "$CONFIG" -o  "$IGNORE_CONFIG" == 1 \) ] || PRINTUSAGE=1
 [ -n "$LOAD_DIR" -o "$IGNORE_LOADER" == 1 ] || PRINTUSAGE=1
-[ -n "$IMAGE" -o "$IGNORE_IMG" == 1 ] || PRINTUSAGE=1
+[ -n "${IMAGE[*]}" -o "$IGNORE_IMG" == 1 ] || PRINTUSAGE=1
 
 if [ $PRINTUSAGE -gt 0 ]; then
   [ -n "$MNT" -a -d "$MNT/." ] && rmdir "$MNT" >/dev/null 2>&1
@@ -224,7 +224,8 @@ if [ "$IGNORE_LOADER" != 1 ]; then
   [ -s "$MBRDEF" ] || die "FATAL: '$MBRDEF' is not a valid grub-mbr-default file."
 fi
 
-[ -s "$IMAGE" -o "$IGNORE_IMG" == 1 ] || die "FATAL: '$IMAGE' is not a valid image file."
+[ -s "${IMAGE[0]}" -o "$IGNORE_IMG" == 1 ] || die "FATAL: '${IMAGE[0]}' is not a valid image file."
+[ -z "${IMAGE[1]}" -o -s "${IMAGE[1]}" -o "$IGNORE_IMG" == 1 ] || die "FATAL: '${IMAGE[1]}' is not a valid image file."
 [ "$IGNORE_CONFIG" == 1 -o -s "$CONFIG" ] || echo "Note: '$CONFIG' is not a valid configuration file and will not be installed."
 [ "$FSTAB" != 1 -o -s /tmp/fstab ] || die "FATAL: '/tmp/fstab' is not a valid fstab file."
 
@@ -301,9 +302,10 @@ umount ${MNT}/
 echo
 
 if [ "$IGNORE_IMG" != 1 ]; then
-  echo "Installing system image ..."
+  echo "Installing system image(s) ..."
   # We do this at the end to ensure that a flash having it is complete.
-  update-boot-image -f -d ${MBR}2 -b ${MBR} ${IMAGE}
+  [ -n "${IMAGE[1]}" ] && { update-boot-image -2 -f -d ${MBR}2 -b ${MBR} ${IMAGE[1]} || die "Error installing image ${IMAGE[1]}"; }
+  update-boot-image -f -d ${MBR}2 -b ${MBR} ${IMAGE[0]} || die "Error installing image ${IMAGE[0]}"
 else
   echo "Not installing system image ..."
 fi
