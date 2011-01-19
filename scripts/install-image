@@ -1,0 +1,304 @@
+#!/bin/bash
+
+#
+# install-image - install boot image on a device - version 0.0.4 - 2010-07-23
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2010 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+#### update PATH to include this script's directory
+MYNAME="${0##*/}"
+MYDIR="${0%/*}"
+[ "${PATH#$MYDIR:}" == "$PATH" ] && export PATH="$MYDIR:$PATH"
+
+CMDLINE="$*"
+
+# usage: displays script usage and returns no error.
+function usage {
+  echo "install-image - install boot image on a device - version 0.0.4 - 2010-07-23"
+  echo "Usage: ${MYNAME##*/} -d <mbr_dev> [ -l <loader_dir> ] [ -f <img_dir> ]"
+  echo "       [ -i <image> ] [ -c <config> ] [ -g <grub_dir> ] [ -m <mbrdef> ]"
+  echo "       [ -t <targ_dev> ] [ -fstab ] [ -Fl ] [ -nl ] [ -Fi ] [ -ni ]"
+  echo
+  echo "  <mbr_dev> is the name of the block device as seen from the installer's OS."
+  echo "  <loader_dir> is the directory where menu.tmpl and firmware.img can be found."
+  echo "      [ defaults to /mnt/cdrom/install/loader, then $MYDIR/loader ]"
+  echo "  <img_dir> is the directory where image.bin and config.cur can be found."
+  echo "      [ defaults to /mnt/cdrom/install/image, then $MYDIR/img ]"
+  echo "  <image> is the path to the binary image to be used. [ <img_dir>/image.bin ]"
+  echo "  <config> is the path to the config file to be used. [ <img_dir>/config.cur ]"
+  echo "  <grub_dir> is the directory where the *stage* grub files can be found."
+  echo "      [ defaults to $MYDIR, then /usr/share/grub/i386-pc ]"
+  echo "  <mbrdef> is the path to grub-mbr-default."
+  echo "      [ defaults to $MYDIR, then /sbin/grub-mbr-default ]"
+  echo "  <targ_dev> is the optional block device name as seen on the target machine."
+  echo "  -Fl reformats loader partition (use with care!)."
+  echo "  -nl don't install any loader file."
+  echo "  -Fi reformats image partition (config will be lost, use with care!)."
+  echo "  -ni don't install any image file."
+  echo "  -fstab copies /tmp/fstab to the image partition."
+}
+
+function die {
+  echo
+  echo "### ${MYNAME}: $@" >&2
+  echo "Cmdline was $CMDLINE" >&2
+  echo
+  exit 1
+}
+
+verbose() {
+  echo "$@" >&2
+  "$@"
+}
+
+silent() {
+  local ret
+  if [ $VERBOSE != 1 ]; then
+    "$@" >/dev/null 2>&1
+    ret=$?
+  else
+    echo -n "$@ ... " >&2
+    "$@" >/dev/null 2>&1 ; ret=$?
+    echo "returns $ret." >&2
+  fi
+  return $ret
+}
+
+shopt -s nullglob dotglob
+set -o pipefail
+umask 022
+
+PRINTUSAGE=0
+VERBOSE=0
+UNMOUNT=0
+FORM_FL=0
+FORM_FI=0
+IGNORE_IMG=0
+IGNORE_LOADER=0
+FSTAB=0
+
+unset MNT MBR LOAD_DIR IMG_DIR IMAGE CONFIG GRUB_DIR
+unset MBRDEF TARG_DEV
+
+MNT=/tmp/mnt.$$.$RANDOM
+while [ -d $MNT/. ]; do MNT=/tmp/mnt.$$.$RANDOM; done
+mkdir -p $MNT
+
+### parsing
+[ $# -gt 0 ] || PRINTUSAGE=1
+
+while [ $# -gt 0 ] ; do
+  case "$1" in 
+    -d) # -d mbr_dev
+      [ -n "$2" -a -b "$2" ] || die "FATAL: '$2' is not a block device."
+      MBR="$2"
+      shift;
+      ;; 
+
+    -l) # -l loader_dir
+      [ -n "$2" -a -e "$2/menu.tmpl" ] || die "FATAL: '$2' does not contain 'menu.tmpl'"
+      [ -n "$2" -a -e "$2/firmware.img" ] || die "FATAL: '$2' does not contain 'firmware.img'"
+      LOAD_DIR="$2"
+      shift;
+      ;; 
+
+    -f) # -f <img_dir>
+      [ -n "$2" -a -e "$2/image.bin" ] || die "FATAL: '$2' does not contain image.bin"
+      [ -n "$2" -a -e "$2/config.cur" ] || echo "Note: '$2' does not contain config.cur"
+      IMG_DIR="$2"
+      shift;
+      ;; 
+
+    -i) # -i <image>
+      [ -n "$2" -a -s "$2" ] || die "FATAL: '$2' is not a valid image file"
+      IMAGE="$2"
+      shift;
+      ;; 
+
+    -c) # -c <config>
+      [ -n "$2" -a -s "$2" ] || die "FATAL: '$2' is not a valid configuration file"
+      CONFIG="$2"
+      shift;
+      ;; 
+
+    -g) # -g <grub_dir>
+      [ -n "$2" -a -e "$2/stage1" ] || die "FATAL: '$2' does not contain grub's stage1 file"
+      GRUB_DIR="$2"
+      shift;
+      ;; 
+
+    -m) # -m <mbrdef>
+      [ -n "$2" -a -s "$2" ] || die "FATAL: '$2' is not a valid grub-mbr-default file"
+      MBRDEF="$2"
+      shift;
+      ;; 
+
+    -t) # -t targ_dev
+      TARG_DEV="$2"
+      shift;
+      ;; 
+
+    -v) # -v = verbose
+      VERBOSE=1
+      ;;
+
+    -Fl) # -Fl = format loader partition
+      FORM_FL=1
+      ;;
+
+    -Fi) # -Fi = format image partition
+      FORM_FI=1
+      ;;
+
+    -ni) # -ni = don't install image partition
+      IGNORE_IMG=1
+      ;;
+
+    -nl) # -nl = don't install loader partition
+      IGNORE_LOADER=1
+      ;;
+
+    -fstab) # -fstab
+      FSTAB=1
+      ;; 
+
+    -h|--help) # displays help
+      PRINTUSAGE=1
+      ;;
+
+    *) # display usage
+      PRINTUSAGE=1
+      ;;
+  esac
+  shift
+done
+
+if [ -z "$LOAD_DIR" ]; then
+  [ -d /mnt/cdrom/install/loader/. ] && LOAD_DIR="/mnt/cdrom/install/loader" || LOAD_DIR="$MYDIR/loader"
+fi
+
+if [ -z "$IMG_DIR" ]; then
+  [ -d /mnt/cdrom/install/image/. ] && IMG_DIR="/mnt/cdrom/install/image" || IMG_DIR="$MYDIR/img"
+fi
+
+if [ -z "$GRUB_DIR" -a -s "$MYDIR/grub/stage1" ]; then
+  GRUB_DIR="$MYDIR/grub"
+fi
+
+if [ -z "$MBRDEF" -a -s "$MYDIR/grub-mbr-default" ]; then
+  MBRDEF="$MYDIR/grub-mbr-default"
+fi
+
+GRUB_DIR="${GRUB_DIR:-/usr/share/grub/i386-pc}"
+MBRDEF="${MBRDEF:-/sbin/grub-mbr-default}"
+[ -n "$TARG_DEV" ] || TARG_DEV="$MBR"
+
+[ -z "$IMAGE" -a -n "$IMG_DIR" ] && IMAGE="$IMG_DIR/image.bin"
+[ -z "$CONFIG" -a -n "$IMG_DIR" ] && CONFIG="$IMG_DIR/config.cur"
+
+[ -n "$MNT" -a -n "$MBR" -a -n "$CONFIG" ] || PRINTUSAGE=1
+[ -n "$LOAD_DIR" -o "$IGNORE_LOADER" == 1 ] || PRINTUSAGE=1
+[ -n "$IMAGE" -o "$IGNORE_IMG" == 1 ] || PRINTUSAGE=1
+
+if [ $PRINTUSAGE -gt 0 ]; then
+  usage
+  echo
+  exit 1
+fi
+
+if [ "$IGNORE_LOADER" != 1 ]; then
+  [ -s "$LOAD_DIR/menu.tmpl" ] || die "FATAL: '$LOAD_DIR' does not contain a valid 'menu.tmpl' file."
+  [ -s "$LOAD_DIR/firmware.img" ] || die "FATAL: '$LOAD_DIR' does not contain a valid 'firmware.img' file."
+  [ -s "$GRUB_DIR/stage1" ] || die "FATAL: '$GRUB_DIR' does not contain grub's 'stage1' file."
+  [ -s "$MBRDEF" ] || die "FATAL: '$MBRDEF' is not a valid grub-mbr-default file."
+fi
+
+[ -s "$IMAGE" -o "$IGNORE_IMG" == 1 ] || die "FATAL: '$IMAGE' is not a valid image file."
+[ -s "$CONFIG" ] || echo "Note: '$CONFIG' is not a valid configuration file and will not be installed."
+[ "$FSTAB" != 1 -o -s /tmp/fstab ] || die "FATAL: '/tmp/fstab' is not a valid fstab file."
+
+[ "$(id -u)" = "0" ] || die "FATAL: must have supervisor privileges."
+
+for part in "" 1 2 3 4; do
+  [ -b "${MBR}${part}" ] || die "FATAL: ${MBR}${part} is not a valid block device."
+done
+
+fatal=0
+for name in mount mke2fs tune2fs update-boot-image install-boot2.sh; do
+  if [ -z "$(type -p $name)" ]; then
+    echo "FATAL: '$name' not found in path."
+    fatal=1
+  fi
+done
+
+[ $fatal = 0 ] || die "FATAL: some required commands are missing."
+
+if [ "${FORM_FL}" = 1 ]; then
+  echo "Formating EXT2 filesystem on loader partition ${MBR}1 ..."
+  mke2fs -m 0 -s 1 -b 1024 -N 256 ${MBR}1
+  tune2fs -c -1 -i 0 ${MBR}1
+else
+  echo "Keeping loader partition ${MBR}1 untouched."
+fi
+
+if [ "${IGNORE_LOADER}" != 1 ]; then
+  echo "Mounting ${MBR}1 into $MNT..."
+  mount ${MBR}1 ${MNT}/ || die "FATAL: cannot mount device ${MBR}1 on ${MNT}/."
+
+  install-boot2.sh -d ${MBR} -t ${TARG_DEV} -m ${MNT} -g1 ${GRUB_DIR} -g2 ${MBRDEF%/*} -b ${LOAD_DIR} -v
+  ret=$?
+  rmdir "$MNT/lost+found" 2>/dev/null
+  echo "Unmounting $MNT..."
+  umount ${MNT}/
+  [ $ret -eq 0 ] || die "FATAL: error while initializing boot loader."
+fi
+
+if [ "${FORM_FI}" == 1 ]; then
+  echo "Formating EXT2 filesystem on image partition ${MBR}2 ..."
+  mke2fs -m 0 -s 1 -b 1024 -N 256 ${MBR}2
+  tune2fs -c -1 -i 0 ${MBR}2
+else
+  echo "Keeping image partition ${MBR}2 untouched."
+fi
+
+echo "Mounting ${MBR}2 into $MNT..."
+mount ${MBR}2 ${MNT}/ || die "FATAL: cannot mount device ${MBR}2 on ${MNT}/."
+chmod 700 ${MNT}/. >/dev/null 2>&1
+rmdir ${MNT}/lost+found >/dev/null 2>&1
+mkdir -m 700 -p ${MNT}/bin ${MNT}/cfg ${MNT}/sys >/dev/null 2>&1
+
+cp ${MBRDEF} ${MNT}/bin/
+if [ -s "${CONFIG}" ]; then
+  cp ${CONFIG} ${MNT}/cfg/config.cur
+else
+  echo "Skipping config.cur."
+fi
+
+if [ "$FSTAB" == 1 ]; then
+  echo "Copying fstab..."
+  sed -e '
+    s!^/proc.*!/proc	/proc	proc	defaults,noauto		0 0!;
+    s!^/dev/pts.*!/dev/pts	/dev/pts	devpts	defaults,gid=5,mode=620		0 0!;
+    /[ \t]\/flash[ \t]/s!defaults!defaults,noauto!;
+    /[ \t]\/mnt\/boot[ \t]/s!defaults!defaults,noauto!;
+  ' < /tmp/fstab >${MNT}/fstab
+fi
+
+echo "Unmounting $MNT..."
+umount ${MNT}/
+
+echo
+
+if [ "$IGNORE_IMG" != 1 ]; then
+  echo "Installing system image ..."
+  # We do this at the end to ensure that a flash having it is complete.
+  update-boot-image -f -d ${MBR}2 -b ${MBR} ${IMAGE}
+else
+  echo "Not installing system image ..."
+fi
+echo "Done."
+
