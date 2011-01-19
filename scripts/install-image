@@ -21,7 +21,7 @@ function usage {
   echo "install-image - install boot image on a device - version 0.0.4 - 2010-07-23"
   echo "Usage: ${MYNAME##*/} -d <mbr_dev> [ -l <loader_dir> ] [ -f <img_dir> ]"
   echo "       [ -i <image> ] [ -c <config> ] [ -g <grub_dir> ] [ -m <mbrdef> ]"
-  echo "       [ -t <targ_dev> ] [ -fstab ] [ -Fl ] [ -nl ] [ -Fi ] [ -ni ]"
+  echo "       [ -t <targ_dev> ] [ -fstab ] [ -Fl ] [ -nl ] [ -Fi ] [ -ni ] [ -nc ]"
   echo
   echo "  <mbr_dev> is the name of the block device as seen from the installer's OS."
   echo "  <loader_dir> is the directory where menu.tmpl and firmware.img can be found."
@@ -43,6 +43,7 @@ function usage {
 }
 
 function die {
+  [ -n "$MNT" -a -d "$MNT/." ] && rmdir "$MNT" >/dev/null 2>&1
   echo
   echo "### ${MYNAME}: $@" >&2
   echo "Cmdline was $CMDLINE" >&2
@@ -79,6 +80,7 @@ FORM_FL=0
 FORM_FI=0
 IGNORE_IMG=0
 IGNORE_LOADER=0
+IGNORE_CONF=0
 FSTAB=0
 
 unset MNT MBR LOAD_DIR IMG_DIR IMAGE CONFIG GRUB_DIR
@@ -154,6 +156,10 @@ while [ $# -gt 0 ] ; do
       FORM_FI=1
       ;;
 
+    -nc) # -nc = don't install config
+      IGNORE_CONFIG=1
+      ;;
+
     -ni) # -ni = don't install image partition
       IGNORE_IMG=1
       ;;
@@ -198,13 +204,14 @@ MBRDEF="${MBRDEF:-/sbin/grub-mbr-default}"
 [ -n "$TARG_DEV" ] || TARG_DEV="$MBR"
 
 [ -z "$IMAGE" -a -n "$IMG_DIR" ] && IMAGE="$IMG_DIR/image.bin"
-[ -z "$CONFIG" -a -n "$IMG_DIR" ] && CONFIG="$IMG_DIR/config.cur"
+[ "$IGNORE_CONFIG" != 1 -a -z "$CONFIG" -a -n "$IMG_DIR" ] && CONFIG="$IMG_DIR/config.cur"
 
-[ -n "$MNT" -a -n "$MBR" -a -n "$CONFIG" ] || PRINTUSAGE=1
+[ -n "$MNT" -a -n "$MBR" -a \( -n "$CONFIG" -o  "$IGNORE_CONFIG" == 1 \) ] || PRINTUSAGE=1
 [ -n "$LOAD_DIR" -o "$IGNORE_LOADER" == 1 ] || PRINTUSAGE=1
 [ -n "$IMAGE" -o "$IGNORE_IMG" == 1 ] || PRINTUSAGE=1
 
 if [ $PRINTUSAGE -gt 0 ]; then
+  [ -n "$MNT" -a -d "$MNT/." ] && rmdir "$MNT" >/dev/null 2>&1
   usage
   echo
   exit 1
@@ -218,7 +225,7 @@ if [ "$IGNORE_LOADER" != 1 ]; then
 fi
 
 [ -s "$IMAGE" -o "$IGNORE_IMG" == 1 ] || die "FATAL: '$IMAGE' is not a valid image file."
-[ -s "$CONFIG" ] || echo "Note: '$CONFIG' is not a valid configuration file and will not be installed."
+[ "$IGNORE_CONFIG" == 1 -o -s "$CONFIG" ] || echo "Note: '$CONFIG' is not a valid configuration file and will not be installed."
 [ "$FSTAB" != 1 -o -s /tmp/fstab ] || die "FATAL: '/tmp/fstab' is not a valid fstab file."
 
 [ "$(id -u)" = "0" ] || die "FATAL: must have supervisor privileges."
@@ -272,7 +279,7 @@ rmdir ${MNT}/lost+found >/dev/null 2>&1
 mkdir -m 700 -p ${MNT}/bin ${MNT}/cfg ${MNT}/sys >/dev/null 2>&1
 
 cp ${MBRDEF} ${MNT}/bin/
-if [ -s "${CONFIG}" ]; then
+if [  "$IGNORE_CONFIG" != 1 -a -s "${CONFIG}" ]; then
   cp ${CONFIG} ${MNT}/cfg/config.cur
 else
   echo "Skipping config.cur."
@@ -300,5 +307,6 @@ if [ "$IGNORE_IMG" != 1 ]; then
 else
   echo "Not installing system image ..."
 fi
+[ -n "$MNT" -a -d "$MNT/." ] && rmdir "$MNT" >/dev/null 2>&1
 echo "Done."
 
