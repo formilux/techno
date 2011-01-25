@@ -87,7 +87,8 @@ fi
 addons=( )
 if [ -d "addons/." ]; then
   for i in $(cd addons && echo *); do
-    if [ -d "addons/$i/." -a -x "addons/build.$i" ]; then
+    if [ -d "addons/$i/." -a -e "addons/build.$i" ]; then
+      chmod +x "addons/build.$i"
       addons[${#addons[@]}]="$i"
     fi
   done
