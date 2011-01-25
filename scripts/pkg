@@ -1772,7 +1772,7 @@ function do_prepare {
 	fi
 	echo "* Extracting sysroot"
 	mkdir -p "${FLXROOTDIR}"
-	tar -xjf "${SYSROOTTAR}" -C "${FLXROOTDIR}/../"
+	tar -xf "${SYSROOTTAR}" -C "${FLXROOTDIR}/../"
 	if [ $? -ne 0 ] ; then
 		echo "Error: Cannot untar new sysroot"
 		exit 1
