@@ -1359,6 +1359,7 @@ function do_patch {
     local i
     if [ -f .patched ]; then
       echo "Error: Already patched."
+      return 1
     fi
     find . -name '*.rej' -o -name '*~' | xargs rm -f
 
@@ -1374,6 +1375,8 @@ function do_patch {
 
     if [ -z "$(find . -name '*.rej')" ]; then
 	find . -name '*~' | xargs rm -f
+    else
+	return 1
     fi
     touch .patched
     return 0
