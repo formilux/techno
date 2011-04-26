@@ -1,10 +1,10 @@
 #!/bin/bash
 
 #
-# mksp-pkg - make a pkg dir from several softwares - version 0.0.8 - 2007-08-13
+# mksp-pkg - make a pkg dir from several softwares - version 0.0.9 - 2011-04-26
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
-# Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
+# Copyright (C) 2001-2011 Benoit Dolez & Willy Tarreau
 #       mailto: benoit@ant-computing.com,willy@ant-computing.com
 #
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
@@ -52,10 +52,10 @@ CMDLINE="$*"
 
 # usage: displays script usage and returns no error.
 function usage {
-  echo "MKSP-PKG - make a pkg dir from several softwares - version 0.0.6 - 2006-07-03"
+  echo "MKSP-PKG - make a pkg dir from several softwares - version 0.0.9 - 2011-04-26"
   echo "Usage: ${myname##*/} { -c |  [ -i <base_dir> ]* [ -prf <base_dir:match> ]* "
   echo "       [ -pkgi <base_dir:file> ]* [ -pkge <base_dir:file> ]* }"
-  echo "       -o <out_dir> [ -b build_ver] [ -d ] [ -nc ]"
+  echo "       -o <out_dir> [ -b build_ver] [ -d ] [ -nc ] [-f|-F]"
   echo
   echo "   The 'fs' directory will be deleted under <out_dir>, and the execution will"
   echo "   end here if '-c' is set. Otherwise, an 'fs' directory will be created under"
@@ -68,7 +68,8 @@ function usage {
   echo "   cross-reference another tree, you have to work on the other tree first."
   echo "   All paths are absolute. '-b' is used to force the version which appears"
   echo "   everywhere. Uses several scripts from \$SCRIPTDIR='$SCRIPTDIR'."
-  echo "   -nc disables prf consistency checking. Use '-d' for debug."
+  echo "   -nc disables prf consistency checking. Use '-d' for debug. -f forces to"
+  echo "   continue and ignore any error, -F fails on any error."
 }
 
 function die {
@@ -93,6 +94,8 @@ PRINTUSAGE=0
 CLEAN_ONLY=0
 DEBUG=0
 NOCONS=0
+IGNERR=0
+FAILERR=0
 
 # default names
 INCLUDE_FILE_NAME=PKGLIST
@@ -147,6 +150,12 @@ while [ $# -gt 0 ] ; do
       ;;
     -d) # -d = clean
       DEBUG=1
+      ;;
+    -f) # -f = force to continue on errors
+      IGNERR=1
+      ;;
+    -F) # -F = fail on errors
+      FAILERR=1
       ;;
     -nc) # -nc = no consistency checking
       NOCONS=1
@@ -240,10 +249,16 @@ prf_consistency_check() {
       echo "    Additionnaly, the directories $2/rescan* must be removed."
       echo
     fi
-    echo "    => You should press <Ctrl>-C now and fix them by hand,"
-    echo "       or press <ENTER> now to ignore the problem."
-    echo
-    read
+    if [ $FAILERR -gt 0 ]; then
+      echo "    => Fail mode specified (-F), aborting now."
+      echo
+      exit 1
+    elif [ $IGNERR -eq 0 ]; then
+      echo "    => You should press <Ctrl>-C now and fix them by hand, or press"
+      echo "       <ENTER> now to ignore the problem. Use -f to ignore this warning."
+      echo
+      read
+    fi
   fi
 }
 
@@ -377,8 +392,15 @@ for IN_DIR in "${IN_DIRS[@]}"; do
 	echo "    The following packages were referenced by $INCLUDE_FILE but not found : "
 	echo "    >>> ${not_found[@]} <<<"
 	echo
-        echo "    +++ Press <ENTER> to continue of <Ctrl>-C to stop here +++"; read
-        echo
+        if [ $FAILERR -gt 0 ]; then
+          echo "    => Fail mode specified (-F), aborting now."
+          echo
+          exit 1
+        elif [ $IGNERR -eq 0 ]; then
+          echo "    +++ Press <ENTER> to continue of <Ctrl>-C to stop here +++"; read
+          echo
+          read
+        fi
     fi
   else
     echo;echo "   +++ Package list ($INCLUDE_FILE) not found +++";echo
