@@ -1904,9 +1904,13 @@ function get_package {
 function do_source {
   echo "Re-using package ${REPLY}"
   echo "Downloading source package ${REPLY}..."
+  if [ -z "$SRC_FETCH_PATH" -a -z "$SRC_FETCH_METHOD" ]; then
+    echo "No source package nor source fetch method. assume package does not need sources"
+    return 0
+  fi
   if [ -z "$SRC_FETCH_PATH" ]; then
     echo "No source package specified SRC_FETCH_PATH"
-    return 2
+    return 2 
   fi
   if [ -z "$SRC_FETCH_METHOD" ]; then
     echo "No SRC_FETCH_METHOD"
