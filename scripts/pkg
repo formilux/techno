@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# pkg - Formilux package builder - version 0.10.0 - 2010-05-17
+# pkg - Formilux package builder - version 0.10.0 - 2011-03-02
 #
-# Copyright (C) 2001-2005 Benoit Dolez & Willy Tarreau
-#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+# Copyright (C) 2001-20011 Benoit Dolez & Willy Tarreau & William Lallemand
+#   mailto: benoit@ant-computing.com,willy@ant-computing.com,wlallemand@exceliance.fr
 #
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
 
@@ -33,7 +33,7 @@ PKG_VERSION=0.10.0
 #   pkg search [ package ]
 #     ex: pkg search libc
 #
-#   pkg { info | cat | edit | unpack } [ pkg ] 
+#   pkg { info | cat | edit | unpack } [ pkg ]
 #     ex: pkg info
 #         pkg info bash
 #         pkg edit modutils-2.4
@@ -166,6 +166,7 @@ function do_filefind {
   return 0
 
 }
+
 
 # find packageable files (that can't be automaticaly created) and return only
 # their relative path to the argument.
@@ -1910,7 +1911,7 @@ function do_source {
   fi
   if [ -z "$SRC_FETCH_PATH" ]; then
     echo "No source package specified SRC_FETCH_PATH"
-    return 2 
+    return 2
   fi
   if [ -z "$SRC_FETCH_METHOD" ]; then
     echo "No SRC_FETCH_METHOD"
