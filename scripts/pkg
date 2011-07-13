@@ -1711,7 +1711,7 @@ function do_pack {
 		fi
 		echo "$REPLY \$INFO" >> $DEP_FILE
 		;;
-	    bin/*|sbin/*|lib/*|*/sbin/*|*/bin/*|*/lib/*|*/libexec/*)
+	    bin/*|sbin/*|lib/*|lib64/*|*/sbin/*|*/bin/*|*/lib64/*|*/lib/*|*/libexec/*)
 		flr="$(file $REPLY)"
 		case "$flr" in
 		    *\ script\ *)
