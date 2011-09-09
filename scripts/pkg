@@ -80,6 +80,11 @@ PKGROOT=${PKGROOT:-/var/flx-pkg}
 PKG_EXACTPKG=${PKG_EXACTPKG:-0}
 PKG_NOCHOICE=${PKG_NOCHOICE:-0}
 
+# List of cache directories from where to fetch source files. Those
+# suffixed by ":r" are only used for retrieving but are never updated.
+# /tmp, /nfs/tmp and /data/tmp are used as read-only by default.
+FLX_SRC_CACHE_DIRS="${FLX_SRC_CACHE_DIRS-/tmp:r /nfs/tmp:r /data/tmp:r}"
+
 # verbose flag for tar
 VERBOSE=${VERBOSE- -v}
 
@@ -1852,7 +1857,8 @@ function do_search {
 # get file from location $1, store it as file $2. One or multiple directories
 # may be specified in $3... They will be used as caches and looked up in the
 # same order. All caches will be updated to hold the file from lower priority
-# caches.
+# caches. If a cache directory name is suffixed with ":r", it is only read,
+# but never updated.
 function get_cached_file {
   local from="$1"; shift
   local dest="$1"; shift
@@ -1871,7 +1877,7 @@ function get_cached_file {
   fi
 
   while [ $cur_cache -lt ${#caches[*]} ]; do
-    dir=${caches[$cur_cache]}
+    dir="${caches[$cur_cache]}"; dir="${dir%:r}"
     [ -e "$dir/$name" ] && break
     (( cur_cache++ ))
   done
@@ -1884,26 +1890,28 @@ function get_cached_file {
     # broken objects.
     cur_cache=0
     while [ $cur_cache -lt ${#caches[*]} ]; do
-      dir=${caches[$cur_cache]}
-      cp "$dest" "$dir/$name" || rm -f "$dir/$name"
+      if [ -n "${caches[$cur_cache]##*:r}" ]; then
+        echo "  Updating cache dir ${caches[$cur_cache]%:r}."
+        cp "$dest" "${caches[$cur_cache]%:r}" || rm -f "${caches[$cur_cache]%:r}"
+      fi
       (( cur_cache++ ))
     done
-
     return 0
   fi
 
   # OK, object was found, let's copy it and populate caches of higher
   # priority.
 
-  echo "Fetching $from from cache dir $dir."
+  echo "Fetching copy of $from from cache dir $dir."
   cp "$dir/$name" "$dest" || return 1
 
   while [ $cur_cache -gt 0 ]; do
     (( cur_cache-- ))
-    echo "  Updating cache dir ${caches[$cur_cache]}."
-    cp "$dir/$name" "${caches[$cur_cache]}" || rm -f "$dir/$name"
+    if [ -n "${caches[$cur_cache]##*:r}" ]; then
+      echo "  Updating cache dir ${caches[$cur_cache]%:r}."
+      cp "$dir/$name" "${caches[$cur_cache]%:r}" || rm -f "${caches[$cur_cache]%:r}"
+    fi
   done
-
   return 0
 }
 
