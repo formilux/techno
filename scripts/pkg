@@ -80,6 +80,9 @@ PKGROOT=${PKGROOT:-/var/flx-pkg}
 PKG_EXACTPKG=${PKG_EXACTPKG:-0}
 PKG_NOCHOICE=${PKG_NOCHOICE:-0}
 
+# verbose flag for tar
+VERBOSE=${VERBOSE- -v}
+
 _PKG=$0
 
 # use -p1 by default to apply a patch
@@ -1846,6 +1849,64 @@ function do_search {
   fi
 }
 
+# get file from location $1, store it as file $2. One or multiple directories
+# may be specified in $3... They will be used as caches and looked up in the
+# same order. All caches will be updated to hold the file from lower priority
+# caches.
+function get_cached_file {
+  local from="$1"; shift
+  local dest="$1"; shift
+  local -a caches=( $* )
+  local cur_cache=0
+  local name dir
+
+  # retrieve the name as the last slash-delimited part which contains a dot.
+  name=$(echo -n "$from" | sed -e 's#.*/\([^/;]*\.[^/;]*\).*#\1#')
+
+  # we only accept the name if it does not end in ".git" and contains at least
+  # one digit. Otherwise we use an md5 of the full URL.
+  if [ -z "${name##*.git}" -o -n "${name##*[0-9]*}" ]; then
+     set -- $(echo -n "$from" | md5sum)
+     name="url-$1"
+  fi
+
+  while [ $cur_cache -lt ${#caches[*]} ]; do
+    dir=${caches[$cur_cache]}
+    [ -e "$dir/$name" ] && break
+    (( cur_cache++ ))
+  done
+
+  if [ $cur_cache -ge ${#caches[*]} ]; then
+    # Object not found in cache, retrieve it and populate all caches
+    wget -c "$from" -O "$dest" || return 1
+
+    # Populate caches. We don't exit on error but we remove potentially
+    # broken objects.
+    cur_cache=0
+    while [ $cur_cache -lt ${#caches[*]} ]; do
+      dir=${caches[$cur_cache]}
+      cp "$dest" "$dir/$name" || rm -f "$dir/$name"
+      (( cur_cache++ ))
+    done
+
+    return 0
+  fi
+
+  # OK, object was found, let's copy it and populate caches of higher
+  # priority.
+
+  echo "Fetching $from from cache dir $dir."
+  cp "$dir/$name" "$dest" || return 1
+
+  while [ $cur_cache -gt 0 ]; do
+    (( cur_cache-- ))
+    echo "  Updating cache dir ${caches[$cur_cache]}."
+    cp "$dir/$name" "${caches[$cur_cache]}" || rm -f "$dir/$name"
+  done
+
+  return 0
+}
+
 # get package
 function get_package {
   case "$2" in
@@ -1855,7 +1916,7 @@ function get_package {
 		# released version , no modification authorized
 		svn export "$1" .srcexport
 		tar -cf .src .srcexport
-	    	tar --exclude=".flxpkg" --strip-components=1 -xvf .src || return 1
+	    	tar --exclude=".flxpkg" --strip-components=1 ${VERBOSE} -xf .src || return 1
 	    else
 		svn checkout "$1" .
 	    fi
@@ -1872,9 +1933,9 @@ function get_package {
 	  git clone "$1" src
 	;;
 	http|ftp)
-	  (   
-	    wget -c "$1" -O .src || return 1
-	    tar --exclude=".flxpkg" --strip-components=1 -xvf .src || return 1
+	  (
+	    get_cached_file "$1" .src "${FLX_SRC_CACHE_DIRS}" || return 1
+	    tar --exclude=".flxpkg" --strip-components=1 ${VERBOSE} -xf .src || return 1
 	  )
 	;;
 	filesystem)
@@ -1885,7 +1946,7 @@ function get_package {
 	      cp -a "$1" .
 	    fi
 	  else
-	    tar --exclude=".flxpkg" --strip-components=1 -xvf "$1"
+	    tar --exclude=".flxpkg" --strip-components=1 ${VERBOSE} -xf "$1"
 	  fi
 	;;
 	*)
