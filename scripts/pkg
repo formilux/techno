@@ -1775,6 +1775,12 @@ function do_pack {
 
 # this function extract the sys-root and dependencies into it
 function do_prepare {
+  if [ -z "${SYSROOTTAR}" -o ! -e "${SYSROOTTAR}" ]; then
+	echo "Error: sysroot tar file not found (\$SYSROOTTAR = \"$SYSROOTTAR\")."
+	echo "Refusing to remove sysroot."
+	exit 1
+  fi
+
   if [ -z "$DONTCLEANSYSROOT" ]; then
         echo "* Cleaning sysroot"
 	rm -rf "${FLXROOTDIR}"
