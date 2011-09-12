@@ -1892,7 +1892,7 @@ function get_cached_file {
     while [ $cur_cache -lt ${#caches[*]} ]; do
       if [ -n "${caches[$cur_cache]##*:r}" ]; then
         echo "  Updating cache dir ${caches[$cur_cache]%:r}."
-        cp "$dest" "${caches[$cur_cache]%:r}" || rm -f "${caches[$cur_cache]%:r}"
+        cp "$dest" "${caches[$cur_cache]%:r}/$name" || rm -f "${caches[$cur_cache]%:r}"
       fi
       (( cur_cache++ ))
     done
