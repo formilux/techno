@@ -1225,8 +1225,13 @@ function do_cat {
     cat $CFGFILE
 }
 function do_lst {
-    local FPNAME
-    FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
+      local FPNAME
+	if [ -z "$PKG_CACHEBIN" ]; then
+		FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
+	else
+		# use the cachebin for release package with non-release binaries
+		FPNAME="$PKG_CACHEBIN/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
+	fi 
     cat $FPNAME.lst
 }
 
@@ -1498,7 +1503,13 @@ function _do_pack_files {
     echo "done."
 
     # full path name of different files
-    FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
+      local FPNAME
+	if [ -z "$PKG_CACHEBIN" ]; then
+		FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
+	else
+		# use the cachebin for release package with non-release binaries
+		FPNAME="$PKG_CACHEBIN/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
+	fi 
     DEP_FILE=$FPNAME.dep
 
     # If we're currently building a "build" model, we just want the tgz with
@@ -1651,8 +1662,12 @@ function do_pack {
     echo "done."
 
     # full path name of different files
-    FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
-#    FPNAME=$PKGDIR/compiled/${EXACTPKG##*/}-$FLXARCH
+if [ -z "$PKG_CACHEBIN" ]; then
+		FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
+	else
+		# use the cachebin for release package with non-release binaries
+		FPNAME="$PKG_CACHEBIN/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
+	fi 
     DEP_FILE=$FPNAME.dep
 
     # If we're currently building a "build" model, we just want the tgz with
