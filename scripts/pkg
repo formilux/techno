@@ -1773,6 +1773,23 @@ function do_pack {
     return 0
 }
 
+# match/glob package with bld files 
+function match_pkg {
+   local PKGNAME="$1"
+   local BLD="$2"
+
+   local PKG
+    for PKG in ${BLD[*]}; do
+      if [[ "$PKG" =~ $PKGNAME ]]; then
+	echo "$PKGNAME-> $PKG"
+	REPLY="$PKG"
+	return 0
+      fi
+    done
+    REPLY=""
+    return 1 
+}
+
 # this function extract the sys-root and dependencies into it
 function do_prepare {
   if [ -z "${SYSROOTTAR}" -o ! -e "${SYSROOTTAR}" ]; then
@@ -1797,7 +1814,7 @@ function do_prepare {
 	fi
   fi
 
-# iterate on a depends list :
+ # iterate on a depends list :
  # EXAMPLE :
  #  'packagename:versfx:architecture:globbing'
  
@@ -1807,21 +1824,39 @@ function do_prepare {
       local OLDIFS=$IFS
       IFS=:
       set -- $DEPEND
-      PKGNAME=$1
+      local PKGNAME=$1
       VERSFX=$2
       ARCH=$3
       TARGLOB=$4
       IFS=$OLDIFS
-      get_name ${PKGNAME} %P
       if [ -n "$REPLY" ]; then
-        set +o noglob
-      	PKGRADIX="$(get_pkg_radix ${PKGNAME})"
-	PKGVER="$(get_pkg_ver ${PKGNAME})"
-	DISTVER="$(get_build_num ${PKGNAME})"
-        FILE="$PKGDIR/compiled/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-${ARCH:-$FLXARCH}.$PKGSUFF"
+#       # try to glob PKGNAME with the version in LIST_PACKAGES_VERSION files
+      if [ -n "$LIST_PACKAGES_VERSION" ]; then
+	  BLD=`cat ${LIST_PACKAGES_VERSION[*]} | tr '\n' ' '`
+          match_pkg "$PKGNAME" "$BLD"
+	  if [ $? -eq 1 ]; then
+	       echo "$PKGNAME not found in \$LIST_PACKAGES_VERSION"
+	       exit 1
+          fi
+	  PKGNAME=$REPLY
+      fi
+ 
+      get_name ${PKGNAME} %D
+     set +o noglob
+      PKGRADIX="$(get_pkg_radix ${PKGNAME})"
+      PKGVER="$(get_pkg_ver ${PKGNAME})"
+      DISTVER="$(get_build_num ${PKGNAME})"
+      local FPNAME
+	if [ -z "$PKG_CACHEBIN" ]; then
+		FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
+	else
+		# use the cachebin for release package with non-release binaries
+		FPNAME="$PKG_CACHEBIN/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
+	fi 
+	FILE="$FPNAME.$PKGSUFF"
         if [ -z "$FILE" ]; then
 	  RET=$(($RET|1))
-         echo "$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-${ARCH:-$FLXARCH}.$PKGSUFF Not found !"
+         echo "$FILE Not found !"
         else
 	  set -o noglob 
 	  set -- $TARGLOB
