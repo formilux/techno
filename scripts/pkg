@@ -1829,6 +1829,10 @@ function do_prepare {
 	fi
   fi
 
+if [ -z "${MAKEDEPENDS[*]}" ]; then
+	return 0
+fi
+
  # iterate on a depends list :
  # EXAMPLE :
  #  'packagename:versfx:architecture:globbing'
