@@ -183,6 +183,7 @@ function pkgfilefind {
     local start=${1%%/}
     local dir
     local -a exclude_args=( )
+	
 
     for dir in "${EXCLUDE_LIST[@]}"; do
         exclude_args=( "${exclude_args[@]}" -and -not -path "${start}/${dir}" )
@@ -731,7 +732,7 @@ function do_deps {
   PKGRADIX="$(get_pkg_radix ${CURPKGNAME})"
   PKGVER="$(get_pkg_ver ${CURPKGNAME})"
   DISTVER="$(get_build_num ${CURPKGNAME})"
-  TARBALL=($PKGDIR/compiled/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH.$PKGSUFF)
+  TARBALL=($PKGDIR/compiled/$PKGRADIX-$PKGVER-$DISTVER${VERSFX:+_$VERSFX}-$FLXARCH.$PKGSUFF)
   if [ -n "$TARBALL" -a -f "$TARBALL" ]; then
     if [ "$PKG_ONLYUNBUILDDEPS" == "1" ]; then
     # don't search dependencies if tarball exists.
@@ -1225,13 +1226,8 @@ function do_cat {
     cat $CFGFILE
 }
 function do_lst {
-      local FPNAME
-	if [ -z "$PKG_CACHEBIN" ]; then
-		FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
-	else
-		# use the cachebin for release package with non-release binaries
-		FPNAME="$PKG_CACHEBIN/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
-	fi 
+    local FPNAME
+    FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-$DISTVER${VERSFX:+_$VERSFX}-$FLXARCH"
     cat $FPNAME.lst
 }
 
@@ -1503,13 +1499,7 @@ function _do_pack_files {
     echo "done."
 
     # full path name of different files
-      local FPNAME
-	if [ -z "$PKG_CACHEBIN" ]; then
-		FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
-	else
-		# use the cachebin for release package with non-release binaries
-		FPNAME="$PKG_CACHEBIN/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
-	fi 
+    FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-$DISTVER${VERSFX:+_$VERSFX}-$FLXARCH"
     DEP_FILE=$FPNAME.dep
 
     # If we're currently building a "build" model, we just want the tgz with
@@ -1649,6 +1639,11 @@ function do_pack {
         return $?
     fi
 
+    if [ -n "$( find ${start} -type f -printf '%n \n' | grep -v '^1 ' )" ] ; then
+	echo "Error hard links detected:" >&2
+	find ${start} -type f -printf '%n %P\n' | grep -v '^1 ' >&2
+	return 1
+    fi 
 ##  ( find lib -type l -name "lib*.so*" | xargs rm -f ; \
 ##  find usr/lib -type l -name "lib*.so*" | xargs rm -f ; \
 ##  ldconfig -nr . ) > /dev/null 2>&1
@@ -1662,12 +1657,7 @@ function do_pack {
     echo "done."
 
     # full path name of different files
-if [ -z "$PKG_CACHEBIN" ]; then
-		FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
-	else
-		# use the cachebin for release package with non-release binaries
-		FPNAME="$PKG_CACHEBIN/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
-	fi 
+    FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-$DISTVER${VERSFX:+_$VERSFX}-$FLXARCH"
     DEP_FILE=$FPNAME.dep
 
     # If we're currently building a "build" model, we just want the tgz with
@@ -1807,6 +1797,38 @@ function match_pkg {
 
 # this function extract the sys-root and dependencies into it
 function do_prepare {
+  local VERSFX ARCH PACKAGE PKGNAME
+  local OLDIFS
+  local PKGNAME
+
+  echo -n "" >.preparepkg
+  if [ -n "${MAKEDEPENDS[*]}" ]; then
+  set -o noglob
+    for DEPEND in "${MAKEDEPENDS[@]}"; do 
+      OLDIFS=$IFS
+      IFS=:
+      set -- $DEPEND
+      IFS=$OLDIFS
+      PKGNAME=$1
+      VERSFX="$2"
+      ARCH="${3:-$FLXARCH}"
+      PACKAGE="$( find $PKGROOT -maxdepth 1 -name "$1" -type d | xargs -r ls -1dv | tail -n 1 )"
+      if [ -z "$PACKAGE" ] ; then
+	echo "PackageNotFound: $PKGNAME" > .preparepkg
+	cat .preparepkg
+	exit 1
+      else
+	PACKAGE="${PACKAGE##*/}"
+	if [ ! -e "$PKGROOT/$PACKAGE/compiled/$PACKAGE${VERSFX:+_$VERSFX}-$ARCH.tgz" ] ; then
+	  echo "ArchiveNotFound: $PACKAGE${VERSFX:+_$VERSFX}-$ARCH.tgz" > .preparepkg
+	  cat .preparepkg
+	  exit 1
+        fi
+      fi
+    done
+  set +o noglob
+  fi
+
   if [ -z "${SYSROOTTAR}" -o ! -e "${SYSROOTTAR}" ]; then
 	echo "Error: sysroot tar file not found (\$SYSROOTTAR = \"$SYSROOTTAR\")."
 	echo "Refusing to remove sysroot."
@@ -1840,56 +1862,30 @@ fi
  RET=0
   set -o noglob
     for DEPEND in "${MAKEDEPENDS[@]}"; do 
-      local OLDIFS=$IFS
+      OLDIFS=$IFS
       IFS=:
       set -- $DEPEND
-      local PKGNAME=$1
-      VERSFX=$2
-      ARCH=$3
-      TARGLOB=$4
       IFS=$OLDIFS
-      if [ -n "$REPLY" ]; then
-#       # try to glob PKGNAME with the version in LIST_PACKAGES_VERSION files
-      if [ -n "$LIST_PACKAGES_VERSION" ]; then
-	  BLD=`cat ${LIST_PACKAGES_VERSION[*]} | tr '\n' ' '`
-          match_pkg "$PKGNAME" "$BLD"
-	  if [ $? -eq 1 ]; then
-	       echo "$PKGNAME not found in \$LIST_PACKAGES_VERSION"
-	       exit 1
-          fi
-	  PKGNAME=$REPLY
-      fi
- 
-      get_name ${PKGNAME} %D
-     set +o noglob
-      PKGRADIX="$(get_pkg_radix ${PKGNAME})"
-      PKGVER="$(get_pkg_ver ${PKGNAME})"
-      DISTVER="$(get_build_num ${PKGNAME})"
-      local FPNAME
-	if [ -z "$PKG_CACHEBIN" ]; then
-		FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
-	else
-		# use the cachebin for release package with non-release binaries
-		FPNAME="$PKG_CACHEBIN/$PKGRADIX-$PKGVER-${VERSFX:+$VERSFX-}$DISTVER-$FLXARCH"
-	fi 
-	FILE="$FPNAME.$PKGSUFF"
-        if [ -z "$FILE" ]; then
-	  RET=$(($RET|1))
-         echo "$FILE Not found !"
-        else
-	  set -o noglob 
-	  set -- $TARGLOB
-	  TARGLOB=( "$@" )
-	  set +o noglob
-      	    echo "Untar ${TARGLOB[@]} from ${FILE##*/}"
-	    tar xfz $FILE  \
-	        -C "$FLXROOTDIR/" --wildcards "${TARGLOB[@]}" || return $?
-	fi
-        set -o noglob
+      PKGNAME=$1
+      VERSFX="$2"
+      ARCH="${3:-$FLXARCH}"
+      TARGLOB=$4
+      PACKAGE="$( find $PKGROOT -maxdepth 1 -name "$1" -type d | xargs -r ls -1dv | tail -n 1 )"
+      if [ -z "$PACKAGE" ] ; then
+	echo "Error: package $PKGNAME not found."
+	exit 1
       else
-        RET=$(($RET|1))
-        echo "Package not found ${depend[0]}"
-      fi
+	PACKAGE="${PACKAGE##*/}"
+	FILE="$PKGROOT/$PACKAGE/compiled/$PACKAGE${VERSFX:+_$VERSFX}-$ARCH.tgz"
+	if [ ! -e "$FILE" ] ; then
+	  exit 1
+        fi
+      fi	
+      set -- $TARGLOB
+      TARGLOB=( "$@" )
+      echo "Untar ${TARGLOB[@]} from ${FILE##*/}"
+      tar xfz $FILE  \
+        -C "$FLXROOTDIR/" --wildcards "${TARGLOB[@]}" || return $?
     done
   set +o noglob
   return $RET
@@ -2112,6 +2108,7 @@ function set_compiler_options {
     	i686)     arch=${arch:-i686}  cpu=${cpu:-i686}   basearch=${basearch:-i386} ;;
     	i486)     arch=${arch:-i486}  cpu=${cpu:-i486}   basearch=${basearch:-i386} ;;
     	i386)     arch=${arch:-i386}  cpu=${cpu:-i386}   basearch=${basearch:-i386} ;;
+	x86_64)   arch=${arch:-i586} cpu=${arch:-i686} basearch=${arch:-i386} ;;
     	parisc)   arch=${arch:-1.1}   cpu=${cpu:-7100LC} basearch=${basearch:-1.1}  ;;
     	sparc)    arch=${arch:-sparc} cpu=${cpu:-sparc}  basearch=${basearch:-sparc} ;;
     	sparc64)  arch=${arch:-ultrasparc} cpu=${cpu:-ultrasparc}  basearch=${basearch:-sparc} ;;
@@ -2131,9 +2128,9 @@ function set_compiler_options {
     	    GCC_ARCH_CURRENT="-march=$arch"
     	    GCC_ARCH_COMMON="-march=$FLX_ARCH_COMMON"
     	    GCC_ARCH_SMALL="-march=$FLX_ARCH_SMALL"
-    	    GCC_CPU_CURRENT="-mcpu=$cpu"
-    	    GCC_CPU_COMMON="-mcpu=$FLX_ARCH_COMMON"
-    	    GCC_CPU_SMALL="-mcpu=$FLX_ARCH_SMALL"
+#    	    GCC_CPU_CURRENT="-mcpu=$cpu"
+#    	    GCC_CPU_COMMON="-mcpu=$FLX_ARCH_COMMON"
+#    	    GCC_CPU_SMALL="-mcpu=$FLX_ARCH_SMALL"
     	    GCC_OPT_FASTEST="-O3 -fomit-frame-pointer"
     	    GCC_OPT_FAST="-O2 -momit-leaf-frame-pointer -mpreferred-stack-boundary=2 -malign-jumps=0"
     	    GCC_OPT_SMALL="-Os -momit-leaf-frame-pointer -mpreferred-stack-boundary=2 -malign-jumps=0 -malign-loops=0 -malign-functions=0"
@@ -2144,6 +2141,28 @@ function set_compiler_options {
     	    fi
 	    ;;
    
+    	x86_64)
+    	    CC=${CC:-gcc}
+    	    CXX=${CXX:-g++}
+    	    FLX_ARCH_CURRENT="$FLXARCH"
+    	    FLX_ARCH_COMMON="x86_64"
+    	    FLX_ARCH_SMALL="$basearch"
+  #  	    GCC_ARCH_CURRENT="-march=$arch"
+ #   	    GCC_ARCH_COMMON="-march=$FLX_ARCH_COMMON"
+#    	    GCC_ARCH_SMALL="-march=$FLX_ARCH_SMALL"
+#    	    GCC_CPU_CURRENT="-mcpu=$cpu"
+#    	    GCC_CPU_COMMON="-mcpu=$FLX_ARCH_COMMON"
+#    	    GCC_CPU_SMALL="-mcpu=$FLX_ARCH_SMALL"
+    	    GCC_OPT_FASTEST="-O3 -fomit-frame-pointer"
+    	    GCC_OPT_FAST="-O2 -momit-leaf-frame-pointer -mpreferred-stack-boundary=4 -malign-jumps=0"
+    	    GCC_OPT_SMALL="-Os -momit-leaf-frame-pointer -mpreferred-stack-boundary=4 -malign-jumps=0 -malign-loops=0 -malign-functions=0"
+    	    if [ $TESTGCC -gt 0 ] && $CC -fno-align-loops -S -o /dev/null -xc /dev/null >/dev/null 2>&1; then
+    		    GCC_OPT_FASTEST="-O3 -fomit-frame-pointer"
+    		    GCC_OPT_FAST="-O2 -momit-leaf-frame-pointer -mpreferred-stack-boundary=4 -fno-align-jumps"
+    		    GCC_OPT_SMALL="-Os -momit-leaf-frame-pointer -mpreferred-stack-boundary=4 -fno-align-functions -fno-align-loops -fno-align-jumps -fno-align-labels"
+    	    fi
+	    ;;
+
     	parisc*)
     	    CC=${CC:-gcc}
     	    CXX=${CXX:-g++}
@@ -2718,3 +2737,4 @@ done
 
 [ $CHAINCMD -gt 0 ] && (echo "===> PKG: [END] <===";echo) >&2
 exit 0
+
