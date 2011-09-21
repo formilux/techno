@@ -1603,6 +1603,8 @@ function _do_pack_files {
 function do_pack {
     local DEP_FILE FPNAME
     local FILE_LISTS ext
+    local hlist
+    local hl
 
     if [ -e "$PKGDIR/RELEASED" ]; then
       echo "Can't pack, the package is already released."
@@ -1631,6 +1633,15 @@ function do_pack {
 	exit 1
     fi
 
+    hlist=( $( find .flxdisk -type f -printf '%n %P\n' | grep -v '^1 ' | sed 's/.* //' ) )
+
+    for hl in "${hlist[@]}" ; do
+        mkdir -p .tmphl/${hl%/*}
+        cp --preserve=all $ROOTDIR/${hl} .tmphl/${hl}
+        rm -f $ROOTDIR/${hl}
+        cp --preserve=all .tmphl/${hl} $ROOTDIR/${hl}
+    done
+
     cd $ROOTDIR
 
     # use the file list when available
@@ -1639,11 +1650,6 @@ function do_pack {
         return $?
     fi
 
-    if [ -n "$( find ${start} -type f -printf '%n \n' | grep -v '^1 ' )" ] ; then
-	echo "Error hard links detected:" >&2
-	find ${start} -type f -printf '%n %P\n' | grep -v '^1 ' >&2
-	return 1
-    fi 
 ##  ( find lib -type l -name "lib*.so*" | xargs rm -f ; \
 ##  find usr/lib -type l -name "lib*.so*" | xargs rm -f ; \
 ##  ldconfig -nr . ) > /dev/null 2>&1
