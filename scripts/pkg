@@ -65,7 +65,6 @@ KERNDIR=${KERNDIR:-/usr/src/linux}
 FLXHOSTOS=${FLXHOSTOS:-$(uname -s|tr 'A-Z' 'a-z')}
 FLXHOSTARCH=${FLXHOSTARCH:-$(uname -m)}
 FLXHOST=${FLXHOST:-$FLXHOSTARCH-$FLXHOSTOS}
-FLXROOTDIR=${FLXROOTDIR:-/var/toolchains/rootdir}
 
 # FLXTARGARCH can be influenced by FLXARCH if defined
 FLXTARGOS=${FLXTARGOS:-$FLXHOSTOS}
@@ -76,6 +75,16 @@ FLXARCH=${FLXARCH:-$FLXTARGARCH}
 
 DEVROOT=${DEVROOT:-/var/flx-dev}
 PKGROOT=${PKGROOT:-/var/flx-pkg}
+
+# FLXROOTDIR, SYSROOTTAR, FLXCROSS and UCLIBCROOT may be inherited from their
+# _${FLXARCH} fallbacks
+var=FLXROOTDIR_${FLXARCH} ; FLXROOTDIR=${FLXROOTDIR-${!var}}
+var=SYSROOTTAR_${FLXARCH} ; SYSROOTTAR=${SYSROOTTAR-${!var}}
+var=FLXCROSS_${FLXARCH}   ; FLXCROSS=${FLXCROSS-${!var}}
+var=UCLIBCROOT_${FLXARCH} ; UCLIBCROOT=${UCLIBCROOT-${!var}}
+
+# default rootdir if unset
+FLXROOTDIR=${FLXROOTDIR:-/var/toolchains/rootdir}
 
 PKG_EXACTPKG=${PKG_EXACTPKG:-0}
 PKG_NOCHOICE=${PKG_NOCHOICE:-0}
