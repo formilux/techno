@@ -1803,10 +1803,10 @@ function match_pkg {
 
 # this function extract the sys-root and dependencies into it
 function do_prepare {
-  local VERSFX ARCH PACKAGE PKGNAME
+  local VERSFX ARCH PACKAGE PKGNAME PACKAGES
   local OLDIFS
   local PKGNAME
-
+  local checkpack
   echo -n "" >.preparepkg
   if [ -n "${MAKEDEPENDS[*]}" ]; then
   set -o noglob
@@ -1818,7 +1818,21 @@ function do_prepare {
       PKGNAME=$1
       VERSFX="$2"
       ARCH="${3:-$FLXARCH}"
-      PACKAGE="$( find $PKGROOT -maxdepth 1 -name "$1" -type d | xargs -r ls -1dv | tail -n 1 )"
+      PACKAGE=""
+      PACKAGES="$( find $PKGROOT -maxdepth 1 -name "$1" -type d | xargs -r ls -dv )"
+      for checkpack in ${PACKAGES[@]} ; do
+		if [ -n "$( grep "^${checkpack##*/}" $PKGPREPFILTER )" ] ; then
+			PACKAGE="$checkpack"
+		fi
+      done				
+      if [ -z "$PACKAGE" ] ; then
+          PACKAGES="$( find $DEVROOT -maxdepth 1 -name "$1" -type d | xargs -r ls -dv )"
+          for checkpack in ${PACKAGES[@]} ; do
+		if [ -n "$( grep "^${checkpack##*/}" $PKGPREPFILTER )" ] ; then
+			PACKAGE="$checkpack"
+		fi
+          done				
+      fi		
       if [ -z "$PACKAGE" ] ; then
 	echo "PackageNotFound: $PKGNAME" > .preparepkg
 	cat .preparepkg
@@ -1876,7 +1890,20 @@ fi
       VERSFX="$2"
       ARCH="${3:-$FLXARCH}"
       TARGLOB=$4
-      PACKAGE="$( find $PKGROOT -maxdepth 1 -name "$1" -type d | xargs -r ls -1dv | tail -n 1 )"
+      PACKAGES="$( find $PKGROOT -maxdepth 1 -name "$1" -type d | xargs -r ls -1dv | tail -n 1 )"
+      for checkpack in ${PACKAGES[@]} ; do
+		if [ -n "$( grep "^${checkpack##*/}" $PKGPREPFILTER )" ] ; then
+			PACKAGE="$checkpack"
+		fi
+      done				
+      if [ -z "$PACKAGE" ] ; then
+          PACKAGES="$( find $DEVROOT -maxdepth 1 -name "$1" -type d | xargs -r ls -dv )"
+          for checkpack in ${PACKAGES[@]} ; do
+		if [ -n "$( grep "^${checkpack##*/}" $PKGPREPFILTER )" ] ; then
+			PACKAGE="$checkpack"
+		fi
+          done				
+      fi		
       if [ -z "$PACKAGE" ] ; then
 	echo "Error: package $PKGNAME not found."
 	exit 1
@@ -2393,11 +2420,16 @@ function do_changelog {
 # marks the current package as released
 function do_release {
     local last_pkg
-
+    local trash
+	
     # some important checks before things get wrong
     if [ -z "$PKGROOT" -o -z "$PKGDIR" -o -z "$EXACTPKG" ]; then
 	echo "Critical error : PKGROOT, PKGDIR and EXACTPKG must be set !"
 	exit 1
+    fi
+
+    if [ -f "$PKGDIR/.repository" ] ; then
+	read PKGROOT trash < "$PKGDIR/.repository"		
     fi
 
     # some important checks before things get wrong
@@ -2406,11 +2438,13 @@ function do_release {
 	exit 1
     fi
 
-    if ! [ -s "$PKGDIR/.lst" -a -e "$PKGDIR/.dep" -a -s "$PKGDIR/.tgz" ]; then
-	echo "Nothing to be released in this package."
+    if [ ! -e "$PKGDIR/Repository" ] ; then
+      if ! [ -s "$PKGDIR/.lst" -a -e "$PKGDIR/.dep" -a -s "$PKGDIR/.tgz" ]; then
+   	echo "Nothing to be released in this package."
 	echo "Please ensure that .lst, .dep and .tgz exist."
 	exit 1
-    fi
+      fi
+   fi
 
     # first, the destination directory must not exist
     if [ -d "$PKGROOT/${EXACTPKG##*/}" ]; then
@@ -2427,7 +2461,7 @@ function do_release {
     last_pkg=""
     if [ -e "$PKGDIR/ChangeLog" ]; then
 	last_pkg=$(grep $'^[\t ]*\* released' "$PKGDIR/ChangeLog" | head -1)
-	last_pkg=${last_pkg##*released }
+	last_pkg=${last_pkg##*released}
     fi
 
     if [ "$last_pkg" != "${EXACTPKG##*/}" ]; then
@@ -2478,7 +2512,14 @@ function do_release {
     # Just in case, we remove this file because we now have a *real* repository
     # for which the name is enough to tell the version.
     rm -f "$PKGROOT/${EXACTPKG##*/}/${VERSFILE}" >/dev/null 2>&1
+    # Remove repository address for local host
+    rm -f "$PKGROOT/${EXACTPKG##*/}/.repository" >/dev/null 2>&1
+    # remove compiled directory if it is a sympolic link on a local cache
+    [ -L "$PKGROOT/${EXACTPKG##*/}/compiled" ] && rm -f "$PKGROOT/${EXACTPKG##*/}/compiled" >/dev/null 2>&1
     touch "$PKGROOT/${EXACTPKG##*/}/RELEASED"
+    # remove write rights on package.
+    chmod -R a-w $PKGROOT/${EXACTPKG##*/}/build.cfg
+    # chmod -R a-w $PKGROOT/${EXACTPKG##*/}/*
 
     return 0
 }
