@@ -61,6 +61,7 @@ umask og-w
 # set some constants
 _PKG=$0
 _SUDO=${_SUDO:-"/var/flx-toolchain/sudo/bin/sudo -E"}
+_FLX=${_FLX:-flx}
 KERNDIR=${KERNDIR:-/usr/src/linux}
 FLXHOSTOS=${FLXHOSTOS:-$(uname -s|tr 'A-Z' 'a-z')}
 FLXHOSTARCH=${FLXHOSTARCH:-$(uname -m)}
@@ -1581,7 +1582,7 @@ function _do_pack_files {
 	group=${2##*:}
 	echo "d $3 $owner $group          0 -------------------------------- 0 ."
     fi > $FPNAME.lst
-    ( flx sign --no-depth --ignore-dot $(cut -f1 -d' ' $FILE_LIST|sed -e 's,/$,,') >> $FPNAME.lst) > /dev/null 2>&1
+    ( $_FLX sign --no-depth --ignore-dot $(cut -f1 -d' ' $FILE_LIST|sed -e 's,/$,,') >> $FPNAME.lst) > /dev/null 2>&1
     echo "done."
 
     echo -n "Creating $FPNAME.$PKGSUFF ... "
@@ -1636,9 +1637,9 @@ function do_pack {
     fi
 
     # Check that flx is really here
-     flx sign --no-depth / >/dev/null 2>&1
+    $_FLX sign --no-depth / >/dev/null 2>&1
     if [ $? -ne 0 ] ; then
-	echo "Error: the 'flx' tool does not seem to be usable. Check your PATH."
+	echo "Error: the 'flx' tool does not seem to be usable (invoked as \$_FLX=$FLX). Check your environment."
 	exit 1
     fi
 
@@ -1775,7 +1776,7 @@ function do_pack {
     echo "done."
 
     echo -n "Creating $FPNAME.lst ... "
-    ($FIND_CMD . | tr '\n' '\000' | xargs -0 flx sign --ignore-dot --no-depth > $FPNAME.lst) > /dev/null 2>&1
+    ($FIND_CMD . | tr '\n' '\000' | xargs -0 $_FLX sign --ignore-dot --no-depth > $FPNAME.lst) > /dev/null 2>&1
     echo "done."
 
     echo -n "Creating $FPNAME.$PKGSUFF ... "
