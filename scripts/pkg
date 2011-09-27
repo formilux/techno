@@ -8,7 +8,7 @@
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
 
 ######## Please update this version ########
-PKG_VERSION=0.10.0
+PKG_VERSION=0.11.0
 ############################################
 
 ## WARNING ##
@@ -77,6 +77,9 @@ FLXARCH=${FLXARCH:-$FLXTARGARCH}
 DEVROOT=${DEVROOT:-/var/flx-dev}
 PKGROOT=${PKGROOT:-/var/flx-pkg}
 
+PKGSEARCHDEP=${PKGSEARCHDEP:-$DEVROOT $PKGROOT}
+export PKGSEARCHDEP
+
 # FLXROOTDIR, SYSROOTTAR, FLXCROSS and UCLIBCROOT may be inherited from their
 # _${FLXARCH} fallbacks
 var=FLXROOTDIR_${FLXARCH} ; FLXROOTDIR=${FLXROOTDIR-${!var}}
@@ -84,6 +87,7 @@ var=SYSROOTTAR_${FLXARCH} ; SYSROOTTAR=${SYSROOTTAR-${!var}}
 var=FLXCROSS_${FLXARCH}   ; FLXCROSS=${FLXCROSS-${!var}}
 var=UCLIBCROOT_${FLXARCH} ; UCLIBCROOT=${UCLIBCROOT-${!var}}
 
+export FLXARCH FLXROOTDIR SYSROOTTAR FLXCROSS UCLIBCROOT
 # default rootdir if unset
 FLXROOTDIR=${FLXROOTDIR:-/var/toolchains/rootdir}
 
@@ -1616,13 +1620,13 @@ function do_pack {
     local hlist
     local hl
 
-    if [ -e "$PKGDIR/RELEASED" ]; then
+
+    if [ -e "$PKGDIR/RELEASED" -a ! -e "$PKGDIR/.repository" ]; then
       echo "Can't pack, the package is already released."
       exit 1
     fi
 
-
-    # normalize the list with an absolute path for each entry
+ # normalize the list with an absolute path for each entry
     for file in $FILE_LIST ; do
 	if [ -z "${file##/*}" ]; then
 	    FILE_LISTS="$FILE_LISTS $file"
@@ -1828,32 +1832,19 @@ function do_prepare {
       PKGNAME=$1
       VERSFX="$2"
       ARCH="${3:-$FLXARCH}"
-      PACKAGE=""
-      PACKAGES="$( find $PKGROOT -maxdepth 1 -name "$1" -type d | xargs -r ls -dv )"
-      for checkpack in ${PACKAGES[@]} ; do
-		if [ -n "$( grep "^${checkpack##*/}" $PKGPREPFILTER )" ] ; then
-			PACKAGE="$checkpack"
-		fi
-      done				
-      if [ -z "$PACKAGE" ] ; then
-          PACKAGES="$( find $DEVROOT -maxdepth 1 -name "$1" -type d | xargs -r ls -dv )"
-          for checkpack in ${PACKAGES[@]} ; do
-		if [ -n "$( grep "^${checkpack##*/}" $PKGPREPFILTER )" ] ; then
-			PACKAGE="$checkpack"
-		fi
-          done				
-      fi		
+      PACKAGE="$( find $PKGSEARCHDEP -maxdepth 1 -name "$1" -xtype d | xargs -r ls -1dv | tail -n 1 )"
       if [ -z "$PACKAGE" ] ; then
 	echo "PackageNotFound: $PKGNAME" > .preparepkg
 	cat .preparepkg
 	exit 1
       else
 	PACKAGE="${PACKAGE##*/}"
-	if [ ! -e "$PKGROOT/$PACKAGE/compiled/$PACKAGE${VERSFX:+_$VERSFX}-$ARCH.tgz" ] ; then
+	if [ ! -e "$PKGSEARCHDEP/$PACKAGE/compiled/$PACKAGE${VERSFX:+_$VERSFX}-$ARCH.tgz" ] ; then
 	  echo "ArchiveNotFound: $PACKAGE${VERSFX:+_$VERSFX}-$ARCH.tgz" > .preparepkg
 	  cat .preparepkg
 	  exit 1
         fi
+	
       fi
     done
   set +o noglob
@@ -1900,20 +1891,7 @@ fi
       VERSFX="$2"
       ARCH="${3:-$FLXARCH}"
       TARGLOB=$4
-      PACKAGES="$( find $PKGROOT -maxdepth 1 -name "$1" -type d | xargs -r ls -1dv | tail -n 1 )"
-      for checkpack in ${PACKAGES[@]} ; do
-		if [ -n "$( grep "^${checkpack##*/}" $PKGPREPFILTER )" ] ; then
-			PACKAGE="$checkpack"
-		fi
-      done				
-      if [ -z "$PACKAGE" ] ; then
-          PACKAGES="$( find $DEVROOT -maxdepth 1 -name "$1" -type d | xargs -r ls -dv )"
-          for checkpack in ${PACKAGES[@]} ; do
-		if [ -n "$( grep "^${checkpack##*/}" $PKGPREPFILTER )" ] ; then
-			PACKAGE="$checkpack"
-		fi
-          done				
-      fi		
+      PACKAGE="$( find $PKGSEARCHDEP -maxdepth 1 -name "$1" -xtype d | xargs -r ls -1dv | tail -n 1 )"
       if [ -z "$PACKAGE" ] ; then
 	echo "Error: package $PKGNAME not found."
 	exit 1
@@ -2440,6 +2418,11 @@ function do_release {
 
     if [ -f "$PKGDIR/.repository" ] ; then
 	read PKGROOT trash < "$PKGDIR/.repository"		
+	trash=$( find "$PKGDIR/" -type f -printf "%T@ %P\n" | sort | tail -n 1 )
+	if [ "${trash/\.tested}" = "${trash}" ] ; then
+		echo "Error: package is not tested!"
+		exit 1
+	fi
     fi
 
     # some important checks before things get wrong
