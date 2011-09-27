@@ -1897,7 +1897,7 @@ fi
 	exit 1
       else
 	PACKAGE="${PACKAGE##*/}"
-	FILE="$PKGROOT/$PACKAGE/compiled/$PACKAGE${VERSFX:+_$VERSFX}-$ARCH.tgz"
+	FILE="$PKGSEARCHDEP/$PACKAGE/compiled/$PACKAGE${VERSFX:+_$VERSFX}-$ARCH.tgz"
 	if [ ! -e "$FILE" ] ; then
 	  exit 1
         fi
@@ -2025,11 +2025,7 @@ function get_package {
 	;;
 	filesystem)
 	  if [ -d "$1" ] ; then
-	    if [ -e ".flxpkg" ]; then
-	      cp -a "$1"/* . 
-	    else
-	      cp -a "$1" .
-	    fi
+	    tar --exclude=".flxpkg" -C "${1%/*}" -c "${1##*/}" | tar --strip-components=1 ${VERBOSE} -x 
 	  else
 	    tar --exclude=".flxpkg" --strip-components=1 ${VERBOSE} -xf "$1"
 	  fi
