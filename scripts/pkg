@@ -2427,7 +2427,7 @@ function do_release {
 	exit 1
     fi
 
-    if [ ! -e "$PKGDIR/Repository" ] ; then
+    if [ ! -e "$PKGDIR/.repository" ] ; then
       if ! [ -s "$PKGDIR/.lst" -a -e "$PKGDIR/.dep" -a -s "$PKGDIR/.tgz" ]; then
    	echo "Nothing to be released in this package."
 	echo "Please ensure that .lst, .dep and .tgz exist."
