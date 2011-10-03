@@ -129,7 +129,7 @@ cmp_line() {
 
 while [ $c1 -eq 0 -o $c2 -eq 0 ]; do
   if [ $c1 -eq 0 -a $c2 -eq 0 -a "$n1" == "$n2" ]; then
-    if [ -n "$n1" ] && ! cmp_line $p1 $p2; then
+    if [ -n "$n1" ] && ! cmp_line "$p1" "$p2"; then
       echo "< $n1 : ${p1}"
       echo "> $n2 : ${p2}"
       ((differ++))

@@ -14,6 +14,9 @@
 # according to the name reduction rules specified in the original prf.
 # It will make its best to respect them.
 
+# Very important to prevent a package name from matching a local file name
+set -o noglob
+
 function main {
     local file packages pack pkgsrc size tot_size
     exec 3>&0
