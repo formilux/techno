@@ -2414,9 +2414,14 @@ function do_release {
 
     if [ -f "$PKGDIR/.repository" ] ; then
 	read PKGROOT trash < "$PKGDIR/.repository"		
-	trash=$( find "$PKGDIR/" -type f -printf "%T@ %P\n" | sort | tail -n 1 )
-	if [ "${trash/\.tested}" = "${trash}" ] ; then
-		echo "Error: package is not tested!"
+	if [ ! -e "$PKGDIR/.tested" ] ; then
+		echo "Error: package is not tested! Please build an image with it first."
+		exit 1
+	fi
+	trash=$(find "$PKGDIR/" -type f -newer "$PKGDIR/.tested")
+	if [ -n "$trash" ] ; then
+		echo "Error: package was modified or rebuilt since last tested!"
+		echo "Please delete the tar.gz and re-build an image using this package first."
 		exit 1
 	fi
     fi
