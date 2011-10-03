@@ -1415,7 +1415,6 @@ function do_unpatch {
     find . -name '*.rej' -o -name '*~' | xargs rm -f
 
     for i in ${PATCH_LIST}; do
-        echo "[UNPATCH]  Reverting patch ${i##*/}"
 	UNPATCH_LIST=( $i ${UNPATCH_LIST[@]} )
     done
 
