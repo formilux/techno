@@ -2065,6 +2065,7 @@ function do_source {
       echo "Error on downloading."
       return 1
     fi
+    rm -f .patched  # we must re-apply patches
     return 0  
   fi
 }
