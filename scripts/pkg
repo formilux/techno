@@ -864,7 +864,7 @@ function get_name {
 		return
 	    elif [ -L "${LINKNAME}" -a -d "${LINKNAME}/." ]; then
 		# the link is always an EXACT name, so we return it as-is.
-		pattern="$(readlink ${LINKNAME})"
+		pattern="$(readlink -f ${LINKNAME})"
 	        PKGDIR="$pattern/."
 		REPLY="${pattern##*/}"
 		return
@@ -2661,8 +2661,8 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 		REPLY="${REPLY##*/}"
 		PKGDIR="$CURDIR/${LINKNAME}/."
 	    else
-		REPLY="$(basename $(readlink ${LINKNAME}) 2>/dev/null)"
-		PKGDIR="$(readlink ${LINKNAME} 2>/dev/null)"
+		REPLY="$(basename $(readlink -f ${LINKNAME}) 2>/dev/null)"
+		PKGDIR="$(readlink -f ${LINKNAME} 2>/dev/null)"
 	    fi
 	    # get_name %L
 	    ;;
@@ -2673,8 +2673,8 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 		REPLY="${REPLY##*/}"
 		PKGDIR="$CURDIR/${LINKNAME}/."
 	    else
-		REPLY="$(basename $(readlink ${LINKNAME}) 2>/dev/null)"
-		PKGDIR="$(readlink ${LINKNAME} 2>/dev/null)"
+		REPLY="$(basename $(readlink -f ${LINKNAME}) 2>/dev/null)"
+		PKGDIR="$(readlink -f ${LINKNAME} 2>/dev/null)"
 	    fi
 	    TESTGCC=1
 	    # get_name %L
@@ -2686,8 +2686,8 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 		REPLY="${REPLY##*/}"
 		PKGDIR="$CURDIR/${LINKNAME}/."
 	    else
-		REPLY="$(basename $(readlink ${LINKNAME}) 2>/dev/null)"
-		PKGDIR="$(readlink ${LINKNAME} 2>/dev/null)"
+		REPLY="$(basename $(readlink -f ${LINKNAME}) 2>/dev/null)"
+		PKGDIR="$(readlink -f ${LINKNAME} 2>/dev/null)"
 	    fi
 	    # get_name %L
 	    ;;
@@ -2700,8 +2700,8 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 		REPLY="${REPLY##*/}"
 		PKGDIR="$CURDIR/${LINKNAME}/."
 	    else
-		REPLY="$(basename $(readlink ${LINKNAME}) 2>/dev/null)"
-		PKGDIR="$(readlink ${LINKNAME} 2>/dev/null)"
+		REPLY="$(basename $(readlink -f ${LINKNAME}) 2>/dev/null)"
+		PKGDIR="$(readlink -f ${LINKNAME} 2>/dev/null)"
 	    fi
 	    # get_name %L
 	    ;;
