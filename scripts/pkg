@@ -2569,6 +2569,16 @@ function do_release {
 	rm -rf "$PKGROOT/${EXACTPKG##*/}"
 	exit 2
       fi
+
+      # Just in case, we remove this file because we now have a *real* repository
+      # for which the name is enough to tell the version.
+      rm -f "$PKGROOT/${EXACTPKG##*/}/${VERSFILE}" >/dev/null 2>&1
+      # remove compiled directory if it is a sympolic link on a local cache
+      [ -L "$PKGROOT/${EXACTPKG##*/}/compiled" ] && rm -f "$PKGROOT/${EXACTPKG##*/}/compiled" >/dev/null 2>&1
+      touch "$PKGROOT/${EXACTPKG##*/}/RELEASED"
+      # remove write rights on package.
+      chmod a-w $PKGROOT/${EXACTPKG##*/}/build.cfg
+      # chmod -R a-w $PKGROOT/${EXACTPKG##*/}/*
     else
       # We rely exclusively on Version to get the package version. In this
       # case, we do not MOVE the directory, but rather COPY it to its
@@ -2587,19 +2597,8 @@ function do_release {
       # pkg newpkg should be helpful.
     fi
 
-    # Just in case, we remove this file because we now have a *real* repository
-    # for which the name is enough to tell the version.
-    rm -f "$PKGROOT/${EXACTPKG##*/}/${VERSFILE}" >/dev/null 2>&1
-    # Remove repository address for local host
-    rm -f "$PKGROOT/${EXACTPKG##*/}/.repository" >/dev/null 2>&1
     # Remove the .tested flag since the package is now released
     rm -f "$PKGROOT/${EXACTPKG##*/}/.tested" >/dev/null 2>&1
-    # remove compiled directory if it is a sympolic link on a local cache
-    [ -L "$PKGROOT/${EXACTPKG##*/}/compiled" ] && rm -f "$PKGROOT/${EXACTPKG##*/}/compiled" >/dev/null 2>&1
-    touch "$PKGROOT/${EXACTPKG##*/}/RELEASED"
-    # remove write rights on package.
-    chmod -R a-w $PKGROOT/${EXACTPKG##*/}/build.cfg
-    # chmod -R a-w $PKGROOT/${EXACTPKG##*/}/*
 
     return 0
 }
