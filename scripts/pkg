@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# pkg - Formilux package builder - version 0.10.0 - 2011-03-02
+# pkg - Formilux package builder - version 0.11.0 - 2011-10-10
 #
 # Copyright (C) 2001-20011 Benoit Dolez & Willy Tarreau & William Lallemand
 #   mailto: benoit@ant-computing.com,willy@ant-computing.com,wlallemand@exceliance.fr
@@ -746,6 +746,7 @@ function do_deps {
   PKGRADIX="$(get_pkg_radix ${CURPKGNAME})"
   PKGVER="$(get_pkg_ver ${CURPKGNAME})"
   DISTVER="$(get_build_num ${CURPKGNAME})"
+  mkdir -p "$PKGDIR/compiled"
   TARBALL=($PKGDIR/compiled/$PKGRADIX-$PKGVER-$DISTVER${VERSFX:+_$VERSFX}-$FLXARCH.$PKGSUFF)
   if [ -n "$TARBALL" -a -f "$TARBALL" ]; then
     if [ "$PKG_ONLYUNBUILDDEPS" == "1" ]; then
@@ -1211,6 +1212,7 @@ function do_newpkg {
 		--exclude='./CFLAGS' --exclude='./.dep' --exclude='./.lst' --exclude='./.tgz' \
 		--exclude="./${VERSFILE}" --one-file-system -cpf - . | \
 	    tar -C $new_name -xf - || (rmdir $new_name ; rm -f ${LINKNAME})
+	mkdir -p "$new_name/compiled"
 	chmod u+rw $new_name/build.cfg
 
 	echo "A new package '$(basename $new_name)' has been created as '$new_name', based on '$(basename $pkg_name)'."
@@ -1482,6 +1484,7 @@ function get_perl_depend {
     local dep DEP
     local DEP_FILE=$PKGDIR/compiled/${EXACTPKG##*/}-$FLXARCH.dep
 
+    mkdir -p $PKGDIR/compiled
     DEP=$(grep "^\(.*['{\"]\)*[ 	]*\(require\|use\) \+['\"]*[a-zA-Z][a-z:/A-Z0-9_-]*[; '\"]" $filename | \
                 sed -e 's/.*\(require\|use\) \+["'\'']\?\([^'\''" };]\+\)["'\'']\?/§§\2§§/g' \
                     -e 's/§§\([^§]\+\)§§[^§]*/ \1/g' | \
@@ -1514,6 +1517,7 @@ function _do_pack_files {
     # full path name of different files
     FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-$DISTVER${VERSFX:+_$VERSFX}-$FLXARCH"
     DEP_FILE=$FPNAME.dep
+    mkdir -p "$PKGDIR/compiled"
 
     # If we're currently building a "build" model, we just want the tgz with
     # its specific extension.
@@ -1625,7 +1629,7 @@ function do_pack {
       exit 1
     fi
 
- # normalize the list with an absolute path for each entry
+    # normalize the list with an absolute path for each entry
     for file in $FILE_LIST ; do
 	if [ -z "${file##/*}" ]; then
 	    FILE_LISTS="$FILE_LISTS $file"
@@ -1676,6 +1680,7 @@ function do_pack {
     echo "done."
 
     # full path name of different files
+    mkdir -p "$PKGDIR/compiled"
     FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-$DISTVER${VERSFX:+_$VERSFX}-$FLXARCH"
     DEP_FILE=$FPNAME.dep
 
@@ -2450,6 +2455,7 @@ function do_changelog {
 function do_release {
     local last_pkg
     local trash
+    local reporoot
 	
     # some important checks before things get wrong
     if [ -z "$PKGROOT" -o -z "$PKGDIR" -o -z "$EXACTPKG" ]; then
@@ -2457,8 +2463,15 @@ function do_release {
 	exit 1
     fi
 
+    # some important checks before things go wrong
+    if [ ! -d "$PKGROOT/." ]; then
+	echo "Critical error : PKGROOT is not a directory ('$PKGROOT') !"
+	exit 1
+    fi
+
     if [ -f "$PKGDIR/.repository" ] ; then
-	read PKGROOT trash < "$PKGDIR/.repository"		
+	# Use a package repository
+	read reporoot trash < "$PKGDIR/.repository"		
 	if [ ! -e "$PKGDIR/.tested" ] ; then
 		echo "Error: package is not tested! Please build an image with it first."
 		exit 1
@@ -2469,21 +2482,20 @@ function do_release {
 		echo "Please delete the tar.gz and re-build an image using this package first."
 		exit 1
 	fi
-    fi
 
-    # some important checks before things get wrong
-    if [ ! -d "$PKGROOT" ]; then
-	echo "Critical error : PKGROOT is not a directory !"
-	exit 1
+	if [ ! -d "$reporoot/." ]; then
+		echo "Critical error : .repository does not point to a valid directory ('$reporoot') !"
+		exit 1
+	fi
+    else
+	# use the standad PKGROOT only
+	reporoot=
+	if ! [ -s "$PKGDIR/.lst" -a -e "$PKGDIR/.dep" -a -s "$PKGDIR/.tgz" ]; then
+		echo "Nothing to be released in this package."
+		echo "Please ensure that .lst, .dep and .tgz exist."
+		exit 1
+	fi
     fi
-
-    if [ ! -e "$PKGDIR/.repository" ] ; then
-      if ! [ -s "$PKGDIR/.lst" -a -e "$PKGDIR/.dep" -a -s "$PKGDIR/.tgz" ]; then
-   	echo "Nothing to be released in this package."
-	echo "Please ensure that .lst, .dep and .tgz exist."
-	exit 1
-      fi
-   fi
 
     # first, the destination directory must not exist
     if [ -d "$PKGROOT/${EXACTPKG##*/}" ]; then
@@ -2492,6 +2504,16 @@ function do_release {
 	    echo "Please use 'pkg newpkg' to change the version."
 	else
 	    echo "Error: The package directory $PKGROOT/${EXACTPKG##*/} already exists."
+	fi
+	exit 1
+    fi
+
+    if [ -n "$reporoot" -a -d "$reporoot/${EXACTPKG##*/}" ]; then
+	if [ -e "$reporoot/${EXACTPKG##*/}/RELEASED" ]; then
+		echo "Error: This package has already been released."
+		echo "Please use 'pkg newpkg' to change the version."
+	else
+		echo "Error: The package directory ${EXACTPKG##*/} already exists in the repository ('$reporoot')."
 	fi
 	exit 1
     fi
@@ -2523,7 +2545,24 @@ function do_release {
     if [ ! -r "${LINKNAME}/${VERSFILE}" ]; then
       # We use the conventionnal versionning scheme : PKGDIR points to a
       # directory which we will move to the destination.
-      if ! mv $PKGDIR $PKGROOT/ ; then
+      if [ -n "$reporoot" ]; then
+        # We have a repository, we need to copy the package overthere without
+        # the {.dep,.tgz,.lst} nor .repository files. "cp" can't do it but rsync
+        # can. Note that we ensure to fail the repository sync before the local
+        # sync so that we don't forget to update failed packages.
+	if ! rsync -a \
+                --exclude='*.dep' --exclude='*.tgz' --exclude='*.lst' \
+                --exclude='compiled' --exclude='.repository'  \
+                --exclude='.tested' --exclude="${VERSFILE}" \
+                "$PKGDIR" "$reporoot/"; then
+	  echo "Error: cannot copy the package to the repository ($reporoot). Aborting."
+	  exit 2
+	fi
+	touch "$reporoot/${EXACTPKG##*/}/RELEASED"
+	chmod -R a-w "$reporoot/${EXACTPKG##*/}"
+      fi
+
+      if ! mv "$PKGDIR" "$PKGROOT/" ; then
 	echo "Error: cannot move the package to the released directory. Cancelling."
 	# the mv here fails atomically, so nothing's lost in PKGDIR, but we have
 	# to clean a possible partial copy
@@ -2537,7 +2576,7 @@ function do_release {
 
       # Try to clean the destination first. We only know it is not a dir.
       rm -f "$PKGROOT/${EXACTPKG##*/}" >/dev/null 2>&1
-      if ! cp -a $PKGDIR "$PKGROOT/${EXACTPKG##*/}" ; then
+      if ! cp -a "$PKGDIR" "$PKGROOT/${EXACTPKG##*/}" ; then
 	echo "Error: cannot copy the package to the released directory. Cancelling."
 	# the mv here fails atomically, so nothing's lost in PKGDIR, but we have
 	# to clean a possible partial copy
@@ -2553,6 +2592,8 @@ function do_release {
     rm -f "$PKGROOT/${EXACTPKG##*/}/${VERSFILE}" >/dev/null 2>&1
     # Remove repository address for local host
     rm -f "$PKGROOT/${EXACTPKG##*/}/.repository" >/dev/null 2>&1
+    # Remove the .tested flag since the package is now released
+    rm -f "$PKGROOT/${EXACTPKG##*/}/.tested" >/dev/null 2>&1
     # remove compiled directory if it is a sympolic link on a local cache
     [ -L "$PKGROOT/${EXACTPKG##*/}/compiled" ] && rm -f "$PKGROOT/${EXACTPKG##*/}/compiled" >/dev/null 2>&1
     touch "$PKGROOT/${EXACTPKG##*/}/RELEASED"
