@@ -21,7 +21,9 @@ function main {
     local file packages pack pkgsrc size tot_size
     exec 3>&0
     # cette boucle permet de rechercher le package à utiliser pour trouver
-    # le fichier si cela est possible
+    # le fichier si cela est possible. On commence par créer le fichier de
+    # sortie car il est permis d'avoir un PRF vide.
+    touch $TMPDIR/OUTPUT $LOGFILE
     while read file packages; do 
         echo -n \# >&2
         if [ -z "$packages" ] ; then

@@ -98,8 +98,9 @@ fi
 [ -d "$orig/." ] && exec "$0" "$orig/${dest##*/}" "$dest"
 [ -d "$dest/." ] && exec "$0" "$orig" "$dest/${orig##*/}"
 
-[ -r "$orig" -a -s "$orig" ] || die "unreadable original file."
-[ -r "$dest" -a -s "$dest" ] || die "unreadable rebuilt file."
+# Note: empty files are allowed
+[ -r "$orig" -a -f "$orig" ] || die "unreadable original file."
+[ -r "$dest" -a -f "$dest" ] || die "unreadable rebuilt file."
 
 TEMP=$(mkstemp)
 [ $? -gt 0 -o -z "$TEMP" ] && die "Cannot make temp directory in $TMPDIR."
