@@ -1210,10 +1210,11 @@ function do_newpkg {
 	    tar -C $pkg_name  --exclude='./compiled/*' --exclude='./RELEASED*' --exclude='./pkg.*' \
 		--exclude=".svn" \
 		--exclude='./CFLAGS' --exclude='./.dep' --exclude='./.lst' --exclude='./.tgz' \
-		--exclude="./${VERSFILE}" --one-file-system -cpf - . | \
+		--exclude="./${VERSFILE}" --one-file-system -cf - . | \
 	    tar -C $new_name -xf - || (rmdir $new_name ; rm -f ${LINKNAME})
 	mkdir -p "$new_name/compiled"
-	chmod u+rw $new_name/build.cfg
+	# restore write permissions to all the package for development
+	chmod -R u+rw $new_name/
 
 	echo "A new package '$(basename $new_name)' has been created as '$new_name', based on '$(basename $pkg_name)'."
 	echo "The link '${LINKNAME}' now points to it."
