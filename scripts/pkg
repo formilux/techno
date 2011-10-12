@@ -2551,7 +2551,7 @@ function do_release {
         # the {.dep,.tgz,.lst} nor .repository files. "cp" can't do it but rsync
         # can. Note that we ensure to fail the repository sync before the local
         # sync so that we don't forget to update failed packages.
-	if ! rsync -a \
+	if ! rsync -r \
                 --exclude='*.dep' --exclude='*.tgz' --exclude='*.lst' \
                 --exclude='compiled' --exclude='.repository'  \
                 --exclude='.tested' --exclude="${VERSFILE}" \
@@ -2578,8 +2578,9 @@ function do_release {
       [ -L "$PKGROOT/${EXACTPKG##*/}/compiled" ] && rm -f "$PKGROOT/${EXACTPKG##*/}/compiled" >/dev/null 2>&1
       touch "$PKGROOT/${EXACTPKG##*/}/RELEASED"
       # remove write rights on package.
-      chmod a-w $PKGROOT/${EXACTPKG##*/}/build.cfg
-      # chmod -R a-w $PKGROOT/${EXACTPKG##*/}/*
+      # chmod a-w $PKGROOT/${EXACTPKG##*/}/build.cfg
+      chmod -R a-w $PKGROOT/${EXACTPKG##*/}
+      chmod -R u+w $PKGROOT/${EXACTPKG##*/}/compiled
     else
       # We rely exclusively on Version to get the package version. In this
       # case, we do not MOVE the directory, but rather COPY it to its
