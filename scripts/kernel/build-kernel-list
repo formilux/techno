@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# build-kernel-list - build a list of 2.6 kernels - version 0.0.9 - 2009-11-14
+# build-kernel-list - build a list of 2.6 kernels - version 0.0.10 - 2011-10-17
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
-# Copyright (C) 2001-2009 Benoit Dolez & Willy Tarreau
+# Copyright (C) 2001-2011 Benoit Dolez & Willy Tarreau
 #       mailto: benoit@ant-computing.com,willy@ant-computing.com
 #
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
@@ -46,16 +46,18 @@ die() {
 }
 
 usage() {
-    echo "Formilux Linux Kernel packager - (C) 2004-2009 EXOSEC"
+    echo "Formilux Linux Kernel packager - (C) 2004-2011 EXOSEC"
     echo "Usage:"
     echo "    ${0##*/} [ -h, --help ] [ -i,--install,--no-compile ]"
     echo "             [ -s, --suffix ] [ -r, --rerun ] [ -a arch ]"
+    echo "             [ -m make ] [ -b bootimg ] [ -p platform ]"
     echo "             config_file..."
     echo
     echo "Output will be sent to \$OUTPUTDIR=$OUTPUTDIR"
     echo "Using: CROSS_COMPILE=$CROSS_COMPILE"
     echo "       CC=$CC HOSTCC=$HOSTCC PARALLELCC=$PARALLELCC"
     echo "       ARCH=$USERARCH DEFAULT_ARCH=$DEFAULT_ARCH"
+    echo "       MAKE=$MAKE BOOTIMG=$BOOTIMG PLATFORM=$PLATFORM"
     echo "Note: this script needs sudo during the install phase."
     echo "Use --suffix to automatically suffix the build version to the EXTRAVERSION."
     echo "x86_64 is used when the config's arch suffix is x86_64 or name contains smp64."
@@ -73,7 +75,9 @@ _SUDO=${_SUDO-sudo}
 USERARCH=${ARCH}
 DEFAULT_ARCH=${DEFAULT_ARCH:-i386}
 _DEPMOD=${_DEPMOD:-depmod}
-
+MAKE=${MAKE:-make}
+BOOTIMG=${BOOTIMG:-bzImage}
+PLATFORM=${PLATFORM:-}
 
 mkdir -p $OUTPUTDIR || die 1 "Cannot create directory : $OUTPUTDIR"
 
@@ -101,6 +105,18 @@ while [ $# -gt 0 ]; do
     case "$1" in
     -a|--arch)
 	USERARCH="$2"
+	shift; shift
+	;;
+    -m|--make)
+	MAKE="$2"
+	shift; shift
+	;;
+    -b|--bootimg)
+	BOOTIMG="$2"
+	shift; shift
+	;;
+    -p|--platform)
+	PLATFORM="$2"
 	shift; shift
 	;;
     -h|--help)
@@ -204,12 +220,12 @@ for cfg in "$@"; do
     fi
 
     VERSTR="VERSION=$major PATCHLEVEL=$minor SUBLEVEL=$sub EXTRAVERSION=$extra ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE CC=${CROSS_COMPILE}${CC} HOSTCC=$HOSTCC LOCALVERSION= CONFIG_LOCALVERSION="
-    MAKE="make $VERSTR"
+    MAKE_CMD="$MAKE $VERSTR"
 
     if [ $do_compile -eq 1 ]; then
         if [ $do_rerun -eq 0 ]; then
           echo "Doing make distclean..."
-	  $MAKE distclean >/dev/null 2>&1
+	  $MAKE_CMD distclean >/dev/null 2>&1
 	  for addon in "${addons[@]}"; do
             echo "Cleaning addon '$addon'..."
 	    addons/"build.$addon" clean "$KVER" "$PWD" "$PWD/addons/$addon"
@@ -220,14 +236,14 @@ for cfg in "$@"; do
 	  cp $cfg .config
 
 	  echo "Checking configuration file" | tee -a $OUTPUTDIR/$log
-	  $MAKE oldconfig </dev/null >>$OUTPUTDIR/$log 2>&1 ; err=$?
+	  $MAKE_CMD oldconfig </dev/null >>$OUTPUTDIR/$log 2>&1 ; err=$?
 	  if [ $err -ne 0 ]; then
 	    echo "######### make oldconfig returned error code $err #########" | tee -a $OUTPUTDIR/$log
 	    continue
 	  fi
 
 	  #echo "Building dependencies" | tee -a $OUTPUTDIR/$log
-	  #$MAKE -j $PARALLELDEP dep </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
+	  #$MAKE_CMD -j $PARALLELDEP dep </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
 	  #if [ $err -ne 0 ]; then
 	  #  echo "######### make dep returned error code $err #########" | tee -a $OUTPUTDIR/$log
 	  #  continue
@@ -236,9 +252,9 @@ for cfg in "$@"; do
 
 	echo "Building kernel and modules" | tee -a $OUTPUTDIR/$log
         rm -rf initramfs && mkdir initramfs
-	$MAKE -j $PARALLELCC bzImage modules </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
+	$MAKE_CMD -j $PARALLELCC $BOOTIMG modules </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
 	if [ $err -ne 0 ]; then
-	    echo "######### make bzImage modules returned error code $err #########" | tee -a $OUTPUTDIR/$log
+	    echo "######### make $BOOTIMG modules returned error code $err #########" | tee -a $OUTPUTDIR/$log
 	    continue
 	fi
 
@@ -282,7 +298,7 @@ for cfg in "$@"; do
 	$_SUDO rm -rf $destdir ; $_SUDO mkdir -p $subarchdir
 
 	echo "Installing modules" >> $OUTPUTDIR/$log
-	$_SUDO $MAKE INSTALL_MOD_PATH=$subarchdir \
+	$_SUDO $MAKE_CMD INSTALL_MOD_PATH=$subarchdir \
 	            INSTALL_MOD_STRIP="--strip-unneeded" \
 	            modules_install </dev/null >> $OUTPUTDIR/$log 2>&1; err=$?
 	if [ $err -ne 0 ]; then
@@ -332,7 +348,7 @@ for cfg in "$@"; do
                  usr/initramfs_data.o -nt initramfs/modules.tar ]; then
                 echo "Cleaning initramfs" >>$OUTPUTDIR/$log
                 rm -rf initramfs && mkdir initramfs
-                $MAKE -j $PARALLELCC bzImage CONFIG_INITRAMFS_SOURCE="" </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
+                $MAKE_CMD -j $PARALLELCC $BOOTIMG CONFIG_INITRAMFS_SOURCE="" </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
             fi
             mkdir -p initramfs
 
@@ -342,7 +358,7 @@ for cfg in "$@"; do
                 du -s "${subarchdir}/lib/modules"
                 find "${subarchdir}/lib/modules" -type f -name "*.ko"| while read; do
                     echo "Compressing module $REPLY -> $REPLY.gz"
-                    $_SUDO sh -c "strip -S $REPLY && ${cmd_gzip} <$REPLY >$REPLY.gz 2>/dev/null && rm -f $REPLY"
+                    $_SUDO sh -c "${CROSS_COMPILE}strip -S $REPLY && ${cmd_gzip} <$REPLY >$REPLY.gz 2>/dev/null && rm -f $REPLY"
                 done >> $OUTPUTDIR/$log 2>&1
                 du -s "${subarchdir}/lib/modules"
                 echo "Done."
@@ -360,9 +376,9 @@ for cfg in "$@"; do
 	    $_SUDO chmod -R g-w,o-rwx $subarchdir/boot
 
             # install kernel
-	    $_SUDO cp arch/${ARCH}/boot/bzImage .config System.map $bootdir >> $OUTPUTDIR/$log 2>&1; err=$?
+	    $_SUDO cp arch/${ARCH}/boot/$BOOTIMG .config System.map $bootdir >> $OUTPUTDIR/$log 2>&1; err=$?
 	    if [ $err -ne 0 ]; then
-		echo "######### cp bzImage .config System.map ... returned error code $err #########" | tee -a $OUTPUTDIR/$log
+		echo "######### cp $BOOTIMG .config System.map ... returned error code $err #########" | tee -a $OUTPUTDIR/$log
 		$_SUDO rm -rf $destdir
 		continue
 	    fi
@@ -391,30 +407,31 @@ for cfg in "$@"; do
             # We now have a complete kernel + modules packaged. We also want to have a
             # self-contained kernel image (allin1).
 
-            tools26="$DIR/inst-mod26"
+            tools26="$DIR/inst-mod26${PLATFORM:+-$PLATFORM}"
+            [ -d "$tools26/." ] || tools26="$DIR/inst-mod26"
             mkdir -p initramfs/{dev,proc,root}
             cp "${tools26}/.preinit" initramfs/
             cp "${tools26}/init" initramfs/
             cp "${tools26}/busybox" initramfs/tar
 
             echo "Building initramfs for all-in-one kernel" >>$OUTPUTDIR/$log
-            $MAKE -j $PARALLELCC bzImage CONFIG_INITRAMFS_SOURCE=$PWD/initramfs </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
+            $MAKE_CMD -j $PARALLELCC $BOOTIMG CONFIG_INITRAMFS_SOURCE=$PWD/initramfs </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
 
             echo "Packaging all-in-one kernel" >>$OUTPUTDIR/$log
-	    $_SUDO cp arch/${ARCH}/boot/bzImage .config System.map $bootdir >> $OUTPUTDIR/$log 2>&1; err=$?
+	    $_SUDO cp arch/${ARCH}/boot/$BOOTIMG .config System.map $bootdir >> $OUTPUTDIR/$log 2>&1; err=$?
 	    if [ $err -ne 0 ]; then
-		echo "######### cp bzImage .config System.map ... returned error code $err #########" | tee -a $OUTPUTDIR/$log
+		echo "######### cp $BOOTIMG .config System.map ... returned error code $err #########" | tee -a $OUTPUTDIR/$log
 		$_SUDO rm -rf $destdir
 		continue
 	    fi
 
 	    # let's build the signature file
-	    $_SUDO find $subarchdir/ -xdev \( -name bzImage -o -name .config -o -name System.map \) -printf "%P\n" | \
+	    $_SUDO find $subarchdir/ -xdev \( -name $BOOTIMG -o -name .config -o -name System.map \) -printf "%P\n" | \
 		sh -c "( cd $subarchdir && xargs $_SUDO flx sign --ignore-dot --no-depth)" \
 		>$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-allin1-$subarch.lst
 
 	    # let's build the tar.gz
-	    $_SUDO find $subarchdir/ -xdev \( -name bzImage -o -name .config -o -name System.map \) -printf "%P\n" | \
+	    $_SUDO find $subarchdir/ -xdev \( -name $BOOTIMG -o -name .config -o -name System.map \) -printf "%P\n" | \
 		$_SUDO tar -C $subarchdir --no-recursion -T - -vcf - 2>>$OUTPUTDIR/$log | \
 		${cmd_gzip} 2>/dev/null >$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-allin1-$subarch.tgz
 
@@ -423,11 +440,11 @@ for cfg in "$@"; do
 	    ;;
 	rh*)
 	    $_SUDO mkdir -p $subarchdir/boot
-	    $_SUDO cp arch/${ARCH}/boot/bzImage $subarchdir/boot/vmlinuz-$KVER >> $OUTPUTDIR/$log 2>&1 && \
+	    $_SUDO cp arch/${ARCH}/boot/$BOOTIMG $subarchdir/boot/vmlinuz-$KVER >> $OUTPUTDIR/$log 2>&1 && \
 	        $_SUDO cp .config $subarchdir/boot/config-$KVER >> $OUTPUTDIR/$log 2>&1 && \
 	        $_SUDO cp System.map $subarchdir/boot/System.map-$KVER >> $OUTPUTDIR/$log 2>&1; err=$?
 	    if [ $err -ne 0 ]; then
-		echo "######### cp bzImage .config System.map ... returned error code $err #########" | tee -a $OUTPUTDIR/$log
+		echo "######### cp $BOOTIMG .config System.map ... returned error code $err #########" | tee -a $OUTPUTDIR/$log
 		$_SUDO rm -rf $destdir
 		continue
 	    fi
@@ -435,7 +452,7 @@ for cfg in "$@"; do
 
 	    for i in $($_SUDO find $libmoddir -type f -name '*.o'); do
 		echo "Stripping $i"
-		$_SUDO strip -S $i
+		$_SUDO ${CROSS_COMPILE}strip -S $i
 	    done >> $OUTPUTDIR/$log 2>&1
 
 
