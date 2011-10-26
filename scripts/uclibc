@@ -1,5 +1,5 @@
 #!/bin/bash
-# uClibc wrapper v0.5 - 2008/05/28 - Willy Tarreau
+# uClibc wrapper v0.6 - 2011/10/26 - Willy Tarreau
 # Use this script as a GCC prefix to build a source with uclibc.
 # Note that it is smart enough to build kexec-tools and busybox.
 
@@ -14,6 +14,9 @@ if [ "${args/ -c /}${args/ -E /}${args/ -S /}${args/ -M /}" \
   # we found at least one of '-c','-E','-S' or '-M'
   exec "$compilo" "$@" -isystem ${UCLIBCROOT}/usr/include
 else
+  # check if we need the exception handler
+  libgcc_eh="$("$compilo" --print-file-name=libgcc_eh.a 2>/dev/null)"
+  [ "$libgcc_eh" != "libgcc_eh.a" ] || libgcc_eh=
   exec "$compilo" -nostdlib -static \
      -L${UCLIBCROOT}/usr/lib \
      -L${UCLIBCROOT}/lib \
@@ -23,6 +26,6 @@ else
      "$@" \
      -isystem ${UCLIBCROOT}/usr/include \
      ${UCLIBCROOT}/usr/lib/libc_pic.a \
-     -lgcc
+     -lgcc $libgcc_eh
 fi
 
