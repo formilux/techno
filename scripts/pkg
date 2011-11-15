@@ -91,6 +91,13 @@ export FLXARCH FLXROOTDIR SYSROOTTAR FLXCROSS UCLIBCROOT
 # default rootdir if unset
 FLXROOTDIR=${FLXROOTDIR:-/var/toolchains/rootdir}
 
+# fix PATH : we MUST never have either an empty component nor a '.' in it !
+PATH=${PATH//:.:/:}
+PATH=${PATH##.:}
+PATH=${PATH%%:.}
+PATH=${PATH//::/:}
+export PATH
+
 PKG_EXACTPKG=${PKG_EXACTPKG:-0}
 PKG_NOCHOICE=${PKG_NOCHOICE:-0}
 
