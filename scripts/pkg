@@ -2179,13 +2179,13 @@ function set_cross_environment {
 function set_compiler_options {
     # now we'll set default ARCH and CPU for the current FLXARCH if none is set.
     case "$FLXARCH" in
-   	i586|"")  arch=${arch:-i586}  cpu=${cpu:-i686}   basearch=${basearch:-i386} ;;
-    	i686)     arch=${arch:-i686}  cpu=${cpu:-i686}   basearch=${basearch:-i386} ;;
-    	i486)     arch=${arch:-i486}  cpu=${cpu:-i486}   basearch=${basearch:-i386} ;;
-    	i386)     arch=${arch:-i386}  cpu=${cpu:-i386}   basearch=${basearch:-i386} ;;
-	x86_64)   arch=${arch:-i586} cpu=${arch:-i686} basearch=${arch:-i386} ;;
-    	parisc)   arch=${arch:-1.1}   cpu=${cpu:-7100LC} basearch=${basearch:-1.1}  ;;
-    	sparc)    arch=${arch:-sparc} cpu=${cpu:-sparc}  basearch=${basearch:-sparc} ;;
+   	i586|"")  arch=${arch:-i586}   cpu=${cpu:-i686}   basearch=${basearch:-i386} ;;
+    	i686)     arch=${arch:-i686}   cpu=${cpu:-i686}   basearch=${basearch:-i386} ;;
+    	i486)     arch=${arch:-i486}   cpu=${cpu:-i486}   basearch=${basearch:-i386} ;;
+    	i386)     arch=${arch:-i386}   cpu=${cpu:-i386}   basearch=${basearch:-i386} ;;
+	x86_64)   arch=${arch:-x86_64} cpu=${cpu:-opteron} basearch=${basearch:-x86_64} ;;
+    	parisc)   arch=${arch:-1.1}    cpu=${cpu:-7100LC} basearch=${basearch:-1.1}  ;;
+    	sparc)    arch=${arch:-sparc}  cpu=${cpu:-sparc}  basearch=${basearch:-sparc} ;;
     	sparc64)  arch=${arch:-ultrasparc} cpu=${cpu:-ultrasparc}  basearch=${basearch:-sparc} ;;
     	alphaev[456]*) arch=${arch:-${FLXARCH#alpha}}   cpu=${cpu:-${FLXARCH#alpha}}    basearch=${basearch:-${FLXARCH#alpha}} ;;
     	ev[456]*|arm*|ppc*) arch=${arch:-$FLXARCH}   cpu=${cpu:-$FLXARCH}    basearch=${basearch:-$FLXARCH} ;;
