@@ -1,14 +1,14 @@
 #!/bin/bash
 
-# pkg - Formilux package builder - version 0.11.0 - 2011-10-10
+# pkg - Formilux package builder - version 0.12.0 - 2012-01-13
 #
-# Copyright (C) 2001-20011 Benoit Dolez & Willy Tarreau & William Lallemand
+# Copyright (C) 2001-2012 Benoit Dolez & Willy Tarreau & William Lallemand
 #   mailto: benoit@ant-computing.com,willy@ant-computing.com,wlallemand@exceliance.fr
 #
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
 
 ######## Please update this version ########
-PKG_VERSION=0.11.0
+PKG_VERSION=0.12.0
 ############################################
 
 ## WARNING ##
@@ -88,8 +88,6 @@ PKG_NOCHOICE=${PKG_NOCHOICE:-0}
 # verbose flag for tar
 VERBOSE=${VERBOSE- -v}
 
-_PKG=$0
-
 # Use -p1 by default to apply a patch
 PATCH_LEVEL=${PATCH_LEVEL:-1}
 
@@ -121,6 +119,9 @@ DISABLE_STATIC=
 # This function must return one file per line
 FIND_CMD=pkgfilefind
 CURDIR="$(pwd)"
+
+# GCC version will be checked later
+unset GCC_EXACT_VER GCC_MAJOR GCC_MINOR GCC_VER
 
 # These ones might be set by some packages
 PATCH_LIST=
@@ -2414,16 +2415,39 @@ function set_cross_environment {
     export HOSTCC HOSTCXX HOSTAS HOSTLD HOSTAR HOSTNM HOSTRANLIB HOSTSTRIP HOSTSSTRIP HOSTOBJDUMP
 }
 
+function set_gcc_version {
+    GCC_EXACT_VER="$($CC -dumpversion 2>/dev/null)"
+    if [ -z "$GCC_EXACT_VER" ]; then
+        echo "Warning: unknown GCC version for $CC, assuming 0.0.0"
+        GCC_EXACT_VER="0.0.0" ; GCC_MAJOR=0 ; GCC_MINOR=0 ; GCC_VER=0
+    else
+        # GCC_VER=major*100+minor if minor >= 10, or major*100+minor*10, so
+        # that 2.95 gives 295 and 4.3.X gives 430.
+        GCC_MAJOR="${GCC_EXACT_VER%%.*}"
+        GCC_MINOR="${GCC_EXACT_VER#$GCC_MAJOR.}" ; GCC_MINOR="${GCC_MINOR%%.*}"
+        GCC_VER=$((GCC_MAJOR*100 + GCC_MINOR))
+	[ $GCC_MINOR -lt 10 ] && GCC_VER=$((GCC_VER + GCC_MINOR*9))
+    fi
+    export GCC_EXACT_VERSION GCC_MAJOR GCC_MINOR GCC_VER
+}
+
 # this function sets all needed compiler options
 function set_compiler_options {
+    local tune
+
+    [ -n "$GCC_VER" ] || set_gcc_version
+
     case "$FLX_ARCH_FAMILY" in
     	x86)
-    	    GCC_ARCH_CURRENT="${FLX_GNU_ARCH:+-march=$FLX_GNU_ARCH}"
-    	    GCC_ARCH_COMMON="${FLX_GNU_ARCH:+-march=$FLX_GNU_ARCH}"
-    	    GCC_ARCH_SMALL="${FLX_GNU_ARCH_SMALL:+-march=$FLX_GNU_ARCH_SMALL}"
-            #GCC_CPU_CURRENT="${FLX_GNU_CPU:+-mcpu=$FLX_GNU_CPU}"
-            #GCC_CPU_COMMON="${FLX_GNU_CPU:+-mcpu=$FLX_GNU_CPU}"
-            #GCC_CPU_SMALL="${FLX_GNU_CPU_SMALL:+-mcpu=$FLX_GNU_CPU_SMALL}"
+            tune="tune"
+	    [ $GCC_VER -ge 340 ] || tune="cpu"  ;# gcc before 3.4 uses "-mcpu="
+
+            GCC_ARCH_CURRENT="${FLX_GNU_ARCH:+-march=$FLX_GNU_ARCH}"
+            GCC_ARCH_COMMON="${FLX_GNU_ARCH:+-march=$FLX_GNU_ARCH}"
+            GCC_ARCH_SMALL="${FLX_GNU_ARCH_SMALL:+-march=$FLX_GNU_ARCH_SMALL}"
+            GCC_CPU_CURRENT="${FLX_GNU_CPU:+-m$tune=$FLX_GNU_CPU}"
+            GCC_CPU_COMMON="${FLX_GNU_CPU:+-m$tune=$FLX_GNU_CPU}"
+            GCC_CPU_SMALL="${FLX_GNU_CPU_SMALL:+-m$tune=$FLX_GNU_CPU_SMALL}"
 
             GCC_OPT_FASTEST="-O3 -fomit-frame-pointer"
             GCC_OPT_FAST="-O2 -momit-leaf-frame-pointer"
@@ -2436,15 +2460,6 @@ function set_compiler_options {
                 GCC_OPT_FAST="${GCC_OPT_FAST} -mpreferred-stack-boundary=2"
                 GCC_OPT_SMALL="${GCC_OPT_SMALL} -mpreferred-stack-boundary=2"
             fi
-
-            if [ $TESTGCC -gt 0 ] && $CC -fno-align-loops -S -o /dev/null -xc /dev/null >/dev/null 2>&1; then
-                GCC_OPT_FAST="${GCC_OPT_FAST} -fno-align-jumps"
-                GCC_OPT_SMALL="${GCC_OPT_SMALL} -fno-align-functions -fno-align-loops -fno-align-jumps -fno-align-labels"
-            else
-                GCC_OPT_FAST="${GCC_OPT_FAST} -malign-jumps=0"
-                GCC_OPT_SMALL="${GCC_OPT_SMALL} -malign-jumps=0 -malign-loops=0 -malign-functions=0"
-            fi
-
 	    ;;
    
     	arm*)
@@ -2457,15 +2472,6 @@ function set_compiler_options {
     	    GCC_OPT_FASTEST="-O3 -fomit-frame-pointer"
     	    GCC_OPT_FAST="-O2"
     	    GCC_OPT_SMALL="-Os"
-
-            if [ $TESTGCC -gt 0 ] && $CC -fno-align-loops -S -o /dev/null -xc /dev/null >/dev/null 2>&1; then
-                GCC_OPT_FAST="${GCC_OPT_FAST} -fno-align-jumps"
-                GCC_OPT_SMALL="${GCC_OPT_SMALL} -fno-align-functions -fno-align-loops -fno-align-jumps -fno-align-labels"
-            else
-                GCC_OPT_FAST="${GCC_OPT_FAST} -malign-jumps=0"
-                GCC_OPT_SMALL="${GCC_OPT_SMALL} -malign-jumps=0 -malign-loops=0 -malign-functions=0"
-            fi
-
     	    ;;
     	    
     	parisc*|hppa*)
@@ -2476,20 +2482,21 @@ function set_compiler_options {
     	    GCC_CPU_COMMON="${FLX_GNU_CPU:+-mschedule=$FLX_GNU_CPU_SMALL}"
     	    GCC_CPU_SMALL="${FLX_GNU_CPU_SMALL:+-mschedule=$FLX_GNU_CPU_SMALL}"
     	    GCC_OPT_FASTEST="-O3 -fomit-frame-pointer"
-    	    GCC_OPT_FAST="-O2 -fno-align-jumps"
-    	    GCC_OPT_SMALL="-Os -fno-align-functions -fno-align-loops -fno-align-jumps -fno-align-labels"
+    	    GCC_OPT_FAST="-O2"
+    	    GCC_OPT_SMALL="-Os"
     	    ;;
     	    
     	sparc*)
-    	    GCC_ARCH_CURRENT="${FLX_GNU_ARCH:+-mcpu=$FLX_GNU_ARCH}"
-    	    GCC_ARCH_COMMON="${FLX_GNU_ARCH:+-mcpu=$FLX_GNU_ARCH}"
-    	    GCC_ARCH_SMALL="${FLX_GNU_ARCH_SMALL:+-mcpu=$FLX_GNU_ARCH_SMALL}"
+            # Note: -m64 is mandatory for 64-bit on sparc
+    	    GCC_ARCH_CURRENT="${FLX_GNU_ARCH:+-mcpu=$FLX_GNU_ARCH} -m$FLX_BITS"
+    	    GCC_ARCH_COMMON="${FLX_GNU_ARCH:+-mcpu=$FLX_GNU_ARCH} -m$FLX_BITS"
+    	    GCC_ARCH_SMALL="${FLX_GNU_ARCH_SMALL:+-mcpu=$FLX_GNU_ARCH_SMALL} -m$FLX_BITS"
     	    GCC_CPU_CURRENT="${FLX_GNU_CPU:+-mtune=$FLX_GNU_CPU}"
     	    GCC_CPU_COMMON="${FLX_GNU_CPU:+-mtune=$FLX_GNU_CPU}"
     	    GCC_CPU_SMALL="${FLX_GNU_CPU_SMALL:+-mtune=$FLX_GNU_CPU_SMALL}"
     	    GCC_OPT_FASTEST="-O3 -fomit-frame-pointer"
-    	    GCC_OPT_FAST="-O2 -fno-align-jumps"
-    	    GCC_OPT_SMALL="-Os -fno-align-functions -fno-align-loops -fno-align-jumps -fno-align-labels"
+    	    GCC_OPT_FAST="-O2"
+    	    GCC_OPT_SMALL="-Os"
     	    ;;
     	    
     	alpha*)
@@ -2500,26 +2507,26 @@ function set_compiler_options {
     	    GCC_CPU_COMMON="${FLX_GNU_CPU:-mtune=$FLX_GNU_CPU}"
     	    GCC_CPU_SMALL="${FLX_GNU_CPU_SMALL:-mtune=$FLX_GNU_CPU_SMALL}"
     	    GCC_OPT_FASTEST="-O3 -fomit-frame-pointer"
-    	    GCC_OPT_FAST="-O2 -fno-align-jumps"
-    	    GCC_OPT_SMALL="-Os -fno-align-functions -fno-align-loops -fno-align-jumps -fno-align-labels"
+    	    GCC_OPT_FAST="-O2"
+    	    GCC_OPT_SMALL="-Os"
     	    ;;
     	    
     	*)
             GCC_ARCH_CURRENT="" ; GCC_ARCH_COMMON="" ; GCC_ARCH_SMALL=""
             GCC_CPU_CURRENT=""  ; GCC_CPU_COMMON=""  ; GCC_CPU_SMALL=""
             GCC_OPT_FASTEST="-O3 -fomit-frame-pointer"
-            GCC_OPT_FAST="-O2 -momit-leaf-frame-pointer"
-            GCC_OPT_SMALL="-Os -momit-leaf-frame-pointer"
-
-            if [ $TESTGCC -gt 0 ] && $CC -fno-align-loops -S -o /dev/null -xc /dev/null >/dev/null 2>&1; then
-                GCC_OPT_FAST="${GCC_OPT_FAST} -fno-align-jumps"
-                GCC_OPT_SMALL="${GCC_OPT_SMALL} -fno-align-functions -fno-align-loops -fno-align-jumps -fno-align-labels"
-            else
-                GCC_OPT_FAST="${GCC_OPT_FAST} -malign-jumps=0"
-                GCC_OPT_SMALL="${GCC_OPT_SMALL} -malign-jumps=0 -malign-loops=0 -malign-functions=0"
-            fi
+    	    GCC_OPT_FAST="-O2"
+    	    GCC_OPT_SMALL="-Os"
     	    ;;
     esac
+
+    if [ $GCC_VER -ge 310 ]; then
+        GCC_OPT_FAST="${GCC_OPT_FAST} -fno-align-jumps"
+        GCC_OPT_SMALL="${GCC_OPT_SMALL} -fno-align-functions -fno-align-loops -fno-align-jumps -fno-align-labels"
+    else
+        GCC_OPT_FAST="${GCC_OPT_FAST} -malign-jumps=0"
+        GCC_OPT_SMALL="${GCC_OPT_SMALL} -malign-jumps=0 -malign-loops=0 -malign-functions=0"
+    fi
 
     HOSTCC_OPT_FASTEST="-O3 -fomit-frame-pointer"
     HOSTCC_OPT_FAST="-O2"
@@ -2543,6 +2550,7 @@ function print_env {
             FLX_ABI FLX_FLOAT FLX_FLOAT_TYPE FLX_BITS FLX_ENDIAN \
 	    FLXCROSS FLXTOOLDIR UCLIBCROOT FLXROOTDIR SYSROOTTAR KERNDIR \
             PATH AR AS CC CXX LD NM OBJDUMP RANLIB STRIP SSTRIP \
+            GCC_EXACT_VER GCC_MAJOR GCC_MINOR GCC_VER \
 	    GCC_ARCH_CURRENT GCC_ARCH_COMMON GCC_ARCH_SMALL \
 	    GCC_CPU_CURRENT GCC_CPU_COMMON GCC_CPU_SMALL \
 	    GCC_OPT_FASTEST GCC_OPT_FAST GCC_OPT_SMALL \
@@ -2812,7 +2820,6 @@ function known_cmd {
 
 release_only=0
 force=0
-TESTGCC=0
 PRINTUSAGE=0
 PRINTENV=0
 ARGLIST=( )
@@ -2831,7 +2838,6 @@ while [ $# -gt 0 ] ; do
 	    ;;
 	--env|-e)
 	    PRINTENV=1
-	    TESTGCC=1
 	    ;;
 	--rel|-r*)
 	    release_only=1
@@ -2869,7 +2875,6 @@ set_flx_arch
 while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
     set -o noglob
     ACTION=${ARGLIST[0]}
-    TESTGCC=0
     #    unset ARGLIST[0]  ### doesn't work in scripts with this shitty bash !!!
     set -- "${ARGLIST[@]}"
     shift
@@ -2950,7 +2955,6 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 		REPLY="$(basename $(readlink -f ${LINKNAME}) 2>/dev/null)"
 		PKGDIR="$(readlink -f ${LINKNAME} 2>/dev/null)"
 	    fi
-	    TESTGCC=1
 	    # get_name %L
 	    ;;
 	strip|pack|delpack|release|clean)
