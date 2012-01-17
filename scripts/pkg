@@ -2455,7 +2455,7 @@ function set_compiler_options {
 
             if [ $FLX_BITS -gt 32 ]; then
                 GCC_OPT_FAST="${GCC_OPT_FAST} -mpreferred-stack-boundary=4"
-                GCC_OPT_SMALL="${GCC_OPT_SMALL} -mpreferred-stack-boundary=3"
+                GCC_OPT_SMALL="${GCC_OPT_SMALL} -mpreferred-stack-boundary=4"
             else
                 GCC_OPT_FAST="${GCC_OPT_FAST} -mpreferred-stack-boundary=2"
                 GCC_OPT_SMALL="${GCC_OPT_SMALL} -mpreferred-stack-boundary=2"
