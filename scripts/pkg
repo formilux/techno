@@ -1391,26 +1391,31 @@ function do_clean {
 # applies all the patches to the current sources
 # files which match *.rej and *~ will be deleted
 function do_patch {
-    local i
+    local i err
     if [ -f .patched ]; then
       echo "Error: Already patched."
       return 1
     fi
     find . -name '*.rej' -o -name '*~' | xargs rm -f
 
+    err=
     for i in ${PATCH_LIST}; do
         echo "[PATCH]    Applying patch ${i##*/}"
 	[ ! -e "$PKGDIR/patches/$i" -a -e "$PKGDIR/patches/$i.gz" ] && i="$i.gz"
-	if [ -z "${i##*.gz}" ]; then
-	    gzip -cd < $PKGDIR/patches/$i | patch -Np$PATCH_LEVEL
+	if [ ! -e "$PKGDIR/patches/$i" ]; then
+	    echo "           => FATAL: patch file missing !"
+	    err=1
+	elif [ -z "${i##*.gz}" ]; then
+	    gzip -cd < "$PKGDIR/patches/$i" | patch -Np$PATCH_LEVEL || err=1
 	else
-	    patch -Np$PATCH_LEVEL < $PKGDIR/patches/$i
+	    patch -Np$PATCH_LEVEL < "$PKGDIR/patches/$i" || err=1
 	fi
     done
 
-    if [ -z "$(find . -name '*.rej')" ]; then
+    if [ -z "$err" -a -z "$(find . -name '*.rej')" ]; then
 	find . -name '*~' | xargs rm -f
     else
+        echo "FATAL: Some patches failed to apply, aborting."
 	return 1
     fi
     touch .patched
@@ -1420,7 +1425,7 @@ function do_patch {
 # reverts all the patches from the current sources
 # files which match *.rej and *~ will be deleted
 function do_unpatch {
-    local i
+    local i err
     local UNPATCH_LIST=""
 
     find . -name '*.rej' -o -name '*~' | xargs rm -f
@@ -1429,18 +1434,25 @@ function do_unpatch {
 	UNPATCH_LIST=( $i ${UNPATCH_LIST[@]} )
     done
 
+    err=
     for i in ${UNPATCH_LIST[@]}; do
         echo "[UNPATCH]  Reverting patch ${i##*/}"
 	[ ! -e "$PKGDIR/patches/$i" -a -e "$PKGDIR/patches/$i.gz" ] && i="$i.gz"
-	if [ -z "${i##*.gz}" ]; then
-	    gzip -cd < $PKGDIR/patches/$i | patch -RNp$PATCH_LEVEL
+	if [ ! -e "$PKGDIR/patches/$i" ]; then
+	    echo "           => FATAL: patch file missing !"
+	    err=1
+	elif [ -z "${i##*.gz}" ]; then
+	    gzip -cd < "$PKGDIR/patches/$i" | patch -RNp$PATCH_LEVEL || err=1
 	else
-	    patch -RNp$PATCH_LEVEL < $PKGDIR/patches/$i
+	    patch -RNp$PATCH_LEVEL < "$PKGDIR/patches/$i" || err=1
 	fi
     done
 
-    if [ -z "$(find . -name '*.rej')" ]; then
+    if [ -z "$err" -a -z "$(find . -name '*.rej')" ]; then
 	find . -name '*~' | xargs rm -f
+    else
+        echo "FATAL: Some patches failed to revert, aborting."
+	return 1
     fi
     rm -f .patched
     return 0
