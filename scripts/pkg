@@ -2810,6 +2810,40 @@ function do_release {
     return 0
 }
 
+# emits a tar of the minimul package
+function do_tar {
+    local last_pkg
+    local trash
+    local reporoot
+	
+    # some important checks before things get wrong
+    if [ -z "$PKGDIR" -o -z "$EXACTPKG" ]; then
+	echo "Critical error : PKGDIR and EXACTPKG must be set !"
+	exit 1
+    fi
+
+    # identify last changelog entry
+    last_pkg=""
+    if [ -e "$PKGDIR/ChangeLog" ]; then
+	last_pkg=$(grep $'^[\t ]*\* released' "$PKGDIR/ChangeLog" | head -1)
+	last_pkg=${last_pkg##*released}
+    fi
+
+    # We use the conventionnal versionning scheme : PKGDIR points to a
+    # directory which we will move to the destination.
+    if ! tar -C "${PKGDIR%/*}" \
+             --exclude='*.dep' --exclude='*.tgz' --exclude='*.lst' \
+             --exclude='compiled' --exclude='.repository'  \
+             --exclude='.tested' --exclude="${VERSFILE}" \
+             -cf - "${PKGDIR##*/}" | gzip -c9 > "${PKGDIR##*/}.tar.gz"; then
+      echo "Error: cannot produce the output package to file ${PKGDIR##*/}.tar.gz. Aborting."
+      exit 2
+    fi
+
+    echo "An archive of the package has been sent to ${PKGDIR##*/}.tar.gz"
+    return 0
+}
+
 
 ######
 ###### here are some functions used only from main
