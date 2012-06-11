@@ -1671,16 +1671,16 @@ function do_pack {
 	exit 1
     fi
 
-    hlist=( $( find .flxdisk -type f -printf '%n %P\n' | grep -v '^1 ' | sed 's/.* //' ) )
+    hlist=( $( find "${ROOTDIR}" -type f -printf '%n %P\n' | grep -v '^1 ' | sed 's/.* //' ) )
 
     for hl in "${hlist[@]}" ; do
-        mkdir -p .tmphl/${hl%/*}
-        cp --preserve=all $ROOTDIR/${hl} .tmphl/${hl}
-        rm -f $ROOTDIR/${hl}
-        cp --preserve=all .tmphl/${hl} $ROOTDIR/${hl}
+        mkdir -p ".tmphl/${hl%/*}"
+        cp --preserve=all "${ROOTDIR}/${hl}" ".tmphl/${hl}"
+        rm -f "${ROOTDIR}/${hl}"
+        cp --preserve=all ".tmphl/${hl}" "${ROOTDIR}/${hl}"
     done
 
-    cd $ROOTDIR
+    cd "$ROOTDIR"
 
     # use the file list when available
     if [ "$FILE_LISTS" ]; then
