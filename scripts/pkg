@@ -72,7 +72,7 @@ FLX_SRC_CACHE_DIRS="${FLX_SRC_CACHE_DIRS-/tmp:r /nfs/tmp:r /data/tmp:r}"
 DEVROOT=${DEVROOT:-/var/flx-dev}
 PKGROOT=${PKGROOT:-/var/flx-pkg}
 
-PKGSEARCHDEP=${PKGSEARCHDEP:-$DEVROOT $PKGROOT}
+PKGSEARCHDEP=${PKGSEARCHDEP:-${DEVROOT%/}/ ${PKGROOT%/}/}
 export PKGSEARCHDEP
 
 # fix PATH : we MUST never have either an empty component nor a '.' in it !
