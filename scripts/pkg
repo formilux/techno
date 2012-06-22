@@ -1848,7 +1848,7 @@ function do_prepare {
   local checkpack
   echo -n "" >.preparepkg
   if [ -n "${MAKEDEPENDS[*]}" ]; then
-  set -o noglob
+    set -o noglob
     for DEPEND in "${MAKEDEPENDS[@]}"; do 
       OLDIFS=$IFS
       IFS=:
@@ -1863,16 +1863,15 @@ function do_prepare {
 	cat .preparepkg
 	exit 1
       else
-	PACKAGE="${PACKAGE##*/}"
-	if [ ! -e "$PKGSEARCHDEP/$PACKAGE/compiled/$PACKAGE${VERSFX:+_$VERSFX}-$ARCH.tgz" ] ; then
-	  echo "ArchiveNotFound: $PACKAGE${VERSFX:+_$VERSFX}-$ARCH.tgz" > .preparepkg
+	if [ ! -e "${PACKAGE}/compiled/${PACKAGE##*/}${VERSFX:+_$VERSFX}-$ARCH.tgz" ] ; then
+	  echo "ArchiveNotFound: ${PACKAGE##*/}${VERSFX:+_$VERSFX}-$ARCH.tgz" > .preparepkg
 	  cat .preparepkg
 	  exit 1
         fi
 	
       fi
     done
-  set +o noglob
+    set +o noglob
   fi
 
   if [ -z "${SYSROOTTAR}" -o ! -e "${SYSROOTTAR}" ]; then
@@ -1897,15 +1896,15 @@ function do_prepare {
 	fi
   fi
 
-if [ -z "${MAKEDEPENDS[*]}" ]; then
+  if [ -z "${MAKEDEPENDS[*]}" ]; then
 	return 0
-fi
+  fi
 
- # iterate on a depends list :
- # EXAMPLE :
- #  'packagename:versfx:architecture:globbing'
+  # iterate on a depends list :
+  # EXAMPLE :
+  #  'packagename:versfx:architecture:globbing'
  
- RET=0
+  RET=0
   set -o noglob
     for DEPEND in "${MAKEDEPENDS[@]}"; do 
       OLDIFS=$IFS
@@ -1921,8 +1920,7 @@ fi
 	echo "Error: package $PKGNAME not found."
 	exit 1
       else
-	PACKAGE="${PACKAGE##*/}"
-	FILE="$PKGSEARCHDEP/$PACKAGE/compiled/$PACKAGE${VERSFX:+_$VERSFX}-$ARCH.tgz"
+	FILE="${PACKAGE}/compiled/${PACKAGE##*/}${VERSFX:+_$VERSFX}-$ARCH.tgz"
 	if [ ! -e "$FILE" ] ; then
 	  exit 1
         fi
