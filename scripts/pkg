@@ -2254,6 +2254,7 @@ function set_flx_arch {
             p3|p4|k6-*|k7)        FLX_GNU_ARCH=i686       ;;
             atom*|core*)          FLX_GNU_ARCH=i686       ;;
             x86*)                 FLX_GNU_ARCH=x86-64     ;;
+            armv7*)               FLX_GNU_ARCH=armv7-a    ;;
             arm*)                 FLX_GNU_ARCH=armv5te    ;;
             mips64*)              FLX_GNU_ARCH=mips64     ;;
             mips*)                FLX_GNU_ARCH=mips32     ;;
@@ -2286,6 +2287,7 @@ function set_flx_arch {
             p3|p4|k6-*|k7|atom*)  FLX_GNU_CPU=i686       ;;
             core*)                FLX_GNU_CPU=i686       ;;
             x86*)                 FLX_GNU_CPU=x86-64     ;;
+            armv7*)               FLX_GNU_CPU=cortex-a8  ;;
             arm*)                 FLX_GNU_CPU=arm926ej-s ;;
             mips64*)              FLX_GNU_CPU=mips64     ;;
             mips*)                FLX_GNU_CPU=mips32     ;;
@@ -2317,6 +2319,7 @@ function set_flx_arch {
     # settings.
     if [ -z "$FLX_FLOAT" ]; then
         case "$FLXARCH" in
+            armv7eabi) FLX_FLOAT=softfp ;;
             armeabi) FLX_FLOAT=soft ;;
             *)       FLX_FLOAT=hard ;;
         esac
