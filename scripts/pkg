@@ -2088,7 +2088,7 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 	    fi
 	    # get_name %L
 	    ;;
-	compile_only|config|config_only|compile|build)
+	compile_only|config|config_only|compile|build|prepack)
 	    KNOWNCMD=1
 	    if [ -r "${LINKNAME}/${VERSFILE}" ]; then
 		REPLY="$(cat ${LINKNAME}/${VERSFILE})"
@@ -2101,7 +2101,7 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 	    TESTGCC=1
 	    # get_name %L
 	    ;;
-	prepack|strip|pack|delpack|release|clean)
+	strip|pack|delpack|release|clean)
 	    KNOWNCMD=1
 	    if [ -r "${LINKNAME}/${VERSFILE}" ]; then
 		REPLY="$(cat ${LINKNAME}/${VERSFILE})"
