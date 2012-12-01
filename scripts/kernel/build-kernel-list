@@ -56,7 +56,7 @@ usage() {
     echo "Output will be sent to \$OUTPUTDIR=$OUTPUTDIR"
     echo "Using: CROSS_COMPILE=$CROSS_COMPILE"
     echo "       CC=$CC HOSTCC=$HOSTCC PARALLELCC=$PARALLELCC"
-    echo "       ARCH=$USERARCH DEFAULT_ARCH=$DEFAULT_ARCH"
+    echo "       ARCH=$USERARCH DEFAULT_ARCH=$DEFAULT_ARCH KEEPDIR=$KEEPDIR"
     echo "       MAKE=$MAKE BOOTIMG=$BOOTIMG PLATFORM=$PLATFORM"
     echo "Note: this script needs sudo during the install phase."
     echo "Use --suffix to automatically suffix the build version to the EXTRAVERSION."
@@ -78,6 +78,7 @@ _DEPMOD=${_DEPMOD:-depmod}
 MAKE=${MAKE:-make}
 BOOTIMG=${BOOTIMG:-bzImage}
 PLATFORM=${PLATFORM:-}
+KEEPDIR=${KEEPDIR:-}
 
 mkdir -p $OUTPUTDIR || die 1 "Cannot create directory : $OUTPUTDIR"
 
@@ -303,13 +304,15 @@ for cfg in "$@"; do
 	            modules_install </dev/null >> $OUTPUTDIR/$log 2>&1; err=$?
 	if [ $err -ne 0 ]; then
 	    echo "######### make modules_install returned error code $err #########" | tee -a $OUTPUTDIR/$log
-	    $_SUDO rm -rf $destdir
+	    [ -z "$KEEPDIR" ] && $_SUDO rm -rf $destdir
 	    continue
 	fi
 
 	if [ ! -d "$libmoddir" ]; then
 	    echo "######### make modules_install failed to create $libmoddir #########" | tee -a $OUTPUTDIR/$log
-	    $_SUDO rm -rf $destdir
+	    echo "######### listing of ${libmoddir%/*} : #########" | tee -a $OUTPUTDIR/$log
+	    ls -la ${libmoddir%/*} | tee -a $OUTPUTDIR/$log
+	    [ -z "$KEEPDIR" ] && $_SUDO rm -rf $destdir
 	    continue
 	fi
 
@@ -329,7 +332,7 @@ for cfg in "$@"; do
 
 	if [ $addon_err -ne 0 ]; then
 	  echo "######### errors encountered while installing addons #########"
-	  $_SUDO rm -rf $destdir
+	  [ -z "$KEEPDIR" ] && $_SUDO rm -rf $destdir
 	  continue
         fi
 
@@ -379,7 +382,7 @@ for cfg in "$@"; do
 	    $_SUDO cp arch/${ARCH}/boot/$BOOTIMG .config System.map $bootdir >> $OUTPUTDIR/$log 2>&1; err=$?
 	    if [ $err -ne 0 ]; then
 		echo "######### cp $BOOTIMG .config System.map ... returned error code $err #########" | tee -a $OUTPUTDIR/$log
-		$_SUDO rm -rf $destdir
+		[ -z "$KEEPDIR" ] && $_SUDO rm -rf $destdir
 		continue
 	    fi
 
@@ -421,7 +424,7 @@ for cfg in "$@"; do
 	    $_SUDO cp arch/${ARCH}/boot/$BOOTIMG .config System.map $bootdir >> $OUTPUTDIR/$log 2>&1; err=$?
 	    if [ $err -ne 0 ]; then
 		echo "######### cp $BOOTIMG .config System.map ... returned error code $err #########" | tee -a $OUTPUTDIR/$log
-		$_SUDO rm -rf $destdir
+		[ -z "$KEEPDIR" ] && $_SUDO rm -rf $destdir
 		continue
 	    fi
 
@@ -445,7 +448,7 @@ for cfg in "$@"; do
 	        $_SUDO cp System.map $subarchdir/boot/System.map-$KVER >> $OUTPUTDIR/$log 2>&1; err=$?
 	    if [ $err -ne 0 ]; then
 		echo "######### cp $BOOTIMG .config System.map ... returned error code $err #########" | tee -a $OUTPUTDIR/$log
-		$_SUDO rm -rf $destdir
+		[ -z "$KEEPDIR" ] && $_SUDO rm -rf $destdir
 		continue
 	    fi
 	    $_SUDO rm -f $subarchdir/boot/build
@@ -474,7 +477,7 @@ for cfg in "$@"; do
 	    ;;
 	esac ## case $curdist
 
-	$_SUDO rm -rf $destdir
+	[ -z "$KEEPDIR" ] && $_SUDO rm -rf $destdir
 	echo "#### package done ! ####" >> $OUTPUTDIR/$log
     done
 done
