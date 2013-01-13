@@ -1494,7 +1494,12 @@ function do_strip {
         # create directories in .debug
         $OBJCOPY --only-keep-debug "$file" "$DEBUGDIR/$rpath/$filename.$DBGSUFF" > /dev/null 2>&1
         # allow executable and shared (.so), but not relocatable (.o), both stripped or not stripped
+        # recent binutils tend to remove the setuid bit so let's readjust the bits by hand
+        test -u "$file"; uid=$?
+        test -g "$file"; gid=$?
         $STRIP -x --strip-unneeded -R .note -R .comment "$file" > /dev/null 2>&1
+        [ $uid -eq 0 ] && chmod u+s "$file"
+        [ $gid -eq 0 ] && chmod g+s "$file"
     done
     return 0
 }
