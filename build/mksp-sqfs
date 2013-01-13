@@ -1,10 +1,10 @@
 #!/bin/bash
 
 #
-# mksp-sqfs - make a squashfs from a raw FS - version 0.0.4 - 2010-08-27
+# mksp-sqfs - make a squashfs from a raw FS - version 0.0.5 - 2013-01-13
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
-# Copyright (C) 2001-2010 Benoit Dolez & Willy Tarreau
+# Copyright (C) 2001-2013 Benoit Dolez & Willy Tarreau
 #       mailto: benoit@ant-computing.com,willy@ant-computing.com
 #
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
@@ -17,7 +17,7 @@ _MKSQUASHFS=${_MKSQUASHFS:-mksquashfs}
 
 # usage: displays script usage and returns no error.
 function usage {
-  echo "MKSP-SQFS - package a root dir as a squashfs - version 0.0.4 - 2010-08-27"
+  echo "MKSP-SQFS - package a root dir as a squashfs - version 0.0.5 - 2013-01-13"
   echo "Usage: ${myname##*/} -o <target_dir> { -i <in_dir> | -c } [ -d ] [ -ve ]"
   echo "       [ -b build_ver] [ -k kern_ver ]* [ -s size_max ] [ -kv ] [ -md dir ]*"
   echo "       [ -rm file|dir ]* [ -ln src:dst ]*"
@@ -165,6 +165,24 @@ if [ $CLEAN_ONLY -gt 0 ]; then
   exit 0
 fi
 
+# Check for supported mksquashfs options. These ones automatically
+# cover versions 2.x to 4.x. Only version 2 supported option -2.0,
+# version 3 was only able to emit 2.0 FS format, and versions 4 do
+# not support version 2 anymore. This means that by testing this
+# option, we can pass it to 2.x to have FS version 2.0, let 3.x do
+# the correct 2.0 format, and have 4.x use the 4.x format, just by
+# selecting the appropriate executable.
+MKSQFSOPTS=( )
+for opt in -noappend -2.0 -no-xattrs; do
+  # The check is not easy, as mksquashfs does not support "nop" tests, and we'd
+  # rather avoid depend on NLS. Thus, we generate a known invalid operation and
+  # check the output message. If it's a short one, the option is supported. If
+  # it's a large one, it's the usage output so the option is not supported. This
+  # Seems to do the trick for at least versions 2.x to 4.x included.
+  ret=$(${_MKSQUASHFS} /dev/null /dev/null "$opt" 2>&1 | wc -l)
+  [ $ret -lt 10 ] && MKSQFSOPTS[${#MKSQFSOPTS[@]}]="$opt"
+done
+
 mkdir -p $OUT_DIR/fs || die "Cannot make directory '$OUT_DIR/fs'. Aborting."
 ln -s $IN_DIR $OUT_DIR/base || die "Cannot make link '$OUT_DIR/base'. Aborting."
 
@@ -278,7 +296,7 @@ for dir in "${SYMLINKS[@]}"; do
   ln -s "$dst" "$OUT_DIR/temp/root/$src"
 done
 
-${_MKSQUASHFS} $OUT_DIR/temp/root $OUT_DIR/fs/initrd.img -2.0 -noappend || die "mksquashfs returned an error."
+${_MKSQUASHFS} $OUT_DIR/temp/root $OUT_DIR/fs/initrd.img "${MKSQFSOPTS[@]}" || die "mksquashfs returned an error."
 
 # Now we'll possibly rename the kernel if it is alone
 if [ "$VERSIONNED_KERNEL" != 1 ]; then
