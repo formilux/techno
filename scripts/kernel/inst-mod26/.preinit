@@ -59,6 +59,13 @@ mt ${root-/dev/ram0} /root ${rootfstype-squashfs3} ${ro+ro} ${rw+rw}
 |{
   ec "An error was encountered while trying to mount ${root-/dev/ram0}."
   ec "Maybe you want to try to mount root manually into /root ?"
+  ec "Trying to unpack an eventual /busybox and modules ..."
+  ln /tar /busybox
+  /busybox mkdir /tmp /bin /sbin /usr /usr/bin /usr/sbin /boot /lib /lib/modules
+  /busybox --install
+  cd /lib/modules
+  /busybox tar xf /modules.tar
+  cd /
   rd "Syntax is: mt /dev/ram0 /root <fstype> [options]"
 }
 
