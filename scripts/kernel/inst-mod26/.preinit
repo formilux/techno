@@ -19,6 +19,10 @@ bl 0600 0 0 72 1 ida/c0d[i,0-15,16]p[i,1-15,1]
 md /dev/cciss 755       # Compaq CCISS raid disks (major 104)
 bl 0600 0 0 104 0 cciss/c0d[i,0-15,16]
 bl 0600 0 0 104 1 cciss/c0d[i,0-15,16]p[i,1-15,1]
+ch 0600 0 0 90 0 mtd[i,0-15,2]
+bl 0600 0 0 31 0 mtdblock[i,0-15,1]
+bl 0600 0 0 179 0 mmcblk[i,0-31,8]
+bl 0600 0 0 179 1 mmcblk[i,0-31,8]p[i,1-7,1]
 bl 0600 0 0 11 0 sr[i,0-16,1]
 ch 0600 0 0 9 0 st[i,0-15,1]
 bl 0600 0 0 9 0 md[i,0-15,1]
@@ -38,15 +42,20 @@ bl 0400 0 0 1 250 initrd
 # copy the initrd if it exists, otherwise ignore the error
 # an go on with the root device.
 cp /initrd.image /dev/ram0
-rm /initrd.image
+&rm /initrd.image
+|ec "Note: /initrd.image found"
 
 # mount the root device with the ro/rw flags as specified on the cmdline
+# and if it fails, try to force load /dev/ram0 as squashfs
 mt ${root-/dev/ram0} /root ${rootfstype-squashfs3} ${ro+ro} ${rw+rw}
 |mt ${root-/dev/ram0} /root ${rootfstype-squashfs} ${ro+ro} ${rw+rw}
+|mt ${root-/dev/ram0} /root ext4 ${ro+ro} ${rw+rw}
 |mt ${root-/dev/ram0} /root ext3 ${ro+ro} ${rw+rw}
 |mt ${root-/dev/ram0} /root ext2 ${ro+ro} ${rw+rw}
 |mt ${root-/dev/ram0} /root xfs ${ro+ro} ${rw+rw}
 |mt ${root-/dev/ram0} /root reiserfs ${ro+ro}
+|mt /dev/ram0 /root squashfs3
+|mt /dev/ram0 /root squashfs
 |{
   ec "An error was encountered while trying to mount ${root-/dev/ram0}."
   ec "Maybe you want to try to mount root manually into /root ?"
