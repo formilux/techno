@@ -100,7 +100,9 @@ VERSFX=${VERSFX:-}
 # Packages suffixes, directory names and file names
 PKGSUFF="tgz"
 CFGSUFF="cfg"
+DBGSUFF="dbg"
 INSTNAME=".flxdisk"
+DEBUGNAME=".debug"
 LINKNAME=".flxpkg"
 VERSFILE="Version"
 
@@ -1348,6 +1350,7 @@ function pre_prepack {
     # permissions are important here because we don't want to get an
     # inherited setgid or something alike on the root dir
     [ ! -d "$ROOTDIR" ] && { mkdir -p $ROOTDIR; chown 0:0 $ROOTDIR; chmod 0755 $ROOTDIR; }
+    [ ! -d "$DEBUGDIR" ] && { mkdir -p $DEBUGDIR; chown 0:0 $ROOTDIR; chmod 0755 $ROOTDIR; }
     #mkdir -p "$EXAMPLEDIR"
     return 0
 }
@@ -1480,14 +1483,21 @@ function do_unpack {
 # Abort if ROOTDIR doesn't exist (thus needing prepack() first).
 function do_strip {
     if [ ! -d $ROOTDIR ] ; then
-	echo "Error: directory $ROOTDIR doesn't exist. Make sure you did 'prepack'."
-	exit 1
+        echo "Error: directory $ROOTDIR doesn't exist. Make sure you did 'prepack'."
+        exit 1
     fi
-    #find $ROOTDIR/. -type f | xargs file | grep ":.*executable.*not stripped" | cut -f1 -d: | xargs ${STRIP} -x --strip-unneeded -R .note -R .comment > /dev/null 2>&1 
-    # allow executable and shared (.so), but not relocatable (.o), both stripped or not stripped
-     find $ROOTDIR/. -type f -print0 | xargs -0 file | grep     ":.*ELF.*\(executable\|shared\).*stripped" | cut -f1 -d: | xargs ${STRIP} -x --strip-unneeded -R .note -R .comment > /dev/null 2>&1 
+    find "$ROOTDIR/." -type f -print0 | xargs -0 file | grep ":.*ELF.*\(executable\|shared\).*stripped" | cut -f1 -d: | while read file; do
+        rpath=${file%/*}
+        filename=${file#$rpath/}
+        rpath=${rpath#$ROOTDIR}
+        mkdir -p "$DEBUGDIR/$rpath/"
+        # create directories in .debug
+        $OBJCOPY --only-keep-debug "$file" "$DEBUGDIR/$rpath/$filename.$DBGSUFF" > /dev/null 2>&1
+        # allow executable and shared (.so), but not relocatable (.o), both stripped or not stripped
+        $STRIP -x --strip-unneeded -R .note -R .comment "$file" > /dev/null 2>&1
+    done
     return 0
-} 
+}
 
 # forces pack() to strip before starting, even if do_pack() is redefined by the user.
 function pre_pack {
@@ -1814,6 +1824,11 @@ function do_pack {
     # should contain at least what we want to tar !
      $FIND_CMD . | tar --no-recursion -T - --numeric-owner -cf - | gzip -9 >$FPNAME.$PKGSUFF 2>/dev/null
 
+     # debug symbol files
+     cd "$DEBUGDIR"
+     $FIND_CMD . | tar --no-recursion -T - --numeric-owner -cf - | gzip -9 >$FPNAME.$DBGSUFF.$PKGSUFF 2>/dev/null
+
+     cd "$ROOTDIR"
     # create shortcuts ".*" for tgz, dep and lst files
     for ext in dep lst tgz; do
         rm -f $PKGDIR/.$ext
@@ -2398,6 +2413,7 @@ function set_cross_environment {
         STRIP=${STRIP:-strip}
         SSTRIP=${SSTRIP:-sstrip}
         OBJDUMP=${OBJDUMP:-objdump}
+        OBJCOPY=${OBJCOPY:-objcopy}
 
         HOSTCC=${HOSTCC:-$CC}
         HOSTCXX=${HOSTCXX:-$CXX}
@@ -2408,6 +2424,7 @@ function set_cross_environment {
         HOSTSTRIP=${HOSTSTRIP:-$STRIP}
         HOSTSSTRIP=${HOSTSSTRIP:-$SSTRIP}
         HOSTOBJDUMP=${HOSTOBJDUMP:-$OBJDUMP}
+        HOSTOBJCOPY=${HOSTOBJCOPY:-$OBJCOPY}
 
         if [ -n "$FLXCROSS" ]; then
             CC=${FLXCROSS}${CC} ; CC=${FLXCROSSCC:-$CC}
@@ -2420,12 +2437,13 @@ function set_cross_environment {
             STRIP=${FLXCROSS}${STRIP} ; STRIP=${FLXCROSSSTRIP:-$STRIP}
             SSTRIP=${FLXCROSS}${SSTRIP} ; SSTRIP=${FLXCROSSSSTRIP:-$SSTRIP}
             OBJDUMP=${FLXCROSS}${OBJDUMP} ; OBJDUMP=${FLXCROSSOBJDUMP:-$OBJDUMP}
+            OBJCOPY=${FLXCROSS}${OBJCOPY} ; OBJCOPY=${FLXCROSSOBJCOPY:-$OBJCOPY}
         fi
         # specify that we don't want to do this again
         FLX_CROSS_OPT_SET=1
     fi
-    export CC CXX AS LD AR NM RANLIB STRIP SSTRIP OBJDUMP
-    export HOSTCC HOSTCXX HOSTAS HOSTLD HOSTAR HOSTNM HOSTRANLIB HOSTSTRIP HOSTSSTRIP HOSTOBJDUMP
+    export CC CXX AS LD AR NM RANLIB STRIP SSTRIP OBJDUMP OBJCOPY
+    export HOSTCC HOSTCXX HOSTAS HOSTLD HOSTAR HOSTNM HOSTRANLIB HOSTSTRIP HOSTSSTRIP HOSTOBJDUMP HOSTOBJCOPY
 }
 
 function set_gcc_version {
@@ -3064,6 +3082,7 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 	PKGVER="$(get_pkg_ver ${EXACTPKG##*/})"
 	DISTVER="$(get_build_num ${EXACTPKG##*/})"
 	ROOTDIR="${ROOTDIR:-$CURDIR/${INSTNAME}}"
+	DEBUGDIR="${DEBUGDIR:-$CURDIR/${DEBUGNAME}}"
         EXAMPLEDIR="${ROOTDIR}/usr/share/examples"
 
 	# for compatibility with old functions. Not used anywhere outside this script.
