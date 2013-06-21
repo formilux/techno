@@ -2503,12 +2503,24 @@ function set_compiler_options {
 	    ;;
    
     	arm*)
-    	    GCC_ARCH_CURRENT="${FLX_GNU_ARCH:+-march=$FLX_GNU_ARCH}"
-    	    GCC_ARCH_COMMON="${FLX_GNU_ARCH:+-march=$FLX_GNU_ARCH}"
-    	    GCC_ARCH_SMALL="${FLX_GNU_ARCH_SMALL:+-march=$FLX_GNU_ARCH_SMALL}"
-    	    GCC_CPU_CURRENT="${FLX_GNU_CPU:+-mtune=$FLX_GNU_CPU}"
-    	    GCC_CPU_COMMON="${FLX_GNU_CPU:+-mtune=$FLX_GNU_CPU_SMALL}"
-    	    GCC_CPU_SMALL="${FLX_GNU_CPU_SMALL:+-mtune=$FLX_GNU_CPU_SMALL}"
+	    # on ARM, we use either -march for generic arch support, optionally
+	    # with -mtune to optimize for one specific CPU, or we use -mcpu for
+	    # a precise CPU core support.
+	    if [ -n "$FLX_GNU_CPU" ]; then
+		GCC_ARCH_CURRENT=""
+		GCC_ARCH_COMMON=""
+		GCC_ARCH_SMALL=""
+		GCC_CPU_CURRENT="${FLX_GNU_CPU:+-mcpu=$FLX_GNU_CPU}"
+		GCC_CPU_COMMON="${FLX_GNU_CPU_SMALL:+-mcpu=$FLX_GNU_CPU_SMALL}"
+		GCC_CPU_SMALL="${FLX_GNU_CPU_SMALL:+-mcpu=$FLX_GNU_CPU_SMALL}"
+	    else
+		GCC_ARCH_CURRENT="${FLX_GNU_ARCH:+-march=$FLX_GNU_ARCH}"
+		GCC_ARCH_COMMON="${FLX_GNU_ARCH:+-march=$FLX_GNU_ARCH}"
+		GCC_ARCH_SMALL="${FLX_GNU_ARCH_SMALL:+-march=$FLX_GNU_ARCH_SMALL}"
+		GCC_CPU_CURRENT=""
+		GCC_CPU_COMMON=""
+		GCC_CPU_SMALL=""
+	    fi
     	    GCC_OPT_FASTEST="-O3 -fomit-frame-pointer"
     	    GCC_OPT_FAST="-O2"
     	    GCC_OPT_SMALL="-Os"
