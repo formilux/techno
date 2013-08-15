@@ -397,7 +397,7 @@ for cfg in "$@"; do
 
 	    # let's build the signature file
 	    $_SUDO find $subarchdir/ -xdev -not -path $subarchdir/boot -printf "%P\n" | grep -v '^$' | \
-		sh -c "( cd $subarchdir && xargs $_SUDO flx sign --ignore-dot --no-depth)" \
+		sh -c "( cd $subarchdir && $_SUDO xargs flx sign --ignore-dot --no-depth)" \
 		>$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-$subarch.lst
 
 	    # let's build the tar.gz
@@ -430,7 +430,7 @@ for cfg in "$@"; do
 
 	    # let's build the signature file
 	    $_SUDO find $subarchdir/ -xdev \( -name $BOOTIMG -o -name .config -o -name System.map \) -printf "%P\n" | \
-		sh -c "( cd $subarchdir && xargs $_SUDO flx sign --ignore-dot --no-depth)" \
+		sh -c "( cd $subarchdir && $_SUDO xargs flx sign --ignore-dot --no-depth)" \
 		>$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-allin1-$subarch.lst
 
 	    # let's build the tar.gz
