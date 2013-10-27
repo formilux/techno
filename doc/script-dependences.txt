@@ -1,0 +1,102 @@
+2013/08/25 - auditing of build scripts dependences - Willy Tarreau
+
+List of dependences found in build scripts. Here are enumerated the dependences
+on other scripts, system commands, external commands, and unusual files or
+variables. The purpose is to help spot possible incompatibilities between some
+tools or with newer build systems which might not support certain command line
+arguments for some tools anymore.
+
+The "pkg" script was not mentionned because it also calls anything based on the
+build.cfg scripts which might even call autotools.
+
+
+1) Mandatory scripts
+--------------------
+
+$PROJECT/build_firmware:
+  build/mksp-pkg
+  build/mksp-raw
+  build/mksp-sqfs || build/mksp-e2fs
+  build/mkfp-swimg
+
+build/mksp-pkg:
+  scripts/cnt2prf
+  scripts/fix-prf
+  scripts/updt-prf
+  scripts/prfdiff
+  sort, awk, cp, ln, mv, rm, sed, find, mkdir, rmdir, chmod, chown
+
+build/mksp-raw:
+  scripts/flxextract
+  sort, tar, ln, ls, rm, mkdir, xargs, sed
+
+build/mksp-sqfs:
+  mksquashfs [$_MKSQUASHFS]
+  rm, ln, mkdir, tar, find, mv, gzip, cp, touch
+
+build/mksp-e2fs:
+  genext2fs, mv, mkdir, rm, gzip, touch, ln, tar, find, cp, du, grep 
+
+build/mkfp-swimg:
+  rm, mkdir, ln, cp, chmod, tar, gzip
+
+scripts/fix-prf:
+  grep, sed, sort
+
+scripts/updt-prf
+  PATH+=${0/*}
+  flxrescan
+  ~/.flxdefaults
+  mkdir, rm, grep, diff, cat, sort, awk
+
+scripts/prfdiff
+  rm, rmdir, mkdir, touch, sort
+
+scripts/flxextract
+  rm, mkdir, touch, chown, chmod, awk, tee, tar, date, grep, cat, sort, mv, find
+
+scripts/prfdiff
+  mkdir, rm, rmdir, sort, touch
+
+scripts/flxrescan
+  find, awk, grep, printf, head, mv, cat, sort, rm, date, touch
+
+
+2) Utility scripts
+------------------
+
+scripts/install-image
+  PATH+=${0/*}
+  install-boot2.sh
+  update-boot-image
+  mount, umount, mke2fs, tune2fs, mkdir, rmdir, chmod, cp, sed
+
+scripts/install-boot2.sh
+  ~/.flxdefaults
+  rm, mkdir, cp, chmod, chown, sed, grub
+
+scripts/update-boot-image
+  [works in forced mode, no automatic detection, no flash-layout.rc]
+  mount, umount, mv, rm, cat, grep
+  grub-mbr-default
+
+scripts/missing_patches
+  grep, cut
+
+scripts/resolve-path
+  sed
+
+scripts/dvl-dep.sh
+  grep, touch, tail, cat, sed, rm
+
+scripts/list-all-refs
+  cat, done, grep, mv, rm, touch
+  git
+
+scripts/list-all-repos
+  cat, find, mv, rm, touch
+
+scripts/git-import-all-packages.sh
+  sed, grep, find, date, tee, mkdir, rm, cat, printf, diff, ls
+  git, git-commit, git-am, git-init-db, git-write-tree, git-commit-tree, git-update-ref
+
