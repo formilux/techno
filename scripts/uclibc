@@ -1,11 +1,18 @@
 #!/bin/bash
-# uClibc wrapper v0.6 - 2011/10/26 - Willy Tarreau
+# uClibc wrapper v0.7 - 2013/10/28 - Willy Tarreau
 # Use this script as a GCC prefix to build a source with uclibc.
 # Note that it is smart enough to build kexec-tools and busybox.
 
 compilo="$1" ; shift
-UCLIBCROOT=${UCLIBCROOT-${FLXTOOLDIR-/var/flx-toolchain/i586-linux/tool-i686-host-linux}/uclibc}
 # echo "uclibc: $@" >&2
+if [ -z "$UCLIBCROOT" ]; then
+  echo "UCLIBCROOT variable is not set. Please make it point to your uclibc sysroot."
+  exit 1
+fi
+if [ ! -d "$UCLIBCROOT/." ]; then
+  echo "UCLIBCROOT variable does not point to a valid directory. Please make it point to your uclibc sysroot."
+  exit 1
+fi
 
 # Check if one parameter is '-c','-E','-S' or '-M'
 args=" ${*} "
