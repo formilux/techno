@@ -1,0 +1,69 @@
+#!/bin/bash
+
+_SVN=${_SVN:-svn}
+_TAR=${_TAR:-tar}
+
+# get file from location $1, store it as file $2. One or multiple directories
+# may be specified in $3... They will be used as caches and looked up in the
+# same order. All caches will be updated to hold the file from lower priority
+# caches. If a cache directory name is suffixed with ":r", it is only read,
+# but never updated.
+function get_svncached_file {
+  local from="$1"; shift
+  local dest="$1"; shift
+  local -a caches=( $* )
+  local cur_cache=0
+  local name dir
+
+  set -- $(echo -n "$from" | md5sum)
+  name="svn-$1"
+
+  while [ $cur_cache -lt ${#caches[*]} ]; do
+    dir="${caches[$cur_cache]}"; dir="${dir%:r}"
+    [ -e "$dir/$name" ] && break
+    (( cur_cache++ ))
+  done
+
+  if [ $cur_cache -ge ${#caches[*]} ]; then
+    # Object not found in cache, retrieve it and populate all caches
+
+    rm -rf "svn.export" 2>/dev/null 
+    ${_SVN} export "$from" "svn.export" || return 1
+    ${_TAR} -czf ${dest} "svn.export" || return 1
+    rm -rf "svn.export" 2>/dev/null 
+
+    # Populate caches. We don't exit on error but we remove potentially
+    # broken objects.
+    cur_cache=0
+    while [ $cur_cache -lt ${#caches[*]} ]; do
+      if [ -n "${caches[$cur_cache]##*:r}" ]; then
+        echo "  Updating cache dir ${caches[$cur_cache]%:r}."
+        cp "$dest" "${caches[$cur_cache]%:r}/$name" || rm -f "${caches[$cur_cache]%:r}"
+      fi
+      (( cur_cache++ ))
+    done
+    return 0
+  fi
+
+  # OK, object was found, let's copy it and populate caches of higher
+  # priority.
+
+  echo "Fetching copy of $from from cache dir $dir."
+  cp "$dir/$name" "$dest" || return 1
+
+  while [ $cur_cache -gt 0 ]; do
+    (( cur_cache-- ))
+    if [ -n "${caches[$cur_cache]##*:r}" ]; then
+      echo "  Updating cache dir ${caches[$cur_cache]%:r}."
+      cp "$dir/$name" "${caches[$cur_cache]%:r}" || rm -f "${caches[$cur_cache]%:r}"
+    fi
+  done
+  return 0
+}
+
+if [ $# != 3 ]; then
+   echo "Usage: ${0##*/} <svn_project_url> <dest.tar.gz> <cachedirs>" >&2
+   exit 1
+fi
+
+get_svn_cached_file "$1" "$2" "$3"
