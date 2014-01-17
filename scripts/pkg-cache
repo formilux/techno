@@ -1,0 +1,111 @@
+#!/bin/bash
+#
+# pkg-cache - Formilux Package Cache manager - version 0.1.0 - 2012-05-03
+#
+# Copyright (C) 2001-2012 Benoit Dolez, Willy Tarreau
+# Copyright (C) 2011-2012 Emeric Brun
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+#
+# Usage:
+#   pkg-cache <action>
+#
+
+function do_update() {
+	local repo
+	local newpackages
+	local new
+
+	if [ -z "$PKGCACHEDIR" ] ; then
+		echo "No destination, please specify PKGCACHEDIR" >&2
+		exit 1
+	fi
+	mkdir -p $PKGCACHEDIR/
+	if [ $? -ne 0 ] ; then
+		echo "Unable to create $PKGCACHEDIR/" >&2
+		exit 1
+	fi
+	for i in ${PKGCACHEDIR}/* ; do
+		if [ -d "$i" -a ! -e "$i/.repository" ] ; then
+			echo "$i package is missing .repository"
+			exit 1
+		fi
+	done
+	chmod -R u+w ${PKGCACHEDIR}/* 2>/dev/null
+	for repopath in ${FLXREPOS} ; do
+		if [ ! -d "$repopath/" ] ; then
+			echo "$repopath is not a valid package repository" >&2
+			exit 1
+		fi
+
+		echo -n "Syncing cache from repository $repopath ..."
+		# We copy the original package, restoring write permissions on all directories.
+		umask og-w
+		rsync -rl --exclude 'compiled' --exclude '.repository' --exclude '.tested' \
+		      --exclude '.tgz' --exclude '.lst' --exclude '.dep' "$repopath"/* "$PKGCACHEDIR"/ >/dev/null 
+		if [ $? -ne 0 ] ; then
+			echo "error"
+			exit 1
+		fi
+		echo " success"
+		
+		echo -n "Installing new packages ..."
+		for i in ${PKGCACHEDIR}/* ; do
+			if [ ! -d "$i" -o -e "$i/.repository" ] ; then
+				continue
+			fi
+			new="${i##*/}"
+			if [ -z "$new" ] ; then
+				echo ""
+				echo "Internal bug"
+				exit 1
+			fi
+			chmod -R u+w ${PKGCACHEDIR}/$new 2>/dev/null
+			if [ ! -f "$PKGCACHEDIR/$new/RELEASED" ] ; then
+				echo ""
+				echo "Suppressing package $new because not released" >&2
+				rm -rf "$PKGCACHEDIR/$new"
+				[ $? -ne 0 ] && exit 1
+				continue
+			fi
+			if [ ! -f "$PKGCACHEDIR/$new/build.cfg" ] ; then
+				echo ""
+				echo "Suppressing package $new because no build.cfg found" >&2
+				rm -rf "$PKGCACHEDIR/$new"
+				[ $? -ne 0 ] && exit 1
+				continue
+			fi
+			echo "$repopath" > "$PKGCACHEDIR/$new/.repository"	
+			if [ $? -ne 0 ] ; then
+				echo ""
+				echo "Unable to mark package $new repository source, suppressing it" >&2
+				rm -rf "$PKGCACHEDIR/$new"
+				[ $? -ne 0 ] && exit 1
+				continue
+			fi
+			mkdir -p "$PKGCACHEDIR/$new/compiled"
+			if [ $? -ne 0 ] ; then
+				echo ""
+				echo "Unable to create 'compiled' on package $new, suppressing it" >&2
+				rm -rf "$PKGCACHEDIR/$new"
+				[ $? -ne 0 ] && exit 1
+				continue
+			fi
+			# Restore write permissions on ChangeLog, build.cfg, Version, ...
+			echo -n "."
+		done
+		echo " success"
+	done
+	chmod -R a-w ${PKGCACHEDIR}/* 2>/dev/null
+	chmod -R u+w ${PKGCACHEDIR}/*/compiled 2>/dev/null
+}
+
+[ "$1" != "0" ] 
+case $1 in
+	update)
+		do_update
+		;;
+	*)
+		echo "pkg-cache <command>"
+		echo "   update: process a rsync copy from FLXREPOS of all packages, for new create packages into cache, create '.repository' to store source address and empty 'compiled' folder".
+esac
