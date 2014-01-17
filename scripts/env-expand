@@ -1,0 +1,15 @@
+#!/bin/sh
+# This script resolves words between "@@" as environment variables and replaces
+# them with the variable's value. The result is emitted on stdout. There may be
+# multiple such tags on a line.
+
+exec awk '{
+    c = split($0, s, "@@");
+    for (n = 1; n <= c; ++n) {
+        if ((n % 2) == 0)
+            printf ENVIRON[s[n]];
+	else
+            printf s[n];
+    }
+    printf "\n";
+}' "$@"
