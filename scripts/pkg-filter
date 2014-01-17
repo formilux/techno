@@ -1,0 +1,147 @@
+#!/bin/bash
+#
+# pkg-filter - Formilux Package Filter - version 0.1.0 - 2012-05-03
+#
+# Copyright (C) 2001-2012 Benoit Dolez, Willy Tarreau
+# Copyright (C) 2011-2012 Emeric Brun
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+#
+# Usage:
+#   pkg-filter <action>
+#
+
+
+[ -n "$PKGFILTEREDDIR" ] || { echo "Please specify PKGFILTEREDDIR" ;  exit 1 ; }
+[ -n "$PRJ_DIR" ] || { echo "env PRJ_DIR is not set" >&2 ; exit 1 ; }
+aloha_env_path=$( readlink -f ${BASH_SOURCE[0]} )
+
+function do_update() {
+	local repo
+	local newpackages
+	local new
+	local package
+	local aloha_env_path
+
+
+	mkdir -p $PKGFILTEREDDIR/
+	[ $? -eq 0 ] || { echo "Unable to create $PKGFILTEREDDIR" >&2 ; exit 1 ; }
+
+	rm -f $PKGFILTEREDDIR/*
+
+	[ -f "$PRJ_DIR/packaging/bld/formilux.bld" ] || { echo "Build package list not found at $PRJ_DIR/packaging/bld/formilux.bld" ; exit 1 ; }
+
+
+	echo -n "Filter formilux "
+	while read package trash ; do
+		if [ -d "$DEVROOT/$package" ] ; then
+			ln -s $DEVROOT/$package $PKGFILTEREDDIR/$package
+			[ ! -d "$PKGROOT/$package" ] || { echo " error" ; echo "Error package $package is both in DEVROOT and PKGROOT, please fix conflict" >&2 ; exit 1 ; }
+		elif [ -d "$PKGROOT/$package" ] ; then
+			ln -s $PKGROOT/$package $PKGFILTEREDDIR/$package
+		else
+			echo " error"
+			echo "Error $package not found, your cache may not up to date try: ( pkg-cache update )" >&2
+			exit 1
+		fi
+		echo -n "."
+	done < "$PRJ_DIR/packaging/bld/formilux.bld"
+	echo " success"
+
+	echo -n "Filter components "
+	find "$PRJ_DIR/components/pkg/" -type f  -name 'Version' | while read package trash ; do
+		version=$( cat $package )
+		package="${package%/*}"
+		ln -s $package $PKGFILTEREDDIR/$version
+		[ $? -ne 0 ] && { echo " error"; echo "Error create link on component ${package##*/}" >&2 ; exit 1 ; }
+		echo -n "."
+	done
+	echo " success"
+}
+
+function do_flush() {
+	mkdir -p $PKGFILTEREDDIR/
+        [ $? -eq 0 ] || { echo "Unable to create $PKGFILTEREDDIR" >&2 ; exit 1 ; }
+
+        rm -f $PKGFILTEREDDIR/*
+}
+
+function do_cleanall() {
+	mkdir -p $PKGFILTEREDDIR/
+        [ $? -eq 0 ] || { echo "Unable to create $PKGFILTEREDDIR" >&2 ; exit 1 ; }
+
+        rm -fv $PKGFILTEREDDIR/*-*-flx*\.*/compiled/*.tgz
+        rm -f $PKGFILTEREDDIR/*-*-flx*\.*/compiled/*.lst
+        rm -f $PKGFILTEREDDIR/*-*-flx*\.*/compiled/*.dep
+}
+
+function do_cleancomponents() {
+	mkdir -p $PKGFILTEREDDIR/
+        [ $? -eq 0 ] || { echo "Unable to create $PKGFILTEREDDIR" >&2 ; exit 1 ; }
+
+        rm -fv $PKGFILTEREDDIR/*-0local-flx2\.1/compiled/*.tgz
+        rm -f $PKGFILTEREDDIR/*-0local-flx2\.1/compiled/*.lst
+        rm -f $PKGFILTEREDDIR/*-0local-flx2\.1/compiled/*.dep
+}
+
+
+function do_clean() {
+	mkdir -p $PKGFILTEREDDIR/
+        [ $? -eq 0 ] || { echo "Unable to create $PKGFILTEREDDIR" >&2 ; exit 1 ; }
+	while [ $# -gt 0 ] ; do
+		rm -fv $PKGFILTEREDDIR/$1-*-flx*\.*/compiled/*.tgz
+		rm -f $PKGFILTEREDDIR/$1-*-flx*\.*/compiled/*.lst
+		rm -f $PKGFILTEREDDIR/$1-*-flx*\.*/compiled/*.dep
+		shift;
+	done
+}
+
+function do_list() {
+        mkdir -p $PKGFILTEREDDIR/
+        [ $? -eq 0 ] || { echo "Unable to create $PKGFILTEREDDIR" >&2 ; exit 1 ; }
+	find  $PKGFILTEREDDIR -xtype d -name '*-*-flx*.*' -printf '%P\n'
+}
+
+function do_archive() {
+	if [ -z "$1" ]; then
+		echo "Missing output archive name"
+		exit 1
+	fi
+	(cd "$PKGFILTEREDDIR" && tar --exclude='compiled/*' --exclude='.svn' -cf - */* | gzip -nc9) > "$1"
+}
+
+case $1 in
+	update)
+		do_update
+		;;
+	cleanall)
+		do_cleanall
+		;;
+	cleancomponents)
+		do_cleancomponents
+		;;
+	clean)
+		shift;
+		do_clean "$@"
+		;;
+	flush)
+		do_flush
+		;;
+	list)
+		do_list
+		;;
+	archive)
+		shift;
+		do_archive "$@"
+		;;
+	*)
+		echo "pkgfilter <command>"
+		echo "    update: apply formilux.bld filter on PKGROOT and PKGDDEV, create links on matched package into PKGFILTEREDDIR"
+		echo "      also create links on aloha components package"
+		echo "    list: list fitered packages"
+		echo "    cleanall: remove all binaries in filtered"
+		echo "    cleancomponents: remove all binaries only in components"
+		echo "    clean <name> ..: remove all binaries for package <name>-*-flx*.*"
+		echo "    archive <file> : make a tar.gz archive of all filtered packages without binaries"
+esac
+
