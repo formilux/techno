@@ -1,0 +1,219 @@
+#!/bin/bash
+#
+# pkg-build - Formilux Recursive Package builder - version 0.3.0 - 2012-05-03
+#
+# Copyright (C) 2001-2012 Benoit Dolez, Willy Tarreau
+# Copyright (C) 2011-2012 William Lallemand, Emeric Brun
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+#
+# Usage:
+#   pkg-build [<package-name>]*
+#
+# Without arguments, builds everything. Otherwise, only builds the specified
+# packages and their respective missing dependencies.
+#
+
+PROGNAME=$0
+_PKG=${_PKG:-pkg}
+_SUDO=${_SUDO:-sudo}
+
+unset FLXARG
+unset VERSFX
+
+die() {
+	echo "$@"
+	exit 1
+}
+
+# by default, builds everything unless some args are passed. Arguments are in
+# the form <pkgname>[:<arch>]. If <arch> is omitted, $DEFAULT_ARCH is used.
+do_build() {
+	local cont
+	mkdir -p ${TMP_PACK}/pkg
+	mkdir -p ${TMP_PACK}/buildpkg
+	mkdir -p ${TMP_PACK}/src
+	mkdir -p ${TMP_PACK}/lpk
+
+	source ${PACK_DIR}/arch_prefs/$MODEL
+	export MODEL
+	export DEFAULT_ARCH
+	export OSIZE_ARCH
+	export OSPEED_ARCH
+
+	if [ "$#" -gt 0 ]; then
+		rm -f ${TMP_PACK}/allbuild.lpk
+
+		for i in "$@"; do
+			# report either package name with specified arch or package name with default arch
+			[ -z "${i##*:*}" ] && echo "${i%%:*} ${i##*:}" || echo "${i} ${DEFAULT_ARCH}"
+
+			# update the package cache with this one
+			rm -f $PKGFILTEREDDIR/$i
+			if [ -d "$DEVROOT/$i" ] ; then
+				ln -s $DEVROOT/$i $PKGFILTEREDDIR/$i
+				[ ! -d "$PKGROOT/$i" ] || { echo " error" ; echo "Error package $i is both in DEVROOT and PKGROOT, please fix conflict" >&2 ; exit 1 ; }
+			elif [ -d "$PKGROOT/$i" ] ; then
+				ln -s $PKGROOT/$i $PKGFILTEREDDIR/$i
+			else
+				echo " error"
+				echo "Error $i not found, your cache may not up to date try: ( pkg-cache update )" >&2
+				exit 1
+			fi
+			echo -n "."
+		done > ${TMP_PACK}/allbuild.lpk
+	else
+		${FLXTECHNO}/scripts/env-expand "$PACK_DIR/lpk/formilux.lpk" "$PACK_DIR/lpk/components.lpk" > ${TMP_PACK}/allbuild.lpk
+		${FLXTECHNO}/scripts/pkg-filter update
+		[ $? -eq 0 ] || exit 1
+	fi
+
+	echo -n "" > ${TMP_PACK}/all.lpk
+	while read package archs ; do
+		p=${package##*-flx}
+		sfxver=""
+		if [ "${p/_/}" != "$p" ] ; then
+			sfxver="${p#*_}"
+			package=${package%_*}
+		fi
+
+		cont=""
+		for needarch in $archs ; do
+			if [ -e "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" ] ; then
+				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" "${TMP_PACK}/pkg/"
+				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.dep" "${TMP_PACK}/pkg/"
+				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.lst" "${TMP_PACK}/pkg/"
+				echo "$package${sfxver:+_$sfxver}" >> ${TMP_PACK}/all.lpk
+				cont="1"
+				break
+			fi
+		done
+		if [ -n "$cont" ] ; then
+			continue
+		fi
+		set -- $archs
+
+		package_build "$package" "$1" "$sfxver"
+		[ "$?" != "0" ] && exit 1
+		for needarch in $archs ; do
+			if [ -e "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" ] ; then
+				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" "${TMP_PACK}/pkg/"
+				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.dep" "${TMP_PACK}/pkg/"
+				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.lst" "${TMP_PACK}/pkg/"
+				echo "$package${sfxver:+_$sfxver}" >> ${TMP_PACK}/all.lpk
+				cont="1";
+				break
+			fi
+		done
+		if [ -n "$cont" ] ; then
+			continue
+		fi
+
+		echo "Unable to build package $package!"
+		exit 1
+	done < ${TMP_PACK}/allbuild.lpk
+}
+
+package_build() {
+	local depth
+	local arch
+	local package
+	local sfxver
+	local deppackage
+
+	depth=1
+	package[$depth]="$1"
+	arch[$depth]="$2"
+	sfxver[$depth]="$3"
+
+	while [ $depth -gt 0 ] ; do
+		if [ ! -d "$PKGFILTEREDDIR/${package[$depth]}" ] ; then
+			echo "Error ${package[$depth]} not found in dependencies"
+			exit 1
+		fi
+		echo "Preparing ${TMP_PACK}/src/${package[$depth]}"
+		if [ -e "${TMP_PACK}/src/${package[$depth]}" ] ; then
+			if [ ! -e "${TMP_PACK}/src/${package[$depth]}" ] ; then
+				echo "Please clean ${TMP_PACK}/src/${package[$depth]} manually"
+				exit 1
+			fi
+			$_SUDO rm -rf "${TMP_PACK}/src/${package[$depth]}" 2>/dev/null
+		fi
+
+		mkdir -p "${TMP_PACK}/src/${package[$depth]}"
+		ln -s "$PKGFILTEREDDIR/${package[$depth]}" "${TMP_PACK}/src/${package[$depth]}/.flxpkg"
+		(
+			export PKG_NOCHOICE=1
+			export FLXARCH="${arch[$depth]}"
+			export VERSFX="${sfxver[$depth]}"
+			cd "${TMP_PACK}/src/${package[$depth]}"
+			${_PKG} prepare
+		)
+		if [ "$?" != "0" ] ; then
+			if [ "$( grep "PackageNotFound:" "${TMP_PACK}/src/${package[$depth]}/.preparepkg" | wc -l )" != "0" ] ; then
+				echo "Error in ${package[$depth]} dependencies: missing package."
+				exit 1
+			fi
+			if [ "$( grep "ArchiveNotFound:" "${TMP_PACK}/src/${package[$depth]}/.preparepkg" | wc -l )" != "0" ] ; then
+				deppackage=$( grep -m 1 "ArchiveNotFound: " "${TMP_PACK}/src/${package[$depth]}/.preparepkg" )
+				((depth++))
+				package[$depth]="${deppackage/ArchiveNotFound: /}"
+				package[$depth]="${package[$depth]%.tgz}"
+				arch[$depth]="${package[$depth]##*-}"
+				package[$depth]="${package[$depth]%-*}"
+				sfxver[$depth]="${package[$depth]##*-flx}"
+				if [ "${sfxver[$depth]/_/}" != "${sfxver[$depth]}" ] ; then
+					sfxver[$depth]="${sfxver[$depth]#*_}"
+				else
+					sfxver[$depth]=""
+				fi
+				continue
+			fi
+			echo "Error in ${package[$depth]} dependencies!"
+			exit 1
+		fi
+		(
+			export PKG_NOCHOICE=1
+			export FLXARCH="${arch[$depth]}"
+			export VERSFX="${sfxver[$depth]}"
+			cd "${TMP_PACK}/src/${package[$depth]}"
+			${_PKG} source || exit 1
+			if [ ! -f ".patched" ] ; then
+				${_PKG} patch  || exit 1
+			fi
+			${_PKG} sudobuild || exit 1
+		)
+		if [ "$?" != "0" ] ; then
+			echo "Unable to build package ${package[$depth]}"
+			echo "Leaving directory ${TMP_PACK}/src/${package[$depth]}"
+			exit 1
+		elif [ ! -e "${TMP_PACK}/src/${package[$depth]}/.flxpkg/RELEASED" ] ; then
+			touch ${TMP_PACK}/src/${package[$depth]}/.flxpkg/.tested
+		fi
+
+		if [ $depth -ne 1 ] ; then
+			if [ -z "${sfxver[$depth]}" ] ; then
+				if [ ! -e "$PKGFILTEREDDIR/${package[$depth]}/compiled/${package[$depth]}-${arch[$depth]}.tgz" ] ; then
+					echo "Error build ${package[$depth]} does not produce requested arch: ${arch[$depth]}."
+					exit 1
+				fi
+			elif [ ! -e "$PKGFILTEREDDIR/${package[$depth]}/compiled/${package[$depth]}-${arch[$depth]}/${package[$depth]}_${sfxver[$depth]}-${arch[$depth]}.tgz" ] ; then
+				echo "Error build ${package[$depth]} does not produce requested arch: ${arch[$depth]}."
+				exit 1
+			fi
+		fi
+		((depth--))
+	done
+}
+
+[ -n "$FLXTECHNO" ]          || die "env FLXTECHNO is not set"
+[ -n "$MODEL" ]              || die "env MODEL not set"
+[ -n "$PKGFILTEREDDIR" ]     || die "env PKGFILTEREDDIR not set"
+[ -n "$TMP_PACK" ]           || die "env TMP_PACK not set"
+[ -n "$PACK_DIR" ]           || die "env PACK_DIR not set"
+[ -n "$DEVROOT" ]            || die "env DEVROOT not set"
+[ -n "$PKGROOT" ]            || die "env PKGROOT not set"
+[ "$PKGROOT" != "$DEVROOT" ] || die "env PKGROOT and DEVROOT must differ"
+# [ -n "$DEFAULT_ARCH" ]       || die "env DEFAULT_ARCH not set"
+
+do_build "$@"
