@@ -26,13 +26,13 @@ fi
 # Searches for scripts in this order :
 # - _mksp_pkg_<script name>
 # - <script name>
-# - $SCRIPTDIR/<script name>
+# - $FLXTECHNO/scripts/<script name>
 # - script name
 
-_cnt2prf="${_mksp_pkg_cnt2prf-${cnt2prf-${SCRIPTDIR:+$SCRIPTDIR/}cnt2prf}}"
-_fix_prf="${_mksp_pkg_fix_prf-${fix_prf-${SCRIPTDIR:+$SCRIPTDIR/}fix-prf}}"
-_updt_prf="${_mksp_pkg_updt_prf-${updt_prf-${SCRIPTDIR:+$SCRIPTDIR/}updt-prf}}"
-_prfdiff="${_mksp_pkg_prfdiff-${prfdiff-${SCRIPTDIR:+$SCRIPTDIR/}prfdiff}}"
+_cnt2prf="${_mksp_pkg_cnt2prf-${cnt2prf-${FLXTECHNO}/scripts/cnt2prf}}"
+_fix_prf="${_mksp_pkg_fix_prf-${fix_prf-${FLXTECHNO}/scripts/fix-prf}}"
+_updt_prf="${_mksp_pkg_updt_prf-${updt_prf-${FLXTECHNO}/scripts/updt-prf}}"
+_prfdiff="${_mksp_pkg_prfdiff-${prfdiff-${FLXTECHNO}/scripts/prfdiff}}"
 
 #_="${_mksp_pkg_-${-}}"
 _cp="${_mksp_pkg_cp-${cp-cp}}"
@@ -67,7 +67,7 @@ function usage {
   echo "   the packages installed up to and before <base_dir>/pkg. This means that to"
   echo "   cross-reference another tree, you have to work on the other tree first."
   echo "   All paths are absolute. '-b' is used to force the version which appears"
-  echo "   everywhere. Uses several scripts from \$SCRIPTDIR='$SCRIPTDIR'."
+  echo "   everywhere. Uses several scripts from \$FLXTECHNO/scripts='$FLXTECHNO/scripts'."
   echo "   -nc disables prf consistency checking. Use '-d' for debug. -f forces to"
   echo "   continue and ignore any error, -F fails on any error."
 }

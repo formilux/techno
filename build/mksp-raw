@@ -23,10 +23,10 @@ fi
 # Searches for scripts in this order :
 # - _mksp_raw_<script name>
 # - <script name>
-# - $SCRIPTDIR/<script name>
+# - $FLXTECHNO/scripts/<script name>
 # - script name
 
-_flxextract="${_mksp_raw_flxextract-${flxextract-${SCRIPTDIR:+$SCRIPTDIR/}flxextract}}"
+_flxextract="${_mksp_raw_flxextract-${flxextract-${FLXTECHNO}/scripts/flxextract}}"
 _ln="${_mksp_raw_ln-${ln-ln}}"
 _ls="${_mksp_raw_ls-${ls-ls}}"
 _mkdir="${_mksp_raw_mkdir-${mkdir-mkdir}}"
@@ -46,7 +46,7 @@ function usage {
   echo "   will end here if '-c' is set. Otherwise, an 'fs' directory will be created"
   echo "   under <out_dir>, with packages [0-9]*.{prf,tgz} selected from <prf_dir> and"
   echo "   extracted from dirs <pkg_dir>. All paths are absolute. Uses several scripts"
-  echo "   from \$SCRIPTDIR='$SCRIPTDIR'.  -nc disables consistency checking."
+  echo "   from \$FLXTECHNO/scripts='$FLXTECHNO/scripts'.  -nc disables consistency checking."
   echo "   Use '-d' for debug."
   echo
 }
