@@ -1,10 +1,10 @@
 #!/bin/bash
 
 #
-# mksp-sqfs - make a squashfs from a raw FS - version 0.0.5 - 2013-01-13
+# mksp-sqfs - make a squashfs from a raw FS - version 0.0.6 - 2014-01-31
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
-# Copyright (C) 2001-2013 Benoit Dolez & Willy Tarreau
+# Copyright (C) 2001-2014 Benoit Dolez & Willy Tarreau
 #       mailto: benoit@ant-computing.com,willy@ant-computing.com
 #
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
@@ -13,11 +13,15 @@ MYNAME="${0##*/}"
 CMDLINE="$*"
 
 # variables below are inherited from the caller
+# _MKSQUASHFS_COMP is the compression algorithm to use if set.
+# _MKSQUASHFS_ARGS is a space-delimited list of extra args to pass to mksquashfs
 _MKSQUASHFS=${_MKSQUASHFS:-mksquashfs}
+_MKSQUASHFS_COMP=${_MKSQUASHFS_COMP:-}
+_MKSQUASHFS_ARGS=${_MKSQUASHFS_ARGS:-}
 
 # usage: displays script usage and returns no error.
 function usage {
-  echo "MKSP-SQFS - package a root dir as a squashfs - version 0.0.5 - 2013-01-13"
+  echo "MKSP-SQFS - package a root dir as a squashfs - version 0.0.6 - 2014-01-31"
   echo "Usage: ${myname##*/} -o <target_dir> { -i <in_dir> | -c } [ -d ] [ -ve ]"
   echo "       [ -b build_ver] [ -k kern_ver ]* [ -s size_max ] [ -kv ] [ -md dir ]*"
   echo "       [ -rm file|dir ]* [ -ln src:dst ]*"
@@ -182,6 +186,15 @@ for opt in -noappend -2.0 -no-xattrs; do
   ret=$(${_MKSQUASHFS} /dev/null /dev/null "$opt" 2>&1 | wc -l)
   [ $ret -lt 10 ] && MKSQFSOPTS[${#MKSQFSOPTS[@]}]="$opt"
 done
+
+# set the compression algorithm if known
+if [ -n "${_MKSQUASHFS_COMP}" ]; then
+  MKSQFSOPTS=( "${MKSQFSOPTS[@]}" -comp "${_MKSQUASHFS_COMP}" )
+fi
+
+if [ -n "${_MKSQUASHFS_ARGS}" ]; then
+  MKSQFSOPTS=( "${MKSQFSOPTS[@]}" ${_MKSQUASHFS_ARGS} )
+fi
 
 mkdir -p $OUT_DIR/fs || die "Cannot make directory '$OUT_DIR/fs'. Aborting."
 ln -s $IN_DIR $OUT_DIR/base || die "Cannot make link '$OUT_DIR/base'. Aborting."
