@@ -1,0 +1,21 @@
+#!/bin/bash
+
+# Feed a .bld or .lpk file and it will check in the cache if more recent
+# packages exist, display its name and show the latest changelog entry.
+
+if [ -z "$PKGCACHEDIR" ]; then
+  echo "PKGCACHEDIR not set, please source the environment"
+  exit 1
+fi
+
+while read REPLY rest; do
+  p=${REPLY%.*} ; s=${REPLY#$p.}
+  n=$(\ls -dv "$PKGCACHEDIR/"${p}* | tail -n1)
+  s2=${n##*.} ; s2=${s2%/*}
+  if [ "$s" != "$s2" ]; then
+    echo "$p.$s => $p.$s2 : $PKGCACHEDIR/$p.$s2 :"
+    sed -ne 'p;n;/^[0-9]/q;p' "$PKGCACHEDIR/$p.$s2/ChangeLog" | sed -ne '/^$/n;s/^/	/p'
+    echo
+  fi
+done
+
