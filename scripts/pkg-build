@@ -52,15 +52,13 @@ do_build() {
 			rm -f $PKGFILTEREDDIR/$i
 			if [ -d "$DEVROOT/$i" ] ; then
 				ln -s $DEVROOT/$i $PKGFILTEREDDIR/$i
-				[ ! -d "$PKGROOT/$i" ] || { echo " error" ; echo "Error package $i is both in DEVROOT and PKGROOT, please fix conflict" >&2 ; exit 1 ; }
+				[ ! -d "$PKGROOT/$i" ] || { echo "Error: package $i is both in DEVROOT and PKGROOT, please fix conflict" >&2 ; exit 1 ; }
 			elif [ -d "$PKGROOT/$i" ] ; then
 				ln -s $PKGROOT/$i $PKGFILTEREDDIR/$i
 			else
-				echo " error"
-				echo "Error $i not found, your cache may not up to date try: ( pkg-cache update )" >&2
+				echo "Error: $i not found, your cache may not up to date try: ( pkg-cache update )" >&2
 				exit 1
 			fi
-			echo -n "."
 		done > ${TMP_PACK}/allbuild.lpk
 	else
 		${FLXTECHNO}/scripts/env-expand "$PACK_DIR/lpk/formilux.lpk" "$PACK_DIR/lpk/components.lpk" > ${TMP_PACK}/allbuild.lpk
@@ -109,7 +107,7 @@ do_build() {
 			continue
 		fi
 
-		echo "Unable to build package $package!"
+		echo "Unable to build package $package!" >&2
 		exit 1
 	done < ${TMP_PACK}/allbuild.lpk
 }
