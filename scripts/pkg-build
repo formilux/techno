@@ -45,8 +45,23 @@ do_build() {
 		rm -f ${TMP_PACK}/allbuild.lpk
 
 		for i in "$@"; do
+			# retrieve optional architecture after ":" at the end of the name
+			arch="${DEFAULT_ARCH}"
+			if [ -z "${i##*:*}" ]; then
+				arch="${i##*:}"
+				i="${i%%:*}"
+			fi
+
+			# retrieve optional suffix to feed into VERSFX for some model-specific packages
+			p=${i##*-flx}
+			sfxver=""
+			if [ "${p/_/}" != "$p" ] ; then
+				sfxver="${p#*_}"
+				i=${i%_*}
+			fi
+
 			# report either package name with specified arch or package name with default arch
-			[ -z "${i##*:*}" ] && echo "${i%%:*} ${i##*:}" || echo "${i} ${DEFAULT_ARCH}"
+			echo "${i}${sfxver:+_$sfxver} ${arch}"
 
 			# update the package cache with this one
 			rm -f $PKGFILTEREDDIR/$i
