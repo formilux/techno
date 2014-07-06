@@ -1,14 +1,14 @@
 #!/bin/bash
 
-# pkg - Formilux package builder - version 0.12.0 - 2012-01-13
+# pkg - Formilux package builder - version 0.13.0 - 2014-07-06
 #
-# Copyright (C) 2001-2012 Benoit Dolez & Willy Tarreau & William Lallemand
+# Copyright (C) 2001-2014 Benoit Dolez & Willy Tarreau & William Lallemand
 #   mailto: benoit@ant-computing.com,willy@ant-computing.com,wlallemand@exceliance.fr
 #
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
 
 ######## Please update this version ########
-PKG_VERSION=0.12.0
+PKG_VERSION=0.13.0
 ############################################
 
 ## WARNING ##
@@ -72,6 +72,9 @@ FLX_SRC_CACHE_DIRS="${FLX_SRC_CACHE_DIRS-/tmp:r /nfs/tmp:r /data/tmp:r}"
 DEVROOT=${DEVROOT:-/var/flx-dev}
 PKGROOT=${PKGROOT:-/var/flx-pkg}
 
+# If PKGBLDFILTER is set and points to a valid .bld file, it will be used as a
+# filter on package build dependencies during "pkg prepare". Otherwise, the
+# variable PKGSEARCHDEP below must be set (deprecated).
 PKGSEARCHDEP=${PKGSEARCHDEP:-${DEVROOT%/}/ ${PKGROOT%/}/}
 export PKGSEARCHDEP
 
@@ -1860,12 +1863,18 @@ function match_pkg {
     return 1 
 }
 
-# this function extract the sys-root and dependencies into it
+# this function extract the sys-root and dependencies into it. Before starting
+# extraction, it verifies availability of all packages. The purpose is to have
+# an upper layer call it and recursively build missing dependencies, so we don't
+# want to extract sysroot before discovering we have to abort and start again
+# with another package.
 function do_prepare {
   local VERSFX ARCH PACKAGE PKGNAME PACKAGES
   local OLDIFS
   local PKGNAME
   local checkpack
+  local bldname
+
   echo -n "" >.preparepkg
   if [ -n "${MAKEDEPENDS[*]}" ]; then
     set -o noglob
@@ -1877,7 +1886,31 @@ function do_prepare {
       PKGNAME=$1
       VERSFX="$2"
       ARCH="${3:-$FLXARCH}"
-      PACKAGE="$( find $PKGSEARCHDEP -maxdepth 1 -name "$1" -xtype d | xargs -r ls -1dv | tail -n 1 )"
+
+      # Process the BLD file directly if we know it
+      if [ -n "$PKGBLDFILTER" ]; then
+        if [ ! -r "$PKGBLDFILTER" ]; then
+          echo "Error: \$PKGBLDFILTER is unreadable: ($PKGBLDFILTER). Cannot prepare package.".
+          exit 1
+        fi
+
+        set +o noglob
+        PACKAGE=""
+        while [ -z "$PACKAGE" ] && read bldname rest; do
+          case "$bldname" in $PKGNAME)
+            if [ -d "$PKGROOT/$bldname/." ]; then
+              PACKAGE="$PKGROOT/$bldname"
+            elif [ -d "$DEVROOT/$bldname/." ]; then
+              PACKAGE="$DEVROOT/$bldname"
+            fi
+            ;;
+          esac
+        done < "$PKGBLDFILTER"
+        set -o noglob
+      else
+        PACKAGE="$( find $PKGSEARCHDEP -maxdepth 1 -name "$1" -xtype d | xargs -r ls -1dv | tail -n 1 )"
+      fi
+
       if [ -z "$PACKAGE" ] ; then
 	echo "PackageNotFound: $PKGNAME" > .preparepkg
 	cat .preparepkg
@@ -1935,7 +1968,31 @@ function do_prepare {
       VERSFX="$2"
       ARCH="${3:-$FLXARCH}"
       TARGLOB=$4
-      PACKAGE="$( find $PKGSEARCHDEP -maxdepth 1 -name "$1" -xtype d | xargs -r ls -1dv | tail -n 1 )"
+
+      # Process the BLD file directly if we know it
+      if [ -n "$PKGBLDFILTER" ]; then
+        if [ ! -r "$PKGBLDFILTER" ]; then
+          echo "Error: \$PKGBLDFILTER is unreadable: ($PKGBLDFILTER). Cannot prepare package.".
+          exit 1
+        fi
+
+        set +o noglob
+        PACKAGE=""
+        while [ -z "$PACKAGE" ] && read bldname rest; do
+          case "$bldname" in $PKGNAME)
+            if [ -d "$PKGROOT/$bldname/." ]; then
+              PACKAGE="$PKGROOT/$bldname"
+            elif [ -d "$DEVROOT/$bldname/." ]; then
+              PACKAGE="$DEVROOT/$bldname"
+            fi
+            ;;
+          esac
+        done < "$PKGBLDFILTER"
+        set -o noglob
+      else
+        PACKAGE="$( find $PKGSEARCHDEP -maxdepth 1 -name "$1" -xtype d | xargs -r ls -1dv | tail -n 1 )"
+      fi
+
       if [ -z "$PACKAGE" ] ; then
 	echo "Error: package $PKGNAME not found."
 	exit 1
