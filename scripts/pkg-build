@@ -146,10 +146,6 @@ package_build() {
 		fi
 		echo "Preparing ${TMP_PACK}/src/${package[$depth]}"
 		if [ -e "${TMP_PACK}/src/${package[$depth]}" ] ; then
-			if [ ! -e "${TMP_PACK}/src/${package[$depth]}" ] ; then
-				echo "Please clean ${TMP_PACK}/src/${package[$depth]} manually"
-				exit 1
-			fi
 			$_SUDO rm -rf "${TMP_PACK}/src/${package[$depth]}" 2>/dev/null
 		fi
 
