@@ -340,6 +340,12 @@ for cfg in "$@"; do
 	# now that we have all the modules, let's generate the modules.dep file.
         [ -r System.map ] && $_SUDO $_DEPMOD -ae -F System.map -b "$subarchdir" -r "$KVER"
 
+        # workaround for some new depmod from kmod building old kernels
+	if [ -e "$libmoddir/modules.builtin.bin" -a ! -s "$libmoddir/modules.builtin.bin" ]; then
+	  echo "Removing bogus empty modules.builtin.bin (please fix depmod, currently it is: \"$_DEPMOD\")."
+	  $_SUDO rm -f "$libmoddir/modules.builtin.bin"
+	fi
+
 	curdir=$PWD
 	case $curdist in
 	flx*)
@@ -367,6 +373,12 @@ for cfg in "$@"; do
                 du -s "${subarchdir}/lib/modules"
                 echo "Done."
                 [ -r System.map ] && $_SUDO $_DEPMOD -ae -F System.map -b "$subarchdir" -r "$KVER"
+
+                # workaround for some new depmod from kmod building old kernels
+                if [ -e "$libmoddir/modules.builtin.bin" -a ! -s "$libmoddir/modules.builtin.bin" ]; then
+                    echo "Removing bogus empty modules.builtin.bin (please fix depmod, currently it is: \"$_DEPMOD\")."
+                    $_SUDO rm -f "$libmoddir/modules.builtin.bin"
+                fi
             fi
 	    $_SUDO rm -f ${subarchdir}/lib/modules/${KVER}/build ${subarchdir}/lib/modules/${KVER}/source
 
