@@ -301,6 +301,7 @@ for cfg in "$@"; do
 	echo "Installing modules" >> $OUTPUTDIR/$log
 	$_SUDO $MAKE_CMD INSTALL_MOD_PATH=$subarchdir \
 	            INSTALL_MOD_STRIP="--strip-unneeded" \
+	            DEPMOD="$_DEPMOD" \
 	            modules_install </dev/null >> $OUTPUTDIR/$log 2>&1; err=$?
 	if [ $err -ne 0 ]; then
 	    echo "######### make modules_install returned error code $err #########" | tee -a $OUTPUTDIR/$log
