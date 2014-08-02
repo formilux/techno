@@ -221,13 +221,13 @@ for cfg in "$@"; do
         KVER="${major}.${minor}.${sub}${extra}"
     fi
 
-    VERSTR="VERSION=$major PATCHLEVEL=$minor SUBLEVEL=$sub EXTRAVERSION=$extra ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE ${CC:+CC=\"${CC}\"} HOSTCC=$HOSTCC LOCALVERSION= CONFIG_LOCALVERSION_AUTO= CONFIG_LOCALVERSION="
-    MAKE_CMD="$MAKE $VERSTR"
+    VERSTR=( VERSION="$major" PATCHLEVEL="$minor" SUBLEVEL="$sub" EXTRAVERSION="$extra" ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" ${CC:+CC="${CC}"} HOSTCC="$HOSTCC" LOCALVERSION= CONFIG_LOCALVERSION_AUTO= CONFIG_LOCALVERSION= )
+    MAKE_CMD=( $MAKE "${VERSTR[@]}" )
 
     if [ $do_compile -eq 1 ]; then
         if [ $do_rerun -eq 0 ]; then
           echo "Doing make distclean..."
-	  $MAKE_CMD distclean >/dev/null 2>&1
+	  "${MAKE_CMD[@]}" distclean >/dev/null 2>&1
 	  for addon in "${addons[@]}"; do
             echo "Cleaning addon '$addon'..."
 	    addons/"build.$addon" clean "$KVER" "$PWD" "$PWD/addons/$addon"
@@ -238,14 +238,14 @@ for cfg in "$@"; do
 	  cp $cfg .config
 
 	  echo "Checking configuration file" | tee -a $OUTPUTDIR/$log
-	  $MAKE_CMD oldconfig </dev/null >>$OUTPUTDIR/$log 2>&1 ; err=$?
+	  "${MAKE_CMD[@]}" oldconfig </dev/null >>$OUTPUTDIR/$log 2>&1 ; err=$?
 	  if [ $err -ne 0 ]; then
 	    echo "######### make oldconfig returned error code $err #########" | tee -a $OUTPUTDIR/$log
 	    continue
 	  fi
 
 	  #echo "Building dependencies" | tee -a $OUTPUTDIR/$log
-	  #$MAKE_CMD -j $PARALLELDEP dep </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
+	  #"${MAKE_CMD[@]}" -j $PARALLELDEP dep </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
 	  #if [ $err -ne 0 ]; then
 	  #  echo "######### make dep returned error code $err #########" | tee -a $OUTPUTDIR/$log
 	  #  continue
@@ -254,7 +254,7 @@ for cfg in "$@"; do
 
 	echo "Building kernel and modules" | tee -a $OUTPUTDIR/$log
         rm -rf initramfs && mkdir initramfs
-	$MAKE_CMD -j $PARALLELCC $BOOTIMG modules </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
+	"${MAKE_CMD[@]}" -j $PARALLELCC $BOOTIMG modules </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
 	if [ $err -ne 0 ]; then
 	    echo "######### make $BOOTIMG modules returned error code $err #########" | tee -a $OUTPUTDIR/$log
 	    continue
@@ -300,7 +300,7 @@ for cfg in "$@"; do
 	$_SUDO rm -rf $destdir ; $_SUDO mkdir -p $subarchdir
 
 	echo "Installing modules" >> $OUTPUTDIR/$log
-	$_SUDO $MAKE_CMD INSTALL_MOD_PATH=$subarchdir \
+	$_SUDO "${MAKE_CMD[@]}" INSTALL_MOD_PATH=$subarchdir \
 	            INSTALL_MOD_STRIP="--strip-unneeded" \
 	            DEPMOD="$_DEPMOD" \
 	            modules_install </dev/null >> $OUTPUTDIR/$log 2>&1; err=$?
@@ -359,7 +359,7 @@ for cfg in "$@"; do
                  usr/initramfs_data.o -nt initramfs/modules.tar ]; then
                 echo "Cleaning initramfs" >>$OUTPUTDIR/$log
                 rm -rf initramfs && mkdir initramfs
-                $MAKE_CMD -j $PARALLELCC $BOOTIMG CONFIG_INITRAMFS_SOURCE="" </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
+                "${MAKE_CMD[@]}" -j $PARALLELCC $BOOTIMG CONFIG_INITRAMFS_SOURCE="" </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
             fi
             mkdir -p initramfs
 
@@ -432,7 +432,7 @@ for cfg in "$@"; do
             cp "${tools26}/busybox" initramfs/tar
 
             echo "Building initramfs for all-in-one kernel" >>$OUTPUTDIR/$log
-            $MAKE_CMD -j $PARALLELCC $BOOTIMG CONFIG_INITRAMFS_SOURCE=$PWD/initramfs </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
+            "${MAKE_CMD[@]}" -j $PARALLELCC $BOOTIMG CONFIG_INITRAMFS_SOURCE=$PWD/initramfs </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
 
             echo "Packaging all-in-one kernel" >>$OUTPUTDIR/$log
 	    $_SUDO cp arch/${ARCH}/boot/$BOOTIMG .config System.map $bootdir >> $OUTPUTDIR/$log 2>&1; err=$?
