@@ -319,6 +319,18 @@ for cfg in "$@"; do
 	fi
 
 	if [ ! -d "$libmoddir" ]; then
+	    echo "#### WARNING: the output modules directory doesn't exist, probably because" | tee -a $OUTPUTDIR/$log
+	    echo "#### CONFIG_LOCALVERSION_AUTO is set, trying to determine the proper name." | tee -a $OUTPUTDIR/$log
+	    dirs=( $(cd ${libmoddir%/*}; \ls -1d * ) )
+	    if [ ${#dirs[@]} -eq 1 -a -d "${libmoddir%/*}/${dirs[0]}/kernel/." ]; then
+	        KVER="${dirs[0]}"
+	        libmoddir="$subarchdir/lib/modules/$KVER"
+	        bootdir="$subarchdir/boot/$KVER"
+	        echo "#### Now using $KVER as the kernel version." | tee -a $OUTPUTDIR/$log
+	    fi
+	fi
+
+	if [ ! -d "$libmoddir" ]; then
 	    echo "######### make modules_install failed to create $libmoddir #########" | tee -a $OUTPUTDIR/$log
 	    echo "######### listing of ${libmoddir%/*} : #########" | tee -a $OUTPUTDIR/$log
 	    ls -la ${libmoddir%/*} | tee -a $OUTPUTDIR/$log
