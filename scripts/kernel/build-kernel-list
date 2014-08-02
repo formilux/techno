@@ -59,6 +59,7 @@ usage() {
     echo "       ARCH=$USERARCH DEFAULT_ARCH=$DEFAULT_ARCH KEEPDIR=$KEEPDIR"
     echo "       MAKE=$MAKE BOOTIMG=$BOOTIMG PLATFORM=$PLATFORM"
     echo "Note: this script needs sudo during the install phase."
+    echo "CC may be used to force a command (eg: \"distcc gcc\")."
     echo "Use --suffix to automatically suffix the build version to the EXTRAVERSION."
     echo "x86_64 is used when the config's arch suffix is x86_64 or name contains smp64."
     echo
@@ -69,8 +70,8 @@ usage() {
 OUTPUTDIR=${OUTPUTDIR:-$PWD/KERNEL-PKG}
 PARALLELDEP=${PARALLELDEP:-10}
 PARALLELCC=${PARALLELCC:-6}
-CC=${CC:-gcc}
-HOSTCC=${HOSTCC:-$CC}
+CC=${CC:-}
+HOSTCC=${HOSTCC:-gcc}
 _SUDO=${_SUDO-sudo}
 USERARCH=${ARCH}
 DEFAULT_ARCH=${DEFAULT_ARCH:-i386}
@@ -220,7 +221,7 @@ for cfg in "$@"; do
         KVER="${major}.${minor}.${sub}${extra}"
     fi
 
-    VERSTR="VERSION=$major PATCHLEVEL=$minor SUBLEVEL=$sub EXTRAVERSION=$extra ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE CC=${CROSS_COMPILE}${CC} HOSTCC=$HOSTCC LOCALVERSION= CONFIG_LOCALVERSION_AUTO= CONFIG_LOCALVERSION="
+    VERSTR="VERSION=$major PATCHLEVEL=$minor SUBLEVEL=$sub EXTRAVERSION=$extra ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE ${CC:+CC=\"${CC}\"} HOSTCC=$HOSTCC LOCALVERSION= CONFIG_LOCALVERSION_AUTO= CONFIG_LOCALVERSION="
     MAKE_CMD="$MAKE $VERSTR"
 
     if [ $do_compile -eq 1 ]; then
