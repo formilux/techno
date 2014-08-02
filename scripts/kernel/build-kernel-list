@@ -62,6 +62,8 @@ usage() {
     echo "CC may be used to force a command (eg: \"distcc gcc\")."
     echo "Use --suffix to automatically suffix the build version to the EXTRAVERSION."
     echo "x86_64 is used when the config's arch suffix is x86_64 or name contains smp64."
+    echo "The config file can be omitted for rerun/install, or be set to \"flx\" for"
+    echo "modules to be built and packaged for formilux ; default version will be used."
     echo
     echo "Addons found : ${addons[@]}"
     echo
@@ -144,8 +146,15 @@ while [ $# -gt 0 ]; do
 done
 
 if [ $# -eq 0 ]; then
-    usage
-    exit 1
+    if [ $do_compile -eq 1 -a $do_rerun -eq 0 ]; then
+        usage
+        exit 1
+    else
+        # use an empty config name for compile-only or rerun
+        echo "No config file specified, setting default build, no modules will be packaged."
+        echo "You should use \"flx\" as a pseudo-config name to package for formilux."
+        set -- ""
+    fi
 fi
 
 # Find an efficient gzip implementation
@@ -160,6 +169,15 @@ fi
 tot_err=0
 for cfg in "$@"; do
     # cfg = dir/config-2.4.27smp-wt4.rh73-flx0.1-p4
+    if [ -z "$cfg" ]; then
+        cfg_auto=1
+    elif [ "$cfg" = "flx" ]; then
+        cfg="config-0.0.0-flx0.0-$USERARCH"
+        cfg_auto=1
+    else
+        cfg_auto=0
+    fi
+
     ver="${cfg##*/}"				# ver=config-2.4.27smp...
     ver="${ver#*-}"				# ver=2.4.27smp-wt4...
     major="${ver%%.*}" ; ver="${ver#$major.}"	# ver=4.27smp-wt4.rh73-flx0.1-p4
@@ -206,7 +224,7 @@ for cfg in "$@"; do
     echo "LOG=$log"
     echo
 
-    if [ -z "$subarch" -o -z "$dist" -o -z "$sub" -o -z "$minor" -o -z "$major" ]; then
+    if [ $do_compile -eq 1 -a $do_rerun -eq 0 ] && [ -z "$subarch" -o -z "$dist" -o -z "$sub" -o -z "$minor" -o -z "$major" ]; then
 	echo "Error! none of MAJOR, MINOR, SUB, DIST and ARCH can be empty"
 	(( tot_err++ ))
 	continue
@@ -223,7 +241,11 @@ for cfg in "$@"; do
         KVER="${major}.${minor}.${sub}${extra}"
     fi
 
-    VERSTR=( VERSION="$major" PATCHLEVEL="$minor" SUBLEVEL="$sub" EXTRAVERSION="$extra" ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" ${CC:+CC="${CC}"} HOSTCC="$HOSTCC" LOCALVERSION= CONFIG_LOCALVERSION_AUTO= CONFIG_LOCALVERSION= )
+    if [ $cfg_auto -eq 0 ]; then
+        VERSTR=( VERSION="$major" PATCHLEVEL="$minor" SUBLEVEL="$sub" EXTRAVERSION="$extra" ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" ${CC:+CC="${CC}"} HOSTCC="$HOSTCC" LOCALVERSION= CONFIG_LOCALVERSION_AUTO= CONFIG_LOCALVERSION= )
+    else
+        VERSTR=( ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE" ${CC:+CC="${CC}"} HOSTCC="$HOSTCC" LOCALVERSION= CONFIG_LOCALVERSION= )
+    fi
     MAKE_CMD=( $MAKE "${VERSTR[@]}" )
 
     if [ $do_compile -eq 1 ]; then
@@ -319,14 +341,16 @@ for cfg in "$@"; do
 	fi
 
 	if [ ! -d "$libmoddir" ]; then
-	    echo "#### WARNING: the output modules directory doesn't exist, probably because" | tee -a $OUTPUTDIR/$log
-	    echo "#### CONFIG_LOCALVERSION_AUTO is set, trying to determine the proper name." | tee -a $OUTPUTDIR/$log
-	    dirs=( $(cd ${libmoddir%/*}; \ls -1d * ) )
+	    if [ $cfg_auto -eq 0 ]; then
+	        echo "##### WARNING: the output modules directory doesn't exist, probably because" | tee -a $OUTPUTDIR/$log
+	        echo "##### CONFIG_LOCALVERSION_AUTO is set, trying to determine the proper name." | tee -a $OUTPUTDIR/$log
+	    fi
+	    dirs=( $(cd ${libmoddir%/*} && \ls -1d * ) )
 	    if [ ${#dirs[@]} -eq 1 -a -d "${libmoddir%/*}/${dirs[0]}/kernel/." ]; then
 	        KVER="${dirs[0]}"
 	        libmoddir="$subarchdir/lib/modules/$KVER"
 	        bootdir="$subarchdir/boot/$KVER"
-	        echo "#### Now using $KVER as the kernel version." | tee -a $OUTPUTDIR/$log
+	        echo "##### Now using $KVER as the kernel version." | tee -a $OUTPUTDIR/$log
 	    fi
 	fi
 
