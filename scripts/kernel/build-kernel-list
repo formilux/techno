@@ -210,7 +210,7 @@ for cfg in "$@"; do
     fi
 
     echo
-    echo "##### building $output #####"
+    echo "##### building $cfg => $output #####"
     echo "DATE=$(date)"
     echo "CFG=$cfg"
     echo "MAJOR=$major"
@@ -223,6 +223,12 @@ for cfg in "$@"; do
     echo "SUBARCH=$subarch"
     echo "LOG=$log"
     echo
+
+    if [ -n "${major##[0-9]*}" -o -n "${minor##[0-9]*}" ]; then
+        echo "MAJOR or MINOR cannot contain non-digit characters."
+	(( tot_err++ ))
+	continue
+    fi
 
     if [ $do_compile -eq 1 -a $do_rerun -eq 0 ] && [ -z "$subarch" -o -z "$dist" -o -z "$sub" -o -z "$minor" -o -z "$major" ]; then
 	echo "Error! none of MAJOR, MINOR, SUB, DIST and ARCH can be empty"
