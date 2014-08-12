@@ -2538,7 +2538,7 @@ function set_compiler_options {
     case "$FLX_ARCH_FAMILY" in
     	x86)
             tune="tune"
-	    [ $GCC_VER -ge 340 ] || tune="cpu"  ;# gcc before 3.4 uses "-mcpu="
+	    [ $GCC_VER -gt 340 ] || tune="cpu"  ;# gcc before 3.4 uses "-mcpu="
 
             GCC_ARCH_CURRENT="${FLX_GNU_ARCH:+-march=$FLX_GNU_ARCH}"
             GCC_ARCH_COMMON="${FLX_GNU_ARCH:+-march=$FLX_GNU_ARCH}"
