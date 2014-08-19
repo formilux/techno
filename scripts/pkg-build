@@ -82,7 +82,7 @@ do_build() {
 	fi
 
 	echo -n "" > ${TMP_PACK}/all.lpk
-	while read package archs ; do
+	while read package archs rest ; do
 		p=${package##*-flx}
 		sfxver=""
 		if [ "${p/_/}" != "$p" ] ; then
@@ -91,7 +91,9 @@ do_build() {
 		fi
 
 		cont=""
-		for needarch in $archs ; do
+		set -- "${archs//,/ }"
+		archs=( "$@" )
+		for needarch in "${archs[@]}" ; do
 			if [ -e "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" ] ; then
 				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" "${TMP_PACK}/pkg/"
 				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.dep" "${TMP_PACK}/pkg/"
@@ -104,11 +106,11 @@ do_build() {
 		if [ -n "$cont" ] ; then
 			continue
 		fi
-		set -- $archs
+		set -- "${archs[@]}"
 
 		package_build "$package" "$1" "$sfxver"
 		[ "$?" != "0" ] && exit 1
-		for needarch in $archs ; do
+		for needarch in "${archs[@]}" ; do
 			if [ -e "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" ] ; then
 				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" "${TMP_PACK}/pkg/"
 				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.dep" "${TMP_PACK}/pkg/"
