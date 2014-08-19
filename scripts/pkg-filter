@@ -35,10 +35,10 @@ function do_update() {
 	echo -n "Filter formilux "
 	while read package trash ; do
 		if [ -d "$DEVROOT/$package" ] ; then
-			ln -s $DEVROOT/$package $PKGFILTEREDDIR/$package
+			ln -s "$DEVROOT/$package" "$PKGFILTEREDDIR/" || echo " Maybe package $package appears twice ?" >&2
 			[ ! -d "$PKGROOT/$package" ] || { echo " error" ; echo "Error package $package is both in DEVROOT and PKGROOT, please fix conflict" >&2 ; exit 1 ; }
 		elif [ -d "$PKGROOT/$package" ] ; then
-			ln -s $PKGROOT/$package $PKGFILTEREDDIR/$package
+			ln -s "$PKGROOT/$package" "$PKGFILTEREDDIR/" || echo " Maybe package $package appears twice ?" >&2
 		else
 			echo " error"
 			echo "Error $package not found, your cache may not up to date try: ( pkg-cache update )" >&2
