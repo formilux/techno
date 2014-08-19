@@ -14,39 +14,62 @@
 
 [ -n "$PKGFILTEREDDIR" ] || { echo "Please specify PKGFILTEREDDIR" ;  exit 1 ; }
 [ -n "$PRJ_DIR" ] || { echo "env PRJ_DIR is not set" >&2 ; exit 1 ; }
-aloha_env_path=$( readlink -f ${BASH_SOURCE[0]} )
 
 function do_update() {
 	local repo
 	local newpackages
 	local new
 	local package
-	local aloha_env_path
-
 
 	mkdir -p $PKGFILTEREDDIR/
 	[ $? -eq 0 ] || { echo "Unable to create $PKGFILTEREDDIR" >&2 ; exit 1 ; }
 
 	rm -f $PKGFILTEREDDIR/*
 
-	[ -f "$PRJ_DIR/packaging/bld/formilux.bld" ] || { echo "Build package list not found at $PRJ_DIR/packaging/bld/formilux.bld" ; exit 1 ; }
+	if [ -f "$PRJ_DIR/packaging/bld/formilux.bld" ]; then
+		echo -n "Preparing $PKGFILTEREDDIR from formilux.bld..."
+		while read package trash ; do
+			if [ -d "$DEVROOT/$package" ] ; then
+				ln -s "$DEVROOT/$package" "$PKGFILTEREDDIR/" || echo " Maybe package $package appears twice ?" >&2
+				[ ! -d "$PKGROOT/$package" ] || { echo " error" ; echo "Error package $package is both in DEVROOT and PKGROOT, please fix conflict" >&2 ; exit 1 ; }
+			elif [ -d "$PKGROOT/$package" ] ; then
+				ln -s "$PKGROOT/$package" "$PKGFILTEREDDIR/" || echo " Maybe package $package appears twice ?" >&2
+			else
+				echo " error"
+				echo "Error $package not found, your cache may not up to date try: ( pkg-cache update )" >&2
+				exit 1
+			fi
+			echo -n "."
+		done < "$PRJ_DIR/packaging/bld/formilux.bld"
+		echo " success"
+	else
+		echo -n "Preparing $PKGFILTEREDDIR from *.lpk..."
 
+		${FLXTECHNO}/scripts/env-expand "$PRJ_DIR/packaging/lpk/"*.lpk | while read package archs rest ; do
+			if [ -n "${archs}" -a -z "${archs##build:*}" ]; then
+				continue
+			fi
 
-	echo -n "Filter formilux "
-	while read package trash ; do
-		if [ -d "$DEVROOT/$package" ] ; then
-			ln -s "$DEVROOT/$package" "$PKGFILTEREDDIR/" || echo " Maybe package $package appears twice ?" >&2
-			[ ! -d "$PKGROOT/$package" ] || { echo " error" ; echo "Error package $package is both in DEVROOT and PKGROOT, please fix conflict" >&2 ; exit 1 ; }
-		elif [ -d "$PKGROOT/$package" ] ; then
-			ln -s "$PKGROOT/$package" "$PKGFILTEREDDIR/" || echo " Maybe package $package appears twice ?" >&2
-		else
-			echo " error"
-			echo "Error $package not found, your cache may not up to date try: ( pkg-cache update )" >&2
-			exit 1
-		fi
-		echo -n "."
-	done < "$PRJ_DIR/packaging/bld/formilux.bld"
-	echo " success"
+			# Note: we might have a model name in sfxver after an underscore
+			p=${package##*-flx}
+			if [ "${p/_/}" != "$p" ] ; then
+				package=${package%_*}
+			fi
+
+			if [ -d "$DEVROOT/$package" ] ; then
+				ln -s "$DEVROOT/$package" "$PKGFILTEREDDIR/" || echo " Maybe package $package appears twice ?" >&2
+				[ ! -d "$PKGROOT/$package" ] || { echo " error" ; echo "Error package $package is both in DEVROOT and PKGROOT, please fix conflict" >&2 ; exit 1 ; }
+			elif [ -d "$PKGROOT/$package" ] ; then
+				ln -s "$PKGROOT/$package" "$PKGFILTEREDDIR/" || echo " Maybe package $package appears twice ?" >&2
+			else
+				echo " error"
+				echo "Error $package not found, your cache may not up to date try: ( pkg-cache update )" >&2
+				exit 1
+			fi
+			echo -n "."
+		done || exit $?
+		echo " success"
+	fi
 
 	echo -n "Filter components "
 	find "$PRJ_DIR/components/pkg/" -type f  -name 'Version' | while read package trash ; do
@@ -136,8 +159,7 @@ case $1 in
 		;;
 	*)
 		echo "pkgfilter <command>"
-		echo "    update: apply formilux.bld filter on PKGROOT and PKGDDEV, create links on matched package into PKGFILTEREDDIR"
-		echo "      also create links on aloha components package"
+		echo "    update: look for packages in PKGROOT and PKGDEV, and create corresponding links into PKGFILTEREDDIR"
 		echo "    list: list fitered packages"
 		echo "    cleanall: remove all binaries in filtered"
 		echo "    cleancomponents: remove all binaries only in components"
