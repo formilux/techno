@@ -89,6 +89,40 @@ do_build() {
 		# remove possible "build:" prefix
 		archs=${archs#build:}
 
+		# check the end of the line for a possible list of model names
+		# in the form of "model,model,model" or "!model,model,model" or
+		# "*". Some variable assignments might appear before the model
+		# specification, but for now we cannot parse them, so we skip
+		# them and only process the model specification.
+		cont=""
+		set -- $rest
+		while [ $# -gt 0 ]; do
+			if [ -z "${1##*=*}" ]; then
+				shift
+				continue
+			fi
+
+			# we have a model specification here.
+			case "$1" in
+				"*")  mod_inc="";     mod_exc=""         ;;
+				"!"*) mod_inc="";     mod_exc=",${1#!}," ;;
+				*)    mod_inc=",$1,"; mod_exc=""         ;;
+			esac
+
+			# we skip packages which are only for models not
+			# including the current one, as well as those that
+			# explicitly exclude current model.
+			if [ -n "$mod_inc" -a -n "${mod_inc##*,$MODEL,*}" ]; then
+				cont=1
+			elif [ -n "$mod_exc" -a -z "${mod_exc##*,$MODEL,*}" ]; then
+				cont=1
+			fi
+			shift
+		done
+		if [ -n "$cont" ]; then
+			continue;
+		fi
+
 		p=${package##*-flx}
 		sfxver=""
 		if [ "${p/_/}" != "$p" ] ; then
