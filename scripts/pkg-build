@@ -83,6 +83,12 @@ do_build() {
 
 	echo -n "" > ${TMP_PACK}/all.lpk
 	while read package archs rest ; do
+		if [ -z "${archs##devel:*}" ]; then
+			continue
+		fi
+		# remove possible "build:" prefix
+		archs=${archs#build:}
+
 		p=${package##*-flx}
 		sfxver=""
 		if [ "${p/_/}" != "$p" ] ; then
