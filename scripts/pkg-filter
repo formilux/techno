@@ -27,6 +27,7 @@ function do_update() {
 	rm -f $PKGFILTEREDDIR/*
 
 	if [ -f "$PRJ_DIR/packaging/bld/formilux.bld" ]; then
+		${FLXTECHNO}/scripts/env-expand "$PRJ_DIR/packaging/lpk/"*.lpk > ${TMP_PACK}/allbuild.lpk
 		echo -n "Preparing $PKGFILTEREDDIR from formilux.bld..."
 		while read package trash ; do
 			if [ -d "$DEVROOT/$package" ] ; then
@@ -45,7 +46,8 @@ function do_update() {
 	else
 		echo -n "Preparing $PKGFILTEREDDIR from *.lpk..."
 
-		${FLXTECHNO}/scripts/env-expand "$PRJ_DIR/packaging/lpk/"*.lpk | while read package archs rest ; do
+		${FLXTECHNO}/scripts/env-expand "$PRJ_DIR/packaging/lpk/"*.lpk | \
+		    tee ${TMP_PACK}/allbuild.lpk | while read package archs rest ; do
 			if [ -n "${archs}" -a -z "${archs##build:*}" ]; then
 				continue
 			fi

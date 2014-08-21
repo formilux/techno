@@ -76,7 +76,6 @@ do_build() {
 			fi
 		done > ${TMP_PACK}/allbuild.lpk
 	else
-		${FLXTECHNO}/scripts/env-expand "$PACK_DIR/lpk/"*.lpk > ${TMP_PACK}/allbuild.lpk
 		${FLXTECHNO}/scripts/pkg-filter update
 		[ $? -eq 0 ] || exit 1
 	fi
