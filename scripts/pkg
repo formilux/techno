@@ -148,6 +148,7 @@ VERSFILE="Version"
 
 # links to recipes and final package
 RECLINK=".flxpkg"
+PKGLINK=".flxpkg"
 
 # for legacy usages
 LINKNAME="$RECLINK"
@@ -1057,7 +1058,7 @@ function do_setpkg {
 
     if [ ! -r "${RECLINK}/${VERSFILE}" ]; then
 	# Conventionnal naming scheme (using the link)
-	rm -f ${RECLINK}
+	rm -f ${RECLINK} ${PKGLINK}
 	ln -s $PKGDIR ${RECLINK}
 
 	echo "Re-using package ${PKGDIR##*/}."
@@ -1100,7 +1101,7 @@ function do_newpkg {
 		echo "Error! the link '${RECLINK}' already exists. Please remove it by manually."
 		exit 1
 	    else
-		rm -f ${RECLINK}
+		rm -f ${RECLINK} ${PKGLINK}
 	    fi
 	else
 	    echo "Error! '${RECLINK}' already exists and is not a link. Please remove it by manually."
@@ -1262,12 +1263,12 @@ function do_newpkg {
 	    exit 1
 	fi
 
-	rm -f ${RECLINK} && mkdir -p $new_name && ln -s $new_name ${RECLINK} && \
+	rm -f ${RECLINK} ${PKGLINK} && mkdir -p $new_name && ln -s $new_name ${RECLINK} && \
 	    tar -C $pkg_name  --exclude='./compiled/*' --exclude='./RELEASED*' --exclude='./pkg.*' \
 		--exclude=".svn" \
 		--exclude='./CFLAGS' --exclude='./.dep' --exclude='./.lst' --exclude='./.tgz' \
 		--exclude="./${VERSFILE}" --one-file-system -cf - . | \
-	    tar -C $new_name -xf - || (rmdir $new_name ; rm -f ${RECLINK})
+	    tar -C $new_name -xf - || (rmdir $new_name ; rm -f ${RECLINK} ${PKGLINK} )
 	mkdir -p "$new_name/compiled"
 	# restore write permissions to all the package for development
 	chmod -R u+rw $new_name/
@@ -2196,7 +2197,7 @@ function get_package {
 	svn)
 	  (
 	     get_svncached_file "$1" .src "${FLX_SRC_CACHE_DIRS}" || return 1
-	     tar --exclude=".flxpkg" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -xf .src || return 1
+	     tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -xf .src || return 1
 	  )
  	;;
 	git)
@@ -2205,14 +2206,14 @@ function get_package {
 	http|ftp)
 	  (
 	    get_cached_file "$1" .src "${FLX_SRC_CACHE_DIRS}" || return 1
-	    tar --exclude=".flxpkg" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -xf .src || return 1
+	    tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -xf .src || return 1
 	  )
 	;;
 	filesystem)
 	  if [ -d "$1" ] ; then
-	    tar --exclude=".flxpkg" -C "${1%/*}" -c "${1##*/}" | tar --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -x 
+	    tar --exclude="$PKGLINK" -C "${1%/*}" -c "${1##*/}" | tar --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -x
 	  else
-	    tar --exclude=".flxpkg" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -xf "$1"
+	    tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -xf "$1"
 	  fi
 	;;
 	*)
