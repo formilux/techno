@@ -63,10 +63,10 @@ _PKG=$0
 _SUDO=${_SUDO:-"sudo -E"}
 _FLX=${_FLX:-flx}
 
-# List of cache directories from where to fetch source files. Those
-# suffixed by ":r" are only used for retrieving but are never updated.
-# /tmp, /nfs/tmp and /data/tmp are used as read-only by default.
-FLX_SRC_CACHE_DIRS="${FLX_SRC_CACHE_DIRS-/tmp:r /nfs/tmp:r /data/tmp:r}"
+# List of cache directories from where to fetch source files. Those suffixed by
+# ":r" are only used for retrieving but are never updated. Example below with
+# /tmp, /nfs/tmp and /data/tmp used as read-only by default :
+# FLX_SRC_CACHE_DIRS="${FLX_SRC_CACHE_DIRS-/tmp:r /nfs/tmp:r /data/tmp:r}"
 
 # Define where to search for packages
 DEVROOT=${DEVROOT:-/var/flx-dev}
