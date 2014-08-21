@@ -1584,7 +1584,7 @@ function get_perl_depend {
 # Only entries listed in the files pointed to by $* find their way to the archive.
 # This function relies on get_perl_depend().
 function _do_pack_files {  
-    local DEP_FILE FPNAME ext
+    local DEP_FILE FPNAME
     local FILE_LIST=$*
 
     echo -n "Updating timestamps ... "
@@ -1674,11 +1674,6 @@ function _do_pack_files {
     # we want everything, including directories.
     cut -f1 -d' ' $FILE_LIST|sed -e 's,/$,,' |  tar -T - --no-recursion --numeric-owner -cf - | gzip -9 >$FPNAME.$PKGSUFF 2>/dev/null
 
-    # create shortcuts ".*" for tgz, dep and lst files
-    for ext in dep lst tgz; do
-        rm -f $PKGDIR/.$ext
-        ln -sf compiled/${EXACTPKG##*/}-$FLXARCH.$ext $PKGDIR/.$ext
-    done
     echo "done."
     return 0
 }
@@ -1696,7 +1691,7 @@ function _do_pack_files {
 #   %R:require : required feature, in the form soname/version
 function do_pack {
     local DEP_FILE FPNAME
-    local FILE_LISTS ext
+    local FILE_LISTS
     local hlist
     local hl
 
@@ -1868,18 +1863,13 @@ function do_pack {
     # we want everything, and directories only if they're empty. 
     # All this without './' we shouldn't get an empty line since . 
     # should contain at least what we want to tar !
-     $FIND_CMD . | tar --no-recursion -T - --numeric-owner -cf - | gzip -9 >$FPNAME.$PKGSUFF 2>/dev/null
+    $FIND_CMD . | tar --no-recursion -T - --numeric-owner -cf - | gzip -9 >$FPNAME.$PKGSUFF 2>/dev/null
 
-     # debug symbol files
-     cd "$DEBUGDIR"
-     $FIND_CMD . | tar --no-recursion -T - --numeric-owner -cf - | gzip -9 >$FPNAME.$DBGSUFF.$PKGSUFF 2>/dev/null
+    # debug symbol files
+    cd "$DEBUGDIR"
+    $FIND_CMD . | tar --no-recursion -T - --numeric-owner -cf - | gzip -9 >$FPNAME.$DBGSUFF.$PKGSUFF 2>/dev/null
 
-     cd "$ROOTDIR"
-    # create shortcuts ".*" for tgz, dep and lst files
-    for ext in dep lst tgz; do
-        rm -f $PKGDIR/.$ext
-        ln -sf compiled/${EXACTPKG##*/}-$FLXARCH.$ext $PKGDIR/.$ext
-    done
+    cd "$ROOTDIR"
     echo "done."
     return 0
 }
