@@ -1954,8 +1954,12 @@ function do_prepare {
 	cat .preparepkg
 	exit 1
       else
-	if [ ! -e "${PACKAGE}/compiled/${PACKAGE##*/}${VERSFX:+_$VERSFX}-$ARCH.tgz" ] ; then
-	  echo "ArchiveNotFound: ${PACKAGE##*/}${VERSFX:+_$VERSFX}-$ARCH.tgz" > .preparepkg
+	FILE="${PACKAGE}/compiled/${PACKAGE##*/}${VERSFX:+_$VERSFX}-$ARCH.tgz"
+	if [ ! -e "$FILE" -a -n "$FLX_PKG_CACHE_DIR" ] ; then
+	  FILE="${FLX_PKG_CACHE_DIR}/${PACKAGE##*/}/compiled/${PACKAGE##*/}${VERSFX:+_$VERSFX}-$ARCH.tgz"
+	fi
+	if [ ! -e "$FILE" ] ; then
+	  echo "ArchiveNotFound: ${FILE##*/}" > .preparepkg
 	  cat .preparepkg
 	  exit 1
         fi
@@ -2036,6 +2040,9 @@ function do_prepare {
 	exit 1
       else
 	FILE="${PACKAGE}/compiled/${PACKAGE##*/}${VERSFX:+_$VERSFX}-$ARCH.tgz"
+	if [ ! -e "$FILE" -a -n "$FLX_PKG_CACHE_DIR" ] ; then
+	  FILE="${FLX_PKG_CACHE_DIR}/${PACKAGE##*/}/compiled/${PACKAGE##*/}${VERSFX:+_$VERSFX}-$ARCH.tgz"
+	fi
 	if [ ! -e "$FILE" ] ; then
 	  exit 1
         fi
