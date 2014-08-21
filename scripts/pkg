@@ -150,6 +150,27 @@ VERSFILE="Version"
 RECLINK=".flxpkg"
 PKGLINK=".flxpkg"
 
+# We should use a package cache, but only if the package is compatible.
+# A new package is always compatible. A package with existing .flxrec
+# and .flxpkg/build.cfg which is a symlink is always compatible. A
+# package with .flxpkg/build.cfg as a file is a legacy package.
+if [ -d ".flxrec/." ]; then
+	if [ -f ".flxpkg/build.cfg" -a ! -L ".flxpkg/build.cfg" ]; then
+		echo "Inconsistency: both .flxrec and .flxpkg seem to point to a recipe."
+		exit 1
+	fi
+	if [ -n "$FLX_PKG_CACHE_DIR" ]; then
+		RECLINK=".flxrec"
+	elif [ ! -d ".flxpkg/." ]; then
+		echo "Inconsistency: .flxrec present, .flxpkg absent and no FLX_PKG_CACHE_DIR defined!"
+		exit 1
+	fi
+elif [ -n "$FLX_PKG_CACHE_DIR" ]; then
+	if [ ! -d ".flxpkg/." -o ! -f ".flxpkg/build.cfg" -o -L ".flxpkg/build.cfg" ]; then
+		RECLINK=".flxrec"
+	fi
+fi
+
 # for legacy usages
 LINKNAME="$RECLINK"
 
@@ -1055,6 +1076,17 @@ function get_name {
 
 # choose a package and make ${RECLINK} point to it
 function do_setpkg {
+    if [ -n "$FLX_PKG_CACHE_DIR" ] &&
+       [ ! -d "$PKGLINK" -o -L "$PKGLINK" ] &&
+       [ -L "$PKGLINK" -o ! -f "$PKGLINK/build.cfg" -o -L "$PKGLINK/build.cfg" ]; then
+        # The user wants to put the binary packages in a separate cache from
+        # the recipes, and we're not in an old package containing sources and
+        # .flxpkg at the same time.
+        RECLINK=".flxrec"
+    else
+        RECLINK=".flxpkg"
+	rm -f ".flxrec"
+    fi
 
     if [ ! -r "${RECLINK}/${VERSFILE}" ]; then
 	# Conventionnal naming scheme (using the link)
@@ -1083,6 +1115,16 @@ function do_setpkg {
 	    exit 1
 	fi
     fi
+
+    if [ ! -d "$PKGLINK/." ]; then
+        # The binary packages are not stored at the same place, let's create
+        # the entry now.
+        mkdir -p "$FLX_PKG_CACHE_DIR/${PKGDIR##*/}/compiled" || exit 1
+        ln -s "$FLX_PKG_CACHE_DIR/${PKGDIR##*/}" "$PKGLINK" || exit 1
+        ln -sf $(find "$PWD/$RECLINK/" -mindepth 1 -maxdepth 1 -not -name compiled -not -name '.*') "$PKGLINK/" || exit 1
+    fi
+
+    mkdir -p "$PKGLINK/compiled" || exit 1
 }
 
 
@@ -1269,9 +1311,24 @@ function do_newpkg {
 		--exclude='./CFLAGS' --exclude='./.dep' --exclude='./.lst' --exclude='./.tgz' \
 		--exclude="./${VERSFILE}" --one-file-system -cf - . | \
 	    tar -C $new_name -xf - || (rmdir $new_name ; rm -f ${RECLINK} ${PKGLINK} )
-	mkdir -p "$new_name/compiled"
+
 	# restore write permissions to all the package for development
 	chmod -R u+rw $new_name/
+
+	if [ -d "$RECLINK/." -a ! -d "$PKGLINK/." ]; then
+		# we're running with a separate package cache, we still have to
+		# initialize it and ensure we don't have any "compiled" directory
+		# in the recipe.
+		rm -rf "$FLX_PKG_CACHE_DIR/${new_name##*/}" || exit 1
+		mkdir -p "$FLX_PKG_CACHE_DIR/${new_name##*/}/compiled" || exit 1
+		ln -s "$FLX_PKG_CACHE_DIR/${new_name##*/}" "$PKGLINK" || exit 1
+		rm -rf "$RECLINK/compiled" || exit 1
+		set +o noglob
+		ln -sf $(find "$PWD/$RECLINK/" -mindepth 1 -maxdepth 1 -not -name compiled -not -name '.*') "$PKGLINK/" || exit 1
+		set -o noglob
+	else
+		mkdir -p "$new_name/compiled"
+	fi
 
 	echo "A new package '$(basename $new_name)' has been created as '$new_name', based on '$(basename $pkg_name)'."
 	echo "The link '${RECLINK}' now points to it."
