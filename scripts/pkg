@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# pkg - Formilux package builder - version 0.13.0 - 2014-07-06
+# pkg - Formilux package builder - version 0.14.0 - 2014-08-22
 #
 # Copyright (C) 2001-2014 Benoit Dolez & Willy Tarreau & William Lallemand
 #   mailto: benoit@ant-computing.com,willy@ant-computing.com,wlallemand@exceliance.fr
@@ -8,7 +8,7 @@
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
 
 ######## Please update this version ########
-PKG_VERSION=0.13.0
+PKG_VERSION=0.14.0
 ############################################
 
 ## WARNING ##
