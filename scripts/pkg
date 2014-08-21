@@ -2062,7 +2062,7 @@ function do_filesearch {
   echo "searching file '$1' in $PKGROOT..."
 
   for file in $PKGROOT/*; do
-    basefile=`basename $file`
+    basefile=${file##*/}
     awk -F ' '  '/'"$1"'/ {print "'$basefile':", $1, $8, $9}' $file/.lst 2> /dev/null
   done
 }
