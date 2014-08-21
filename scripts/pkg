@@ -60,7 +60,7 @@ umask og-w
 
 # set some constants
 _PKG=$0
-_SUDO=${_SUDO:-"/var/flx-toolchain/sudo/bin/sudo -E"}
+_SUDO=${_SUDO:-"sudo -E"}
 _FLX=${_FLX:-flx}
 
 # List of cache directories from where to fetch source files. Those
