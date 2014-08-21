@@ -243,12 +243,7 @@ package_build() {
 		fi
 
 		if [ $depth -ne 1 ] ; then
-			if [ -z "${sfxver[$depth]}" ] ; then
-				if [ ! -e "$PKGFILTEREDDIR/${package[$depth]}/compiled/${package[$depth]}-${arch[$depth]}.tgz" ] ; then
-					echo "Error build ${package[$depth]} does not produce requested arch: ${arch[$depth]}."
-					exit 1
-				fi
-			elif [ ! -e "$PKGFILTEREDDIR/${package[$depth]}/compiled/${package[$depth]}-${arch[$depth]}/${package[$depth]}_${sfxver[$depth]}-${arch[$depth]}.tgz" ] ; then
+			if [ ! -e "$PKGFILTEREDDIR/${package[$depth]}/compiled/${package[$depth]}${sfxver[$depth]:+_${sfxver[$depth]}}-${arch[$depth]}.tgz" ] ; then
 				echo "Error build ${package[$depth]} does not produce requested arch: ${arch[$depth]}."
 				exit 1
 			fi
