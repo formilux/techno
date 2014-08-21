@@ -144,8 +144,13 @@ CFGSUFF="cfg"
 DBGSUFF="dbg"
 INSTNAME=".flxdisk"
 DEBUGNAME=".debug"
-LINKNAME=".flxpkg"
 VERSFILE="Version"
+
+# links to recipes and final package
+RECLINK=".flxpkg"
+
+# for legacy usages
+LINKNAME="$RECLINK"
 
 # Supported build models are "normal", "static", "shared"
 BUILDMODELS=( "${BUILDMODELS[@]}" )
@@ -885,9 +890,9 @@ function do_build {
 # passed as strings, constituting packages names, or some of the following
 # special names :
 #   %P => use current directory as the source for the name
-#   %L => use the package pointed to by the ${LINKNAME} link
+#   %L => use the package pointed to by the ${RECNAME} link
 #   %D => use the default package
-#   %V => use the Version file in ${LINKNAME} if it exists
+#   %V => use the Version file in ${RECNAME} if it exists
 # If several packages match a given pattern, the user is asked to select the
 # desired one.
 # The resulting package name is returned in REPLY, and the package directory
@@ -909,14 +914,14 @@ function get_name {
 	    search_dir="${CURDIR%/*}" ; search_dir="/${search_dir#/}"
 	    pattern="$(basename $CURDIR)"
 	elif [ "$pattern" = "%L" ]; then
-	    if [ -r "${LINKNAME}/${VERSFILE}" -a -s "${LINKNAME}/${VERSFILE}" ]; then
-		REPLY="$(cat ${LINKNAME}/${VERSFILE})"
+	    if [ -r "${RECLINK}/${VERSFILE}" -a -s "${RECLINK}/${VERSFILE}" ]; then
+		REPLY="$(cat ${RECLINK}/${VERSFILE})"
 		REPLY="${REPLY##*/}"
-		PKGDIR="$CURDIR/${LINKNAME}/."
+		PKGDIR="$CURDIR/${RECLINK}/."
 		return
-	    elif [ -L "${LINKNAME}" -a -d "${LINKNAME}/." ]; then
+	    elif [ -L "${RECLINK}" -a -d "${RECLINK}/." ]; then
 		# the link is always an EXACT name, so we return it as-is.
-		pattern="$(readlink -f ${LINKNAME})"
+		pattern="$(readlink -f ${RECLINK})"
 	        PKGDIR="$pattern/."
 		REPLY="${pattern##*/}"
 		return
@@ -924,8 +929,8 @@ function get_name {
 		continue
 	    fi
 	elif [ "$pattern" = "%V" ]; then
-	    if [ -r "${LINKNAME}/${VERSFILE}" -a -s "${LINKNAME}/${VERSFILE}" ]; then
-		pattern="$(cat "${LINKNAME}/${VERSFILE}")"
+	    if [ -r "${RECLINK}/${VERSFILE}" -a -s "${RECLINK}/${VERSFILE}" ]; then
+		pattern="$(cat "${RECLINK}/${VERSFILE}")"
 	    fi
 	elif [ "$pattern" = "%D" ]; then
 	    pattern=default
@@ -1047,33 +1052,33 @@ function get_name {
     REPLY="${REPLY##*/}"
 }
 
-# choose a package and make ${LINKNAME} point to it
+# choose a package and make ${RECLINK} point to it
 function do_setpkg {
 
-    if [ ! -r "${LINKNAME}/${VERSFILE}" ]; then
+    if [ ! -r "${RECLINK}/${VERSFILE}" ]; then
 	# Conventionnal naming scheme (using the link)
-	rm -f ${LINKNAME}
-	ln -s $PKGDIR ${LINKNAME}
+	rm -f ${RECLINK}
+	ln -s $PKGDIR ${RECLINK}
 
 	echo "Re-using package ${PKGDIR##*/}."
-	echo "The link '${LINKNAME}' now points to it."
+	echo "The link '${RECLINK}' now points to it."
 	echo
-	if [ $(find $LINKNAME/patches -type f |wc -l) -gt 0 ]; then
+	if [ $(find $RECLINK/patches -type f |wc -l) -gt 0 ]; then
 	    echo "*** Warning: there are patches that may need to be applied, use >>>pkg info<<< ***"
 	    echo
 	fi
     else
 	# The version should only be in the Version file
-	if [ -w "${LINKNAME}/${VERSFILE}" ] || rm -f "${LINKNAME}/${VERSFILE}"; then
-	    echo ${PKGDIR##*/} > "${LINKNAME}/${VERSFILE}"
+	if [ -w "${RECLINK}/${VERSFILE}" ] || rm -f "${RECLINK}/${VERSFILE}"; then
+	    echo ${PKGDIR##*/} > "${RECLINK}/${VERSFILE}"
 	    echo "Setting package version to ${PKGDIR##*/}."
 	    echo
-	    if [ $(find "${LINKNAME}/patches" -type f |wc -l) -gt 0 ]; then
+	    if [ $(find "${RECLINK}/patches" -type f |wc -l) -gt 0 ]; then
 		echo "*** Warning: there are patches that may need to be applied, use >>>pkg info<<< ***"
 		echo
 	    fi
 	else
-	    echo "Could not change version in file ${LINKNAME}/${VERSFILE}. Please check permissions."
+	    echo "Could not change version in file ${RECLINK}/${VERSFILE}. Please check permissions."
 	    exit 1
 	fi
     fi
@@ -1087,18 +1092,18 @@ function do_newpkg {
     local radix ver build
 
     set -o noglob
-    if [ ! -r "${LINKNAME}/${VERSFILE}" ]; then
+    if [ ! -r "${RECLINK}/${VERSFILE}" ]; then
       # We don't touch the link
-      if [ -e ${LINKNAME} ]; then
-	if [ -L ${LINKNAME} ]; then
-	    if [ -d ${LINKNAME}/. ]; then
-		echo "Error! the link '${LINKNAME}' already exists. Please remove it by manually."
+      if [ -e ${RECLINK} ]; then
+	if [ -L ${RECLINK} ]; then
+	    if [ -d ${RECLINK}/. ]; then
+		echo "Error! the link '${RECLINK}' already exists. Please remove it by manually."
 		exit 1
 	    else
-		rm -f ${LINKNAME}
+		rm -f ${RECLINK}
 	    fi
 	else
-	    echo "Error! '${LINKNAME}' already exists and is not a link. Please remove it by manually."
+	    echo "Error! '${RECLINK}' already exists and is not a link. Please remove it by manually."
 	    exit 1
 	fi
       fi
@@ -1119,7 +1124,7 @@ function do_newpkg {
     if [ -z "$new_name" ]; then
 	# the user has not specified any version string, we'll use the directory
 	# name.
-	[ -r "${LINKNAME}/${VERSFILE}" ] && new_name="$(cat "${LINKNAME}/${VERSFILE}")"
+	[ -r "${RECLINK}/${VERSFILE}" ] && new_name="$(cat "${RECLINK}/${VERSFILE}")"
 	[ -z "$new_name" ] && new_name="$(basename $CURDIR)"
     fi
 
@@ -1182,7 +1187,7 @@ function do_newpkg {
 	# in both release and dev dirs. Then we'll be able to deduce the latest
 	# build number used.
 	#sort_list=( $(find $PKGROOT/ $DEVROOT/ -maxdepth 1 -type d -name ${new_name}-${BUILDSFX}*.\* -printf "%f\n" 2>/dev/null|sort -u) )
-	sort_list=( $((find $PKGROOT/ $DEVROOT/ -maxdepth 1 -type d -name ${new_name}-${BUILDSFX}${BUILDVER}.\* -printf "%p\n" 2>/dev/null; [ -r "${LINKNAME}/${VERSFILE}" ] && cat "${LINKNAME}/${VERSFILE}") |sort -u) )
+	sort_list=( $((find $PKGROOT/ $DEVROOT/ -maxdepth 1 -type d -name ${new_name}-${BUILDSFX}${BUILDVER}.\* -printf "%p\n" 2>/dev/null; [ -r "${RECLINK}/${VERSFILE}" ] && cat "${RECLINK}/${VERSFILE}") |sort -u) )
 	if [ ${#sort_list[*]} -eq 0 ]; then
 	    # this can happen with new BUILDSFX/BUILDVER
 	    new_name=${new_name}-${BUILDSFX}${BUILDVER}.1
@@ -1193,8 +1198,8 @@ function do_newpkg {
     else
 	# No package currently exists with this name. Let's check if we can rely
         # on the version in "Version" anyway.
-	if [ -r "${LINKNAME}/${VERSFILE}" -a -s "${LINKNAME}/${VERSFILE}" ]; then
-	    new_name=${new_name}-$(get_next_build $(get_build_num $(cat "${LINKNAME}/${VERSFILE}")))
+	if [ -r "${RECLINK}/${VERSFILE}" -a -s "${RECLINK}/${VERSFILE}" ]; then
+	    new_name=${new_name}-$(get_next_build $(get_build_num $(cat "${RECLINK}/${VERSFILE}")))
 	else
 	    if [ -z "${radix/*\\**/}" -o -z "${ver/*\\**/}" ]; then
 		echo "Error: no existing package matches $new_name, and wildcards"
@@ -1221,14 +1226,14 @@ function do_newpkg {
 
     echo "Using '$REPLY'."
 
-    if [ -r "${LINKNAME}/${VERSFILE}" ]; then
+    if [ -r "${RECLINK}/${VERSFILE}" ]; then
 	# The version should only be in the Version file
-	if [ -w "${LINKNAME}/${VERSFILE}" ] || rm -f "${LINKNAME}/${VERSFILE}"; then
-	    echo ${new_name} > "${LINKNAME}/${VERSFILE}"
+	if [ -w "${RECLINK}/${VERSFILE}" ] || rm -f "${RECLINK}/${VERSFILE}"; then
+	    echo ${new_name} > "${RECLINK}/${VERSFILE}"
 	    echo "Setting package version to ${new_name}."
 	    echo
 	else
-	    echo "Could not change version in file ${LINKNAME}/${VERSFILE}. Please check permissions."
+	    echo "Could not change version in file ${RECLINK}/${VERSFILE}. Please check permissions."
 	    exit 1
 	fi
 	
@@ -1257,21 +1262,21 @@ function do_newpkg {
 	    exit 1
 	fi
 
-	rm -f ${LINKNAME} && mkdir -p $new_name && ln -s $new_name ${LINKNAME} && \
+	rm -f ${RECLINK} && mkdir -p $new_name && ln -s $new_name ${RECLINK} && \
 	    tar -C $pkg_name  --exclude='./compiled/*' --exclude='./RELEASED*' --exclude='./pkg.*' \
 		--exclude=".svn" \
 		--exclude='./CFLAGS' --exclude='./.dep' --exclude='./.lst' --exclude='./.tgz' \
 		--exclude="./${VERSFILE}" --one-file-system -cf - . | \
-	    tar -C $new_name -xf - || (rmdir $new_name ; rm -f ${LINKNAME})
+	    tar -C $new_name -xf - || (rmdir $new_name ; rm -f ${RECLINK})
 	mkdir -p "$new_name/compiled"
 	# restore write permissions to all the package for development
 	chmod -R u+rw $new_name/
 
 	echo "A new package '$(basename $new_name)' has been created as '$new_name', based on '$(basename $pkg_name)'."
-	echo "The link '${LINKNAME}' now points to it."
+	echo "The link '${RECLINK}' now points to it."
 	echo
     fi
-    if [ $(find ${LINKNAME}/patches -type f |wc -l) -gt 0 ]; then
+    if [ $(find ${RECLINK}/patches -type f |wc -l) -gt 0 ]; then
 	echo "*** Warning: there are patches that may need to be applied, use >>>pkg info<<< ***"
 	echo
     fi
@@ -1313,10 +1318,10 @@ function pre_info {
     fi
     echo "   Released packages repository    (\$PKGROOT) : $PKGROOT"
     echo "   Development packages repository (\$DEVROOT) : $DEVROOT"
-    if [ -d "${LINKNAME}/." ]; then
+    if [ -d "${RECLINK}/." ]; then
 	echo "   Current package directory        (\$PKGDIR) : $PKGDIR"
     else
-	echo "   Alternative package directory    (\$PKGDIR) : $PKGDIR  (${LINKNAME} invalid)"
+	echo "   Alternative package directory    (\$PKGDIR) : $PKGDIR  (${RECLINK} invalid)"
     fi
     echo "   Package file : $PKGDIR/compiled/${EXACTPKG##*/}-$FLXARCH.$PKGSUFF"
     echo -n "   Package size : "
@@ -2876,7 +2881,7 @@ function do_release {
 #traiter le cas où PKGROOT/PKGDIR existe déjà mais pour d'autres archi
 #</FIXME>
 
-    if [ ! -r "${LINKNAME}/${VERSFILE}" ]; then
+    if [ ! -r "${RECLINK}/${VERSFILE}" ]; then
       # We use the conventionnal versionning scheme : PKGDIR points to a
       # directory which we will move to the destination.
       if [ -n "$reporoot" ]; then
@@ -3109,37 +3114,37 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 	patch|unpatch)
 	    CHAINCMD=0
 	    KNOWNCMD=1
-	    if [ -r "${LINKNAME}/${VERSFILE}" ]; then
-		REPLY="$(cat ${LINKNAME}/${VERSFILE})"
+	    if [ -r "${RECLINK}/${VERSFILE}" ]; then
+		REPLY="$(cat ${RECLINK}/${VERSFILE})"
 		REPLY="${REPLY##*/}"
-		PKGDIR="$CURDIR/${LINKNAME}/."
+		PKGDIR="$CURDIR/${RECLINK}/."
 	    else
-		REPLY="$(basename $(readlink -f ${LINKNAME}) 2>/dev/null)"
-		PKGDIR="$(readlink -f ${LINKNAME} 2>/dev/null)"
+		REPLY="$(basename $(readlink -f ${RECLINK}) 2>/dev/null)"
+		PKGDIR="$(readlink -f ${RECLINK} 2>/dev/null)"
 	    fi
 	    # get_name %L
 	    ;;
 	compile_only|config|config_only|compile|build|prepack)
 	    KNOWNCMD=1
-	    if [ -r "${LINKNAME}/${VERSFILE}" ]; then
-		REPLY="$(cat ${LINKNAME}/${VERSFILE})"
+	    if [ -r "${RECLINK}/${VERSFILE}" ]; then
+		REPLY="$(cat ${RECLINK}/${VERSFILE})"
 		REPLY="${REPLY##*/}"
-		PKGDIR="$CURDIR/${LINKNAME}/."
+		PKGDIR="$CURDIR/${RECLINK}/."
 	    else
-		REPLY="$(basename $(readlink -f ${LINKNAME}) 2>/dev/null)"
-		PKGDIR="$(readlink -f ${LINKNAME} 2>/dev/null)"
+		REPLY="$(basename $(readlink -f ${RECLINK}) 2>/dev/null)"
+		PKGDIR="$(readlink -f ${RECLINK} 2>/dev/null)"
 	    fi
 	    # get_name %L
 	    ;;
 	strip|pack|delpack|release|clean)
 	    KNOWNCMD=1
-	    if [ -r "${LINKNAME}/${VERSFILE}" ]; then
-		REPLY="$(cat ${LINKNAME}/${VERSFILE})"
+	    if [ -r "${RECLINK}/${VERSFILE}" ]; then
+		REPLY="$(cat ${RECLINK}/${VERSFILE})"
 		REPLY="${REPLY##*/}"
-		PKGDIR="$CURDIR/${LINKNAME}/."
+		PKGDIR="$CURDIR/${RECLINK}/."
 	    else
-		REPLY="$(basename $(readlink -f ${LINKNAME}) 2>/dev/null)"
-		PKGDIR="$(readlink -f ${LINKNAME} 2>/dev/null)"
+		REPLY="$(basename $(readlink -f ${RECLINK}) 2>/dev/null)"
+		PKGDIR="$(readlink -f ${RECLINK} 2>/dev/null)"
 	    fi
 	    # get_name %L
 	    ;;
@@ -3147,13 +3152,13 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 	*)
 	    CHAINCMD=0
 	    KNOWNCMD=0
-	    if [ -r "${LINKNAME}/${VERSFILE}" ]; then
-		REPLY="$(cat ${LINKNAME}/${VERSFILE})"
+	    if [ -r "${RECLINK}/${VERSFILE}" ]; then
+		REPLY="$(cat ${RECLINK}/${VERSFILE})"
 		REPLY="${REPLY##*/}"
-		PKGDIR="$CURDIR/${LINKNAME}/."
+		PKGDIR="$CURDIR/${RECLINK}/."
 	    else
-		REPLY="$(basename $(readlink -f ${LINKNAME}) 2>/dev/null)"
-		PKGDIR="$(readlink -f ${LINKNAME} 2>/dev/null)"
+		REPLY="$(basename $(readlink -f ${RECLINK}) 2>/dev/null)"
+		PKGDIR="$(readlink -f ${RECLINK} 2>/dev/null)"
 	    fi
 	    # get_name %L
 	    ;;
