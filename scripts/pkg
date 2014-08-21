@@ -2837,13 +2837,8 @@ function do_release {
 		exit 1
 	fi
     else
-	# use the standad PKGROOT only
+	# use the standard PKGROOT only
 	reporoot=
-	if ! [ -s "$PKGDIR/.lst" -a -e "$PKGDIR/.dep" -a -s "$PKGDIR/.tgz" ]; then
-		echo "Nothing to be released in this package."
-		echo "Please ensure that .lst, .dep and .tgz exist."
-		exit 1
-	fi
     fi
 
     # first, the destination directory must not exist
