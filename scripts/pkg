@@ -803,8 +803,8 @@ function do_deps {
   PKGRADIX="$(get_pkg_radix ${CURPKGNAME})"
   PKGVER="$(get_pkg_ver ${CURPKGNAME})"
   DISTVER="$(get_build_num ${CURPKGNAME})"
-  mkdir -p "$PKGDIR/compiled"
-  TARBALL=($PKGDIR/compiled/$PKGRADIX-$PKGVER-$DISTVER${VERSFX:+_$VERSFX}-$FLXARCH.$PKGSUFF)
+  mkdir -p "$CURDIR/$PKGLINK/compiled"
+  TARBALL=($CURDIR/$PKGLINK/compiled/$PKGRADIX-$PKGVER-$DISTVER${VERSFX:+_$VERSFX}-$FLXARCH.$PKGSUFF)
   if [ -n "$TARBALL" -a -f "$TARBALL" ]; then
     if [ "$PKG_ONLYUNBUILDDEPS" == "1" ]; then
     # don't search dependencies if tarball exists.
@@ -1299,9 +1299,10 @@ function do_edit {
 function do_cat {
     cat $CFGFILE
 }
+
 function do_lst {
     local FPNAME
-    FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-$DISTVER${VERSFX:+_$VERSFX}-$FLXARCH"
+    FPNAME="$CURDIR/$PKGLINK/compiled/$PKGRADIX-$PKGVER-$DISTVER${VERSFX:+_$VERSFX}-$FLXARCH"
     cat $FPNAME.lst
 }
 
@@ -1324,10 +1325,10 @@ function pre_info {
     else
 	echo "   Alternative package directory    (\$PKGDIR) : $PKGDIR  (${RECLINK} invalid)"
     fi
-    echo "   Package file : $PKGDIR/compiled/${EXACTPKG##*/}-$FLXARCH.$PKGSUFF"
+    echo "   Package file : $CURDIR/$PKGLINK/compiled/${EXACTPKG##*/}-$FLXARCH.$PKGSUFF"
     echo -n "   Package size : "
-    if [ -e $PKGDIR/compiled/${EXACTPKG##*/}-$FLXARCH.$PKGSUFF ]; then
-	echo "$(du -b $PKGDIR/compiled/${EXACTPKG##*/}-$FLXARCH.$PKGSUFF |cut -f1) bytes."
+    if [ -e $CURDIR/$PKGLINK/compiled/${EXACTPKG##*/}-$FLXARCH.$PKGSUFF ]; then
+	echo "$(du -b $CURDIR/$PKGLINK/compiled/${EXACTPKG##*/}-$FLXARCH.$PKGSUFF |cut -f1) bytes."
     else
 	echo "does not exist yet."
     fi
@@ -1510,7 +1511,7 @@ function do_unpatch {
 
 # extracts a binary package into $ROOTDIR, to reflect the state prior to pack().
 function do_unpack {
-    local FILE=$PKGDIR/compiled/${EXACTPKG##*/}-$FLXARCH.$PKGSUFF
+    local FILE=$CURDIR/$PKGLINK/compiled/${EXACTPKG##*/}-$FLXARCH.$PKGSUFF
     mkdir -p $ROOTDIR
     cd $ROOTDIR
     if [ ! -f $FILE ]; then
@@ -1565,9 +1566,9 @@ function pre_pack {
 function get_perl_depend {
     local filename=$1
     local dep DEP
-    local DEP_FILE=$PKGDIR/compiled/${EXACTPKG##*/}-$FLXARCH.dep
+    local DEP_FILE=$CURDIR/$PKGLINK/compiled/${EXACTPKG##*/}-$FLXARCH.dep
 
-    mkdir -p $PKGDIR/compiled
+    mkdir -p $CURDIR/$PKGLINK/compiled
     DEP=$(grep "^\(.*['{\"]\)*[ 	]*\(require\|use\) \+['\"]*[a-zA-Z][a-z:/A-Z0-9_-]*[; '\"]" $filename | \
                 sed -e 's/.*\(require\|use\) \+["'\'']\?\([^'\''" };]\+\)["'\'']\?/§§\2§§/g' \
                     -e 's/§§\([^§]\+\)§§[^§]*/ \1/g' | \
@@ -1598,9 +1599,9 @@ function _do_pack_files {
     echo "done."
 
     # full path name of different files
-    FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-$DISTVER${VERSFX:+_$VERSFX}-$FLXARCH"
+    FPNAME="$CURDIR/$PKGLINK/compiled/$PKGRADIX-$PKGVER-$DISTVER${VERSFX:+_$VERSFX}-$FLXARCH"
     DEP_FILE=$FPNAME.dep
-    mkdir -p "$PKGDIR/compiled"
+    mkdir -p "$CURDIR/$PKGLINK/compiled"
 
     # If we're currently building a "build" model, we just want the tgz with
     # its specific extension.
@@ -1758,8 +1759,8 @@ function do_pack {
     echo "done."
 
     # full path name of different files
-    mkdir -p "$PKGDIR/compiled"
-    FPNAME="$PKGDIR/compiled/$PKGRADIX-$PKGVER-$DISTVER${VERSFX:+_$VERSFX}-$FLXARCH"
+    mkdir -p "$CURDIR/$PKGLINK/compiled"
+    FPNAME="$CURDIR/$PKGLINK/compiled/$PKGRADIX-$PKGVER-$DISTVER${VERSFX:+_$VERSFX}-$FLXARCH"
     DEP_FILE=$FPNAME.dep
 
     # If we're currently building a "build" model, we just want the tgz with
