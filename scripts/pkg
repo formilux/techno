@@ -69,8 +69,17 @@ _FLX=${_FLX:-flx}
 # FLX_SRC_CACHE_DIRS="${FLX_SRC_CACHE_DIRS-/tmp:r /nfs/tmp:r /data/tmp:r}"
 
 # Define where to search for packages
-DEVROOT=${DEVROOT:-/var/flx-dev}
-PKGROOT=${PKGROOT:-/var/flx-pkg}
+if [ -z "$DEVROOT" ]; then
+	echo "Mandatory variable \$DEVROOT is not set, please make it point to the location"
+	echo "where development packages will be stored (eg: /var/flx-dev)."
+	exit 1
+fi >&2
+
+if [ -z "$PKGROOT" ]; then
+	echo "Mandatory variable \$PKGROOT is not set, please make it point to the location"
+	echo "where released packages will be stored (eg: /var/flx-pkg)."
+	exit 1
+fi >&2
 
 # If PKGBLDFILTER is set and points to a valid .bld file, it will be used as a
 # filter on package build dependencies during "pkg prepare". Otherwise, the
