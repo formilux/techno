@@ -133,7 +133,14 @@ do_build() {
 		set -- "${archs//,/ }"
 		archs=( "$@" )
 		for needarch in "${archs[@]}" ; do
-			if [ -e "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" ] ; then
+			if [ -n "$FLX_PKG_CACHE_DIR" -a -e "$FLX_PKG_CACHE_DIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" ] ; then
+				cp "$FLX_PKG_CACHE_DIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" "${TMP_PACK}/pkg/"
+				cp "$FLX_PKG_CACHE_DIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.dep" "${TMP_PACK}/pkg/"
+				cp "$FLX_PKG_CACHE_DIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.lst" "${TMP_PACK}/pkg/"
+				echo "$package${sfxver:+_$sfxver}" >> ${TMP_PACK}/all.lpk
+				cont="1"
+				break
+			elif [ -e "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" ] ; then
 				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" "${TMP_PACK}/pkg/"
 				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.dep" "${TMP_PACK}/pkg/"
 				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.lst" "${TMP_PACK}/pkg/"
@@ -150,7 +157,14 @@ do_build() {
 		package_build "$package" "$1" "$sfxver"
 		[ "$?" != "0" ] && exit 1
 		for needarch in "${archs[@]}" ; do
-			if [ -e "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" ] ; then
+			if [ -n "$FLX_PKG_CACHE_DIR" -a -e "$FLX_PKG_CACHE_DIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" ] ; then
+				cp "$FLX_PKG_CACHE_DIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" "${TMP_PACK}/pkg/"
+				cp "$FLX_PKG_CACHE_DIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.dep" "${TMP_PACK}/pkg/"
+				cp "$FLX_PKG_CACHE_DIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.lst" "${TMP_PACK}/pkg/"
+				echo "$package${sfxver:+_$sfxver}" >> ${TMP_PACK}/all.lpk
+				cont="1"
+				break
+			elif [ -e "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" ] ; then
 				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" "${TMP_PACK}/pkg/"
 				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.dep" "${TMP_PACK}/pkg/"
 				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.lst" "${TMP_PACK}/pkg/"
@@ -242,7 +256,9 @@ package_build() {
 		fi
 
 		if [ $depth -ne 1 ] ; then
-			if [ ! -e "$PKGFILTEREDDIR/${package[$depth]}/compiled/${package[$depth]}${sfxver[$depth]:+_${sfxver[$depth]}}-${arch[$depth]}.tgz" ] ; then
+			if [ -z "$FLX_PKG_CACHE_DIR" -a \
+			     ! -e "$PKGFILTEREDDIR/${package[$depth]}/compiled/${package[$depth]}${sfxver[$depth]:+_${sfxver[$depth]}}-${arch[$depth]}.tgz" -o \
+			     ! -e "$FLX_PKG_CACHE_DIR/${package[$depth]}/compiled/${package[$depth]}${sfxver[$depth]:+_${sfxver[$depth]}}-${arch[$depth]}.tgz" ] ; then
 				echo "Error build ${package[$depth]} does not produce requested arch: ${arch[$depth]}."
 				exit 1
 			fi
