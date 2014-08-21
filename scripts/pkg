@@ -93,12 +93,22 @@ if [ ! -d "$PKGROOT/." ]; then
 	exit 1
 fi >&2
 
+if [ -z "$PKGFILTEREDDIR" ]; then
+	echo "Variable \$PKGFILTEREDDIR must point to the directory containing the links to"
+	echo "filtered packages."
+	exit 1
+fi >&2
+
+if [ ! -d "$PKGFILTEREDDIR/." ]; then
+	echo "Variable \$PKGFILTEREDDIR does not point to a directory, please make it point"
+	echo "to the location containing the links to filtered packages."
+	exit 1
+fi >&2
+
 
 # If PKGBLDFILTER is set and points to a valid .bld file, it will be used as a
-# filter on package build dependencies during "pkg prepare". Otherwise, the
-# variable PKGSEARCHDEP below must be set (deprecated).
-PKGSEARCHDEP=${PKGSEARCHDEP:-${DEVROOT%/}/ ${PKGROOT%/}/}
-export PKGSEARCHDEP
+# filter on package build dependencies during "pkg prepare" instead of searching
+# in the PKGFILTEREDDIR directory.
 
 # fix PATH : we MUST never have either an empty component nor a '.' in it !
 PATH=${PATH//:.:/:}
@@ -1930,7 +1940,7 @@ function do_prepare {
         done < "$PKGBLDFILTER"
         set -o noglob
       else
-        PACKAGE="$( find $PKGSEARCHDEP -maxdepth 1 -name "$1" -xtype d | xargs -r ls -1dv | tail -n 1 )"
+        PACKAGE="$( find $PKGFILTEREDDIR -maxdepth 1 -name "$1" -xtype d | xargs -r ls -1dv | tail -n 1 )"
       fi
 
       if [ -z "$PACKAGE" ] ; then
@@ -2012,7 +2022,7 @@ function do_prepare {
         done < "$PKGBLDFILTER"
         set -o noglob
       else
-        PACKAGE="$( find $PKGSEARCHDEP -maxdepth 1 -name "$1" -xtype d | xargs -r ls -1dv | tail -n 1 )"
+        PACKAGE="$( find $PKGFILTEREDDIR -maxdepth 1 -name "$1" -xtype d | xargs -r ls -1dv | tail -n 1 )"
       fi
 
       if [ -z "$PACKAGE" ] ; then
