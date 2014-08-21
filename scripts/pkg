@@ -105,6 +105,12 @@ if [ ! -d "$PKGFILTEREDDIR/." ]; then
 	exit 1
 fi >&2
 
+if [ -n "$FLX_PKG_CACHE_DIR" -a ! -d "$FLX_PKG_CACHE_DIR/." ]; then
+	echo "Variable \$FLX_PKG_CACHE_DIR does not point to a directory, please make it point"
+	echo "to the location where compiled packages will be stored (eg: \$PRJ_DIR/cache/pkg)"
+	echo "or unset it."
+	exit 1
+fi >&2
 
 # If PKGBLDFILTER is set and points to a valid .bld file, it will be used as a
 # filter on package build dependencies during "pkg prepare" instead of searching
