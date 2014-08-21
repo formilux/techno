@@ -2063,7 +2063,7 @@ function do_filesearch {
 
   for file in $PKGROOT/*; do
     basefile=${file##*/}
-    awk -F ' '  '/'"$1"'/ {print "'$basefile':", $1, $8, $9}' $file/.lst 2> /dev/null
+    awk -F ' '  '/'"$1"'/ {print "'$basefile':", $1, $8, $9}' /dev/null $file/compiled/*.lst 2>/dev/null | sort -u
   done
 }
 
