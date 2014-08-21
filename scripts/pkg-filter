@@ -72,7 +72,7 @@ function do_update() {
 	fi
 
 	echo -n "Filter components "
-	find "$PRJ_DIR/components/pkg/" -type f  -name 'Version' | while read package trash ; do
+	find "${COMP_DIR:-$PRJ_DIR/components}/pkg/" -type f  -name 'Version' | while read package trash ; do
 		version=$( cat $package )
 		package="${package%/*}"
 		ln -s $package $PKGFILTEREDDIR/$version
