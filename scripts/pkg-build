@@ -205,7 +205,18 @@ package_build() {
 		fi
 
 		mkdir -p "${TMP_PACK}/src/${package[$depth]}"
-		ln -s "$PKGFILTEREDDIR/${package[$depth]}" "${TMP_PACK}/src/${package[$depth]}/.flxpkg"
+
+		if [ -n "$FLX_PKG_CACHE_DIR" -a -d "$FLX_PKG_CACHE_DIR/." ]; then
+			# we're running with a separate package cache, we still have to
+			# initialize it and ensure we don't have any "compiled" directory
+			# in the recipe.
+			ln -s "$PKGFILTEREDDIR/${package[$depth]}" "${TMP_PACK}/src/${package[$depth]}/.flxrec"
+			mkdir -p "$FLX_PKG_CACHE_DIR/${package[$depth]}/compiled" || exit 1
+			ln -s "$FLX_PKG_CACHE_DIR/${package[$depth]}" "${TMP_PACK}/src/${package[$depth]}/.flxpkg" || exit 1
+			ln -sf $(find "${TMP_PACK}/src/${package[$depth]}/.flxrec/" -mindepth 1 -maxdepth 1 -not -name compiled -not -name '.*') "${TMP_PACK}/src/${package[$depth]}/.flxpkg/" || exit 1
+		else
+			ln -s "$PKGFILTEREDDIR/${package[$depth]}" "${TMP_PACK}/src/${package[$depth]}/.flxpkg"
+		fi
 		(
 			export PKG_NOCHOICE=1
 			export FLXARCH="${arch[$depth]}"
@@ -251,8 +262,14 @@ package_build() {
 			echo "Unable to build package ${package[$depth]}"
 			echo "Leaving directory ${TMP_PACK}/src/${package[$depth]}"
 			exit 1
-		elif [ ! -e "${TMP_PACK}/src/${package[$depth]}/.flxpkg/RELEASED" ] ; then
-			touch ${TMP_PACK}/src/${package[$depth]}/.flxpkg/.tested
+		elif [ -d "${TMP_PACK}/src/${package[$depth]}/.flxrec/." ]; then
+			if [ ! -e "${TMP_PACK}/src/${package[$depth]}/.flxrec/RELEASED" ] ; then
+				touch ${TMP_PACK}/src/${package[$depth]}/.flxrec/.tested
+			fi
+		elif [ -d "${TMP_PACK}/src/${package[$depth]}/.flxpkg/." ]; then
+			if [ ! -e "${TMP_PACK}/src/${package[$depth]}/.flxpkg/RELEASED" ] ; then
+				touch ${TMP_PACK}/src/${package[$depth]}/.flxpkg/.tested
+			fi
 		fi
 
 		if [ $depth -ne 1 ] ; then
