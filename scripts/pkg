@@ -2968,6 +2968,10 @@ function do_release {
 	exit 2
       fi
 
+      # also remove the broken links. Ignore errors for the case where either
+      # one is a directory.
+      rm -f "$RECLINK" "$PKGLINK" 2>/dev/null
+
       # Just in case, we remove this file because we now have a *real* repository
       # for which the name is enough to tell the version.
       rm -f "$PKGROOT/${EXACTPKG##*/}/${VERSFILE}" >/dev/null 2>&1
