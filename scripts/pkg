@@ -2977,7 +2977,7 @@ function do_release {
       # remove write rights on package.
       # chmod a-w $PKGROOT/${EXACTPKG##*/}/build.cfg
       chmod -R a-w $PKGROOT/${EXACTPKG##*/}
-      chmod -R u+w $PKGROOT/${EXACTPKG##*/}/compiled
+      [ -e "$PKGROOT/${EXACTPKG##*/}/compiled" ] && chmod -R u+w "$PKGROOT/${EXACTPKG##*/}/compiled"
     else
       # We rely exclusively on Version to get the package version. In this
       # case, we do not MOVE the directory, but rather COPY it to its
