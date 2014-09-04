@@ -1504,7 +1504,7 @@ function do_patch {
       echo "Error: Already patched."
       return 1
     fi
-    find . -name '*.rej' -o -name '*~' | xargs rm -f
+    find . -path ./.flxdisk -prune -o -name '*.rej' -print -o -name '*~' -print | xargs rm -f
 
     err=
     for i in ${PATCH_LIST}; do
@@ -1520,8 +1520,8 @@ function do_patch {
 	fi
     done
 
-    if [ -z "$err" -a -z "$(find . -name '*.rej')" ]; then
-	find . -name '*~' | xargs rm -f
+    if [ -z "$err" -a -z "$(find . -path ./.flxdisk -prune -o -name '*.rej' -print)" ]; then
+	find . -path ./.flxdisk -prune -o -name '*~' -print | xargs rm -f
     else
         echo "FATAL: Some patches failed to apply, aborting."
 	return 1
@@ -1536,7 +1536,7 @@ function do_unpatch {
     local i err
     local UNPATCH_LIST=""
 
-    find . -name '*.rej' -o -name '*~' | xargs rm -f
+    find . -path ./.flxdisk -prune -o -name '*.rej' -print -o -name '*~' -print | xargs rm -f
 
     for i in ${PATCH_LIST}; do
 	UNPATCH_LIST=( $i ${UNPATCH_LIST[@]} )
@@ -1556,8 +1556,8 @@ function do_unpatch {
 	fi
     done
 
-    if [ -z "$err" -a -z "$(find . -name '*.rej')" ]; then
-	find . -name '*~' | xargs rm -f
+    if [ -z "$err" -a -z "$(find . -path ./.flxdisk -prune -o -name '*.rej' -print)" ]; then
+	find . -path ./.flxdisk -prune -o -name '*~' -print | xargs rm -f
     else
         echo "FATAL: Some patches failed to revert, aborting."
 	return 1
