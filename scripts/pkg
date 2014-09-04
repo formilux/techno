@@ -2879,7 +2879,7 @@ function do_release {
 		echo "Error: package is not tested! Please build an image with it first."
 		exit 1
 	fi
-	trash=$(find "$PKGDIR/" -type f -newer "$PKGDIR/.tested")
+	trash=$(find "$PKGDIR/" -path "$PKGDIR/compiled" -prune -o -path "$PKGDIR/.repository" -prune -o -path "$PKGDIR/ChangeLog" -prune -o -type f -newer "$PKGDIR/.tested" -print)
 	if [ -n "$trash" ] ; then
 		echo "Error: package was modified or rebuilt since last tested!"
 		echo "Please delete the tar.gz and re-build an image using this package first."
