@@ -206,7 +206,8 @@ package_build() {
 
 		mkdir -p "${TMP_PACK}/src/${package[$depth]}"
 
-		if [ -n "$FLX_PKG_CACHE_DIR" -a -d "$FLX_PKG_CACHE_DIR/." ]; then
+		if [ -n "$FLX_PKG_CACHE_DIR" -a -d "$FLX_PKG_CACHE_DIR/." ] &&
+		   ! [ -e "$PKGFILTEREDDIR/${package[$depth]}/Version" ]; then
 			# we're running with a separate package cache, we still have to
 			# initialize it and ensure we don't have any "compiled" directory
 			# in the recipe.
