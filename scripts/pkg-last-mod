@@ -1,0 +1,27 @@
+#!/bin/sh
+
+# pkg-last-mod - Formilux package management - version 0.0.1 - 2014-09-05
+#
+# Copyright (C) 2001-2014 Benoit Dolez & Willy Tarreau
+#   mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+#
+# Given a formilux package directory in argument, it will emit its most recent
+# file which is significant to the build process (ie not .tested for example).
+# It is useful to check if a binary package output is up to date or not, by
+# comparing its date to the most recent file's.
+
+die() {
+	echo "$@"
+	exit 1
+}
+
+[ -n "$1" ] || die "A package directory is expected."
+
+[ -d "$1/." ] || die "This is not a valid directory."
+
+[ -e "$1/build.cfg" ] || die "This is not a valid package directory (build.cfg is missing)."
+
+set -- "${1%/}"
+find "$1"/ \( -path "$1/compiled" -o -path "$1/RELEASED" -o -path "$1/.repository" -o -path "$1/.tested" -o -path "$1/ChangeLog" \) -prune -o -mindepth 1 -type f -printf "%A@ %p\n" | sort -nr | head -1 | cut -f2- -d' '
