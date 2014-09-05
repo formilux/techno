@@ -26,6 +26,10 @@ die() {
 	exit 1
 }
 
+pkg_last_mod() {
+	find "$1"/ \( -path "$1/compiled" -o -path "$1/RELEASED" -o -path "$1/.repository" -o -path "$1/.tested" -o -path "$1/ChangeLog" \) -prune -o -mindepth 1 -type f -printf "%A@ %p\n" | sort -nr | head -1 | cut -f2- -d' '
+}
+
 # by default, builds everything unless some args are passed. Arguments are in
 # the form <pkgname>[:<arch>]. If <arch> is omitted, $DEFAULT_ARCH is used.
 do_build() {
@@ -132,15 +136,18 @@ do_build() {
 		cont=""
 		set -- "${archs//,/ }"
 		archs=( "$@" )
+		lastmod=$(pkg_last_mod "$PKGFILTEREDDIR/$package")
 		for needarch in "${archs[@]}" ; do
-			if [ -n "$FLX_PKG_CACHE_DIR" -a -e "$FLX_PKG_CACHE_DIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" ] ; then
+			if [ -n "$FLX_PKG_CACHE_DIR" -a -e "$FLX_PKG_CACHE_DIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" ] &&
+			   [ "$FLX_PKG_CACHE_DIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" -nt "$lastmod" ]; then
 				cp "$FLX_PKG_CACHE_DIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" "${TMP_PACK}/pkg/"
 				cp "$FLX_PKG_CACHE_DIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.dep" "${TMP_PACK}/pkg/"
 				cp "$FLX_PKG_CACHE_DIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.lst" "${TMP_PACK}/pkg/"
 				echo "$package${sfxver:+_$sfxver}" >> ${TMP_PACK}/all.lpk
 				cont="1"
 				break
-			elif [ -e "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" ] ; then
+			elif [ -e "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" ] &&
+			     [ "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" -nt "$lastmod" ]; then
 				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" "${TMP_PACK}/pkg/"
 				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.dep" "${TMP_PACK}/pkg/"
 				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.lst" "${TMP_PACK}/pkg/"
@@ -154,10 +161,15 @@ do_build() {
 		fi
 		set -- "${archs[@]}"
 
+		echo "Building $package"
 		package_build "$package" "$1" "$sfxver"
 		[ "$?" != "0" ] && exit 1
 		for needarch in "${archs[@]}" ; do
 			if [ -n "$FLX_PKG_CACHE_DIR" -a -e "$FLX_PKG_CACHE_DIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" ] ; then
+				if ! [ "$FLX_PKG_CACHE_DIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" -nt "$lastmod" ]; then
+					echo "Warning: file $lastmod seems to be in the future"
+				fi
+
 				cp "$FLX_PKG_CACHE_DIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" "${TMP_PACK}/pkg/"
 				cp "$FLX_PKG_CACHE_DIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.dep" "${TMP_PACK}/pkg/"
 				cp "$FLX_PKG_CACHE_DIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.lst" "${TMP_PACK}/pkg/"
@@ -165,6 +177,9 @@ do_build() {
 				cont="1"
 				break
 			elif [ -e "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" ] ; then
+				if ! [ "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" -nt "$lastmod" ]; then
+					echo "Warning: file $lastmod seems to be in the future"
+				fi
 				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.tgz" "${TMP_PACK}/pkg/"
 				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.dep" "${TMP_PACK}/pkg/"
 				cp "$PKGFILTEREDDIR/$package/compiled/$package${sfxver:+_$sfxver}-$needarch.lst" "${TMP_PACK}/pkg/"
