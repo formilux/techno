@@ -291,6 +291,7 @@ package_build() {
 		if [ $depth -ne 1 ] ; then
 			if [ -n "$FLX_PKG_CACHE_DIR" -a \
 			     ! -e "$FLX_PKG_CACHE_DIR/${package[$depth]}/compiled/${package[$depth]}${sfxver[$depth]:+_${sfxver[$depth]}}-${arch[$depth]}.tgz" -o \
+			     -z "$FLX_PKG_CACHE_DIR" -a \
 			     ! -e "$PKGFILTEREDDIR/${package[$depth]}/compiled/${package[$depth]}${sfxver[$depth]:+_${sfxver[$depth]}}-${arch[$depth]}.tgz" ] ; then
 				echo "Error build ${package[$depth]} does not produce requested arch: ${arch[$depth]}."
 				exit 1
