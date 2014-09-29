@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 #
 # build/tools/updt-prf - update a list of prf  - version 0.0.5 - 2009-11-27
