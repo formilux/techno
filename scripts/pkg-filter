@@ -21,6 +21,12 @@ function do_update() {
 	local new
 	local package
 
+	if [ -z "$TMP_PACK" ]; then
+		echo "TMP_PACK is not set, it should probably point to build/\$MODEL/packaging."
+		echo "pkg-filter update is normally not supposed to be manually called."
+		exit 1
+	fi
+
 	mkdir -p $PKGFILTEREDDIR/
 	[ $? -eq 0 ] || { echo "Unable to create $PKGFILTEREDDIR" >&2 ; exit 1 ; }
 
