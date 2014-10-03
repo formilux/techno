@@ -61,7 +61,7 @@ function do_update() {
 			# Note: we might have a model name in sfxver after an underscore
 			p=${package##*-flx}
 			if [ "${p/_/}" != "$p" ] ; then
-				package=${package%_*}
+				package=${package%_${p#*_}}
 			fi
 
 			if [ -d "$DEVROOT/$package" ] ; then

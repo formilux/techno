@@ -61,7 +61,7 @@ do_build() {
 			sfxver=""
 			if [ "${p/_/}" != "$p" ] ; then
 				sfxver="${p#*_}"
-				i=${i%_*}
+				i=${i%_$sfxver}
 			fi
 
 			# report either package name with specified arch or package name with default arch
@@ -130,7 +130,7 @@ do_build() {
 		sfxver=""
 		if [ "${p/_/}" != "$p" ] ; then
 			sfxver="${p#*_}"
-			package=${package%_*}
+			package=${package%_$sfxver}
 		fi
 
 		cont=""
