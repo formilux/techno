@@ -2968,6 +2968,12 @@ function do_release {
 	exit 2
       fi
 
+      # fix destination links to the recipes directory in the package cache to
+      # avoid broken links after a release.
+      if [ -L "$PKGLINK/build.cfg" -a ! -e "$PKGLINK/build.cfg" ]; then
+	      ln -sf $(find "$PKGROOT/${EXACTPKG##*/}/" -mindepth 1 -maxdepth 1 -not -name compiled -not -name '.*' | while read; do readlink -qf $REPLY;done) "$PKGLINK/" || exit 1
+      fi
+
       # also remove the broken links. Ignore errors for the case where either
       # one is a directory.
       rm -f "$RECLINK" "$PKGLINK" 2>/dev/null
