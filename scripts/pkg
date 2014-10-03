@@ -1121,7 +1121,7 @@ function do_setpkg {
         # the entry now.
         mkdir -p "$FLX_PKG_CACHE_DIR/${PKGDIR##*/}/compiled" || exit 1
         ln -s "$FLX_PKG_CACHE_DIR/${PKGDIR##*/}" "$PKGLINK" || exit 1
-        ln -sf $(find "$PWD/$RECLINK/" -mindepth 1 -maxdepth 1 -not -name compiled -not -name '.*') "$PKGLINK/" || exit 1
+        ln -sf $(find "$PWD/$RECLINK/" -mindepth 1 -maxdepth 1 -not -name compiled -not -name '.*' | while read; do readlink -qf $REPLY;done) "$PKGLINK/" || exit 1
     fi
 
     mkdir -p "$PKGLINK/compiled" || exit 1
@@ -1324,7 +1324,7 @@ function do_newpkg {
 		ln -s "$FLX_PKG_CACHE_DIR/${new_name##*/}" "$PKGLINK" || exit 1
 		rm -rf "$RECLINK/compiled" || exit 1
 		set +o noglob
-		ln -sf $(find "$PWD/$RECLINK/" -mindepth 1 -maxdepth 1 -not -name compiled -not -name '.*') "$PKGLINK/" || exit 1
+		ln -sf $(find "$PWD/$RECLINK/" -mindepth 1 -maxdepth 1 -not -name compiled -not -name '.*' | while read; do readlink -qf $REPLY;done) "$PKGLINK/" || exit 1
 		set -o noglob
 	else
 		mkdir -p "$new_name/compiled"

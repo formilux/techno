@@ -229,7 +229,7 @@ package_build() {
 			ln -s "$PKGFILTEREDDIR/${package[$depth]}" "${TMP_PACK}/src/${package[$depth]}/.flxrec"
 			mkdir -p "$FLX_PKG_CACHE_DIR/${package[$depth]}/compiled" || exit 1
 			ln -s "$FLX_PKG_CACHE_DIR/${package[$depth]}" "${TMP_PACK}/src/${package[$depth]}/.flxpkg" || exit 1
-			ln -sf $(find "${TMP_PACK}/src/${package[$depth]}/.flxrec/" -mindepth 1 -maxdepth 1 -not -name compiled -not -name '.*') "${TMP_PACK}/src/${package[$depth]}/.flxpkg/" || exit 1
+			ln -sf $(find "${TMP_PACK}/src/${package[$depth]}/.flxrec/" -mindepth 1 -maxdepth 1 -not -name compiled -not -name '.*' | while read; do readlink -qf $REPLY;done) "${TMP_PACK}/src/${package[$depth]}/.flxpkg/" || exit 1
 		else
 			ln -s "$PKGFILTEREDDIR/${package[$depth]}" "${TMP_PACK}/src/${package[$depth]}/.flxpkg"
 		fi
