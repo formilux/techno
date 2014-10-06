@@ -41,7 +41,7 @@ function do_update() {
 		echo -n "Syncing cache from repository $repopath ..."
 		# We copy the original package, restoring write permissions on all directories.
 		umask og-w
-		rsync -rl --exclude 'compiled' --exclude '.repository' --exclude '.tested' \
+		rsync -rlt --exclude 'compiled' --exclude '.repository' --exclude '.tested' \
 		      --exclude '.tgz' --exclude '.lst' --exclude '.dep' "$repopath"/* "$PKGCACHEDIR"/ >/dev/null 
 		if [ $? -ne 0 ] ; then
 			echo "error"
