@@ -14,10 +14,10 @@ if [ ! -d "$UCLIBCROOT/." ]; then
   exit 1
 fi
 
-# Check if one parameter is '-c','-E','-S' or '-M'
+# Check if one parameter is '-c', '-E', '-M', '-r', or '-S'
 args=" ${*} "
-if [ "${args/ -c /}${args/ -E /}${args/ -S /}${args/ -M /}" \
-  != "${args}${args}${args}${args}" ]; then
+if [ "${args/ -c /}${args/ -E /}${args/ -S /}${args/ -M /}${args/ -r /}" \
+  != "${args}${args}${args}${args}${args}" ]; then
   # we found at least one of '-c','-E','-S' or '-M'
   exec "$compilo" "$@" -isystem ${UCLIBCROOT}/usr/include
 else
