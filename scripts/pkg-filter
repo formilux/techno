@@ -50,10 +50,52 @@ function do_update() {
 		done < "$PRJ_DIR/packaging/bld/formilux.bld"
 		echo " success"
 	else
-		echo -n "Preparing $PKGFILTEREDDIR from *.lpk..."
+		echo -n "Resolving versions from *.lpk to allbuild.tmp ..."
+		rm -f "${TMP_PACK}/allbuild.tmp"
 
-		${FLXTECHNO}/scripts/env-expand "$PRJ_DIR/packaging/lpk/"*.lpk | \
-		    tee ${TMP_PACK}/allbuild.lpk | while read package archs rest ; do
+		# Note: we don't want env-expand to replace any SRCSIG now so
+		# we map it to itself for now.
+		SRCSIG="@@SRCSIG@@" ${FLXTECHNO}/scripts/env-expand "$PRJ_DIR/packaging/lpk/"*.lpk > "${TMP_PACK}/allbuild.tmp"
+		echo "done."
+
+		echo -n "Resolving signatures from allbuild.tmp to allbuild.lpk ... "
+		rm -f "${TMP_PACK}/allbuild.lpk"
+		grep -hv "@@SRCSIG@@" "${TMP_PACK}/allbuild.tmp" > "${TMP_PACK}/allbuild.lpk"
+		grep -h  "@@SRCSIG@@" "${TMP_PACK}/allbuild.tmp" | while read package archs rest; do
+			if [ -n "$package" -a -z "${package##*@@SRCSIG@@*}" ]; then
+				p=${package##*-flx}
+				if [ "${p/_/}" != "$p" ] ; then
+					comp=${package%_${p#*_}}
+				else
+					comp=${package}
+				fi
+
+				dir=$(grep -lxF "$comp" "${COMP_DIR}"/pkg/*/Version 2>/dev/null)
+				if [ -z "$dir" ]; then
+					echo "error"
+					echo "Fatal: component $comp not found in \"${COMP_DIR}/\"" >&2
+					exit 1
+				fi
+				dir=${dir%/Version} ; dir=${dir##*/}
+
+				# find all relevant files in the component, prepend
+				# them with their names and sign the result.
+				sig=$(find ${COMP_DIR}/pkg/$dir ${COMP_DIR}/src/$dir \
+					-name .git -prune -o -name .svn -prune -o -name compiled -prune -o \
+					-not -empty -not -xtype d -not -xtype l \
+					-not -name '*~' -not -name '*.bak' -not -name '*.rej' -not -name '*.orig' \
+					-not -name 'core' -not -name '*.o' -not -name '*.a' -print \
+					2>/dev/null | sort | xargs -r -d'\n' grep -H '' | md5sum | awk '{print $1}')
+
+				echo $package $archs $rest | SRCSIG="$sig" ${FLXTECHNO}/scripts/env-expand
+			else
+				echo $package $archs $rest
+			fi
+		done >> "${TMP_PACK}/allbuild.lpk"
+		echo "done."
+
+		echo "Creating links in $PKGFILTEREDDIR ... "
+		while read package archs rest ; do
 			if [ -n "${archs}" -a -z "${archs##build:*}" ]; then
 				continue
 			fi
@@ -75,7 +117,7 @@ function do_update() {
 				exit 1
 			fi
 			echo -n "."
-		done || exit $?
+		done < "${TMP_PACK}/allbuild.lpk" || exit $?
 		echo " success"
 	fi
 
