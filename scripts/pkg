@@ -2346,6 +2346,7 @@ function do_source {
 # - FLX_FLOAT_TYPE contains the FPU type (eg: "", "i387", "sse,i387", "vfp")
 # - FLX_BITS is either 32 or 64 depending on the target platform's word size
 # - FLX_ENDIAN is either "little" or "big" depending on the target platform's word order
+# - FLX_MODE is often what may be specified after "-m" in gcc, for example "arm" or "thumb"
 #
 # Obsolete variables which need be removed in packages once replaced :
 # - FLXTARGARCH => FLXTARG (target platform)
@@ -2520,6 +2521,18 @@ function set_flx_arch {
         esac
     fi
 
+    if [ -z "$FLX_MODE" ]; then
+        case "$FLXARCH" in
+            *teabi|*teabihf) FLX_MODE=thumb ;;
+            arm*)            FLX_MODE=arm   ;;
+            i?86*|c3|gx|lx*) FLX_MODE=32    ;;
+            p3|p4|k6|k7)     FLX_MODE=32    ;;
+            atom*|core*)     FLX_MODE=32    ;;
+            x86*)            FLX_MODE=64    ;;
+            *)               FLX_MODE=      ;;
+        esac
+    fi
+
     if [ -z "$FLX_ENDIAN" ]; then
         case "$FLXARCH" in
             alpha*|ev[56]*)           FLX_ENDIAN=little ;;
@@ -2559,7 +2572,7 @@ function set_flx_arch {
     export FLXARCH FLX_ARCH_ALIAS FLX_ARCH_FAMILY FLX_ARCH_SMALL FLX_LINUX_ARCH
     export FLXHOST FLXTARGOS FLXTARG
     export FLX_GNU_ARCH FLX_GNU_ARCH_SMALL FLX_GNU_CPU FLX_GNU_CPU_SMALL
-    export FLX_ABI FLX_FLOAT FLX_FLOAT_TYPE FLX_BITS FLX_ENDIAN
+    export FLX_ABI FLX_MODE FLX_FLOAT FLX_FLOAT_TYPE FLX_BITS FLX_ENDIAN
     export FLXROOTDIR SYSROOTTAR UCLIBCROOT FLXCROSS KERNDIR
 }
 
@@ -2760,7 +2773,7 @@ function print_env {
    for i in FLXHOSTOS FLXHOSTARCH FLXHOST FLXTARGOS FLXTARG FLXARCH \
             FLX_ARCH_ALIAS FLX_ARCH_FAMILY FLX_ARCH_SMALL FLX_LINUX_ARCH \
             FLX_GNU_ARCH FLX_GNU_ARCH_SMALL FLX_GNU_CPU FLX_GNU_CPU_SMALL \
-            FLX_ABI FLX_FLOAT FLX_FLOAT_TYPE FLX_BITS FLX_ENDIAN \
+            FLX_ABI FLX_MODE FLX_FLOAT FLX_FLOAT_TYPE FLX_BITS FLX_ENDIAN \
 	    FLXCROSS FLXTOOLDIR UCLIBCROOT FLXROOTDIR SYSROOTTAR KERNDIR \
             PATH AR AS CC CXX LD NM OBJDUMP RANLIB STRIP SSTRIP \
             GCC_EXACT_VER GCC_MAJOR GCC_MINOR GCC_VER \
@@ -2820,7 +2833,7 @@ function usage {
     echo "FLXARCH=$FLXARCH FLX_ALIAS=$FLX_ARCH_ALIAS FLX_FAMILY=$FLX_ARCH_FAMILY FLX_SMALL=$FLX_ARCH_SMALL"
     echo "FLX_LINUX_ARCH=$FLX_LINUX_ARCH FLX_GNU_ARCH=$FLX_GNU_ARCH FLX_GNU_ARCH_SMALL=$FLX_GNU_ARCH_SMALL"
     echo "FLX_GNU_CPU=$FLX_GNU_CPU FLX_GNU_CPU_SMALL=$FLX_GNU_CPU_SMALL FLX_BITS=$FLX_BITS FLX_ENDIAN=$FLX_ENDIAN"
-    echo "FLX_ABI=$FLX_ABI FLX_FLOAT=$FLX_FLOAT FLX_FLOAT_TYPE=$FLX_FLOAT_TYPE"
+    echo "FLX_ABI=$FLX_ABI FLX_MODE=$FLX_MODE FLX_FLOAT=$FLX_FLOAT FLX_FLOAT_TYPE=$FLX_FLOAT_TYPE"
     echo
     echo -e "             CURRENT\t|   COMMON\t|    SMALL"
     echo -e "GCC_ARCH_ : $GCC_ARCH_CURRENT\t| $GCC_ARCH_COMMON\t| $GCC_ARCH_SMALL"
