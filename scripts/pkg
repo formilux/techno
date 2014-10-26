@@ -67,6 +67,11 @@ if [ -z "$FLX_CONFIG_DIR" -a -n "$PRJ_DIR" -a -d "$PRJ_DIR/.flx/." ]; then
 	export FLX_CONFIG_DIR="$PRJ_DIR/.flx/."
 fi
 
+# Set the project's arch dir if one is found under $FLX_CONFIG_DIR
+if [ -z "$FLX_PRJ_ARCH_DIR" -a -n "$FLX_CONFIG_DIR" -a -d "$FLX_CONFIG_DIR/archs/." ]; then
+	export FLX_PRJ_ARCH_DIR="$FLX_CONFIG_DIR/archs"
+fi
+
 # set some constants
 _SUDO=${_SUDO:-"sudo -E"}
 _FLX=${_FLX:-flx}
