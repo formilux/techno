@@ -2249,13 +2249,15 @@ function get_svncached_file {
   return 0
 }
 
-# get package
+# get package. Note that we have to try two decompression methods because some
+# recent versions of "tar" are not able to correctly detect the XZ format.
 function get_package {
   case "$2" in
 	svn)
 	  (
 	     get_svncached_file "$1" .src "${FLX_SRC_CACHE_DIRS}" || return 1
-	     tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -xf .src || return 1
+	     tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -xf .src ||
+	       (echo "Retrying using XZ format"; tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -Jxf .src) || return 1
 	  )
  	;;
 	git)
@@ -2264,14 +2266,16 @@ function get_package {
 	http|ftp)
 	  (
 	    get_cached_file "$1" .src "${FLX_SRC_CACHE_DIRS}" || return 1
-	    tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -xf .src || return 1
+	    tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -xf .src ||
+	      (echo "Retrying using XZ format"; tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -Jxf .src) || return 1
 	  )
 	;;
 	filesystem)
 	  if [ -d "$1" ] ; then
 	    tar --exclude="$PKGLINK" -C "${1%/*}" -c "${1##*/}" | tar --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -x
 	  else
-	    tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -xf "$1"
+	    tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -xf "$1" ||
+	      (echo "Retrying using XZ format"; tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -Jxf "$1") || return 1
 	  fi
 	;;
 	*)
