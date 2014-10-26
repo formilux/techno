@@ -229,8 +229,12 @@ export FLXHOSTOS
 FLXTARGOS=${FLXTARGOS:-$FLXHOSTOS}
 FLXARCH=${FLXARCH:-$FLXHOSTARCH}
 
-# Load the per-architecture settings if any are present
-if [ -n "$FLX_PRJ_ARCH_DIR" -a -r "$FLX_PRJ_ARCH_DIR/$FLXARCH" ]; then
+# Load the per-architecture settings if any are present. First the arch is
+# looked up into the user's arch dir if set, otherwise it's looked up into
+# the project's arch dir.
+if [ -n "$FLX_USR_ARCH_DIR" -a -r "$FLX_USR_ARCH_DIR/$FLXARCH" ]; then
+    . "$FLX_USR_ARCH_DIR/$FLXARCH"
+elif [ -n "$FLX_PRJ_ARCH_DIR" -a -r "$FLX_PRJ_ARCH_DIR/$FLXARCH" ]; then
     . "$FLX_PRJ_ARCH_DIR/$FLXARCH"
 fi
 
