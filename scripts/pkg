@@ -60,6 +60,14 @@ umask og-w
 
 # set some constants
 _PKG=$0
+
+# If the project's directory is properly set, we can deduce a few other useful
+# locations, but we only set them if they look valid.
+if [ -z "$FLX_CONFIG_DIR" -a -n "$PRJ_DIR" -a -d "$PRJ_DIR/.flx/." ]; then
+	export FLX_CONFIG_DIR="$PRJ_DIR/.flx/."
+fi
+
+# set some constants
 _SUDO=${_SUDO:-"sudo -E"}
 _FLX=${_FLX:-flx}
 
