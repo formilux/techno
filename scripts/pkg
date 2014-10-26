@@ -229,6 +229,11 @@ export FLXHOSTOS
 FLXTARGOS=${FLXTARGOS:-$FLXHOSTOS}
 FLXARCH=${FLXARCH:-$FLXHOSTARCH}
 
+# Load the per-architecture settings if any are present
+if [ -n "$FLX_PRJ_ARCH_DIR" -a -r "$FLX_PRJ_ARCH_DIR/$FLXARCH" ]; then
+    . "$FLX_PRJ_ARCH_DIR/$FLXARCH"
+fi
+
 
 ###### 
 ###### here are some undertermined type functions
@@ -2360,6 +2365,9 @@ function do_source {
 # - FLX_BITS is either 32 or 64 depending on the target platform's word size
 # - FLX_ENDIAN is either "little" or "big" depending on the target platform's word order
 # - FLX_MODE is often what may be specified after "-m" in gcc, for example "arm" or "thumb"
+#
+# The variables above are loaded from the arch file if a matching one is found,
+# otherwise it is built from the default rules.
 #
 # Obsolete variables which need be removed in packages once replaced :
 # - FLXTARGARCH => FLXTARG (target platform)
