@@ -24,6 +24,9 @@ else
   # check if we need the exception handler
   libgcc_eh="$("$compilo" --print-file-name=libgcc_eh.a 2>/dev/null)"
   [ "${libgcc_eh##*/}" != "libgcc_eh.a" ] || libgcc_eh=
+  # and if we need to include uclibc_nonshared.a (atexit, *unwind*, ...)
+  uclibc_nonshared_a="${UCLIBCROOT}/usr/lib/uclibc_nonshared.a"
+  [ -e "$uclibc_nonshared_a" ] || uclibc_nonshared_a=
   exec "$compilo" -nostdlib -static \
      -L${UCLIBCROOT}/usr/lib \
      -L${UCLIBCROOT}/lib \
@@ -33,6 +36,7 @@ else
      "$@" \
      -isystem ${UCLIBCROOT}/usr/include \
      ${UCLIBCROOT}/usr/lib/libc_pic.a \
+     ${uclibc_nonshared_a} \
      -lgcc ${libgcc_eh##*/}
 fi
 
