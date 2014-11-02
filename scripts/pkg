@@ -1711,7 +1711,7 @@ function _do_pack_files {
 	    bin/*|sbin/*|lib/*|*/sbin/*|*/bin/*|*/lib/*|*/libexec/*)
 		flr="$(file $REPLY)"
 		case "$flr" in
-		    *\ script\ *)
+		    *\ script[,\ ]*)
 			# transform '#!/bin/sh -x -f foo' into '/bin/sh foo'
 			# If the shell is '/usr/bin/env', then also reference the executable itself
 			set -- $(head -1 $REPLY| sed -e 's/^#\! *\([^ ]\+\)\( *-[^ ] *\)*\(.*\)/\1 \3/')
@@ -1721,6 +1721,7 @@ function _do_pack_files {
 				[ -z "${2##*/perl}" ] && get_perl_depend $REPLY
 			    else
 			        echo "$REPLY %I:$1">>$DEP_FILE
+				[ -z "${1##*/perl}" ] && get_perl_depend $REPLY
 			    fi
 			fi
 			;;
@@ -1909,7 +1910,7 @@ function do_pack {
 	    bin/*|sbin/*|lib/*|lib64/*|*/sbin/*|*/bin/*|*/lib64/*|*/lib/*|*/libexec/*)
 		flr="$(file $REPLY)"
 		case "$flr" in
-		    *\ script\ *)
+		    *\ script[,\ ]*)
 			# transform '#!/bin/sh -x -f foo' into '/bin/sh foo'
 			# If the shell is '/usr/bin/env', then also reference the executable itself
 			set -- $(head -1 $REPLY| sed -e 's/^#\! *\([^ ]\+\)\( *-[^ ] *\)*\(.*\)/\1 \3/')
@@ -1919,6 +1920,7 @@ function do_pack {
 				[ -z "${2##*/perl}" ] && get_perl_depend $REPLY
 			    else
 			        echo "$REPLY %I:$1">>$DEP_FILE
+				[ -z "${1##*/perl}" ] && get_perl_depend $REPLY
 			    fi
 			fi
 			;;
