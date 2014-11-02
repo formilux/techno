@@ -27,7 +27,7 @@ die() {
 }
 
 pkg_last_mod() {
-	find "$1"/ \( -path "$1/compiled" -o -path "$1/RELEASED" -o -path "$1/.repository" -o -path "$1/.tested" -o -path "$1/ChangeLog" \) -prune -o -mindepth 1 -type f -printf "%A@ %p\n" | sort -nr | head -1 | cut -f2- -d' '
+	find "$1"/ \( -path "$1/compiled" -o -path "$1/RELEASED" -o -path "$1/.repository" -o -path "$1/.tested" -o -path "$1/ChangeLog" \) -prune -o -mindepth 1 -type f -printf "%C@ %p\n" | sort -nr | head -1 | cut -f2- -d' '
 }
 
 # by default, builds everything unless some args are passed. Arguments are in
