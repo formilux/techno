@@ -1014,7 +1014,7 @@ function get_name {
 			    pkg_name=${radix}-${ver}-*
 			elif [ "${ver%.*}" != "$ver" ]; then
 			    # let's reduce the version precision
-			      pkg_name=${radix}-${ver%.*}-*
+			      pkg_name=${radix}-${ver%.*}[.-]*
 			else 
 			    pkg_name=${radix}-*
 			fi
