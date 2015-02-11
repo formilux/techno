@@ -1000,6 +1000,8 @@ function get_name {
 		if [ "$release_only" != "1" ]; then
 		    dev_list=( $(find $DEVROOT/ -maxdepth 2 -type f -path "*/${pkg_name}/build.cfg" -printf "%h\n" 2>/dev/null) )
 		fi
+		# remove extra delimiters in case we added them in a previous pass.
+		pkg_name=${pkg_name%\[*}
 	
 		if [ "$PKG_EXACTPKG" == "1" ]; then
 		  break;
