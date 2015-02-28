@@ -599,7 +599,7 @@ function set_perm {
     [ $# -gt 2 ] || return 1
     own=$1 ; shift
     mode=$1 ; shift
-    chown $own "$@"
+    chown -h $own "$@"
     chmod $mode "$@"
     return 0
 }
@@ -644,6 +644,9 @@ function set_default_perm {
 		;;
 	esac
     done
+
+    echo "      Fixing symlinks..."
+    find $start_dir -type l -print0 | xargs -0 chown -h root:root
 
     echo "      Fixing special files..."
     # second pass : check special files (block, char, fifo)
