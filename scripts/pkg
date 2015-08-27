@@ -206,6 +206,10 @@ CURDIR="$(pwd)"
 # GCC version will be checked later
 unset GCC_EXACT_VER GCC_MAJOR GCC_MINOR GCC_VER
 
+# these variables may silently be used by the toolchains and cause great
+# trouble by finding local includes where not desired.
+unset CPLUS_INCLUDE_PATH
+
 # These ones might be set by some packages
 PATCH_LIST=
 FILE_LIST=
