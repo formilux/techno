@@ -47,7 +47,7 @@ do_build() {
 
 	if [ "$#" -gt 0 ]; then
 		rm -f ${TMP_PACK}/allbuild.lpk
-
+		err=0
 		for i in "$@"; do
 			# retrieve optional architecture after ":" at the end of the name
 			arch="${DEFAULT_ARCH}"
@@ -75,10 +75,14 @@ do_build() {
 			elif [ -d "$PKGROOT/$i" ] ; then
 				ln -s $PKGROOT/$i $PKGFILTEREDDIR/$i
 			else
-				echo "Error: $i not found, your cache may not up to date try: ( pkg-cache update )" >&2
-				exit 1
+				echo "Error: $i not found, your cache may not be up to date try: ( pkg-cache update )" >&2
+				(( err++ ))
 			fi
 		done > ${TMP_PACK}/allbuild.lpk
+		if [ $err -gt 0 ]; then
+			echo; echo "$err error(s) found, exiting."
+			exit 1
+		fi
 	else
 		${FLXTECHNO}/scripts/pkg-filter update
 		[ $? -eq 0 ] || exit 1

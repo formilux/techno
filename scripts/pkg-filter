@@ -33,21 +33,26 @@ function do_update() {
 	rm -f $PKGFILTEREDDIR/*
 
 	if [ -f "$PRJ_DIR/packaging/bld/formilux.bld" ]; then
+		err=0
 		${FLXTECHNO}/scripts/env-expand "$PRJ_DIR/packaging/lpk/"*.lpk > ${TMP_PACK}/allbuild.lpk
 		echo -n "Preparing $PKGFILTEREDDIR from formilux.bld..."
 		while read package trash ; do
 			if [ -d "$DEVROOT/$package" ] ; then
 				ln -s "$DEVROOT/$package" "$PKGFILTEREDDIR/" || echo " Maybe package $package appears twice ?" >&2
-				[ ! -d "$PKGROOT/$package" ] || { echo " error" ; echo "Error package $package is both in DEVROOT and PKGROOT, please fix conflict" >&2 ; exit 1 ; }
+				[ ! -d "$PKGROOT/$package" ] || { echo " error" ; echo "Error package $package is both in DEVROOT and PKGROOT, please fix conflict" >&2 ; (( err++ )) ; }
 			elif [ -d "$PKGROOT/$package" ] ; then
 				ln -s "$PKGROOT/$package" "$PKGFILTEREDDIR/" || echo " Maybe package $package appears twice ?" >&2
 			else
 				echo " error"
-				echo "Error $package not found, your cache may not up to date try: ( pkg-cache update )" >&2
-				exit 1
+				echo "Error: $package not found, your cache may not be up to date try: ( pkg-cache update )" >&2
+				(( err++ ));
 			fi
 			echo -n "."
 		done < "$PRJ_DIR/packaging/bld/formilux.bld"
+		if [ $err -gt 0 ]; then
+			echo; echo "$err error(s) found, exiting."
+			exit 1
+		fi
 		echo " success"
 	else
 		echo -n "Resolving versions from *.lpk to allbuild.tmp ..."
@@ -95,6 +100,7 @@ function do_update() {
 		echo "done."
 
 		echo "Creating links in $PKGFILTEREDDIR ... "
+		err=0
 		while read package archs rest ; do
 			if [ -n "${archs}" -a -z "${archs##build:*}" ]; then
 				continue
@@ -113,11 +119,15 @@ function do_update() {
 				ln -s "$PKGROOT/$package" "$PKGFILTEREDDIR/" || echo " Maybe package $package appears twice ?" >&2
 			else
 				echo " error"
-				echo "Error $package not found, your cache may not up to date try: ( pkg-cache update )" >&2
-				exit 1
+				echo "Error: $package not found, your cache may not be up to date try: ( pkg-cache update )" >&2
+				(( err++ ));
 			fi
 			echo -n "."
 		done < "${TMP_PACK}/allbuild.lpk" || exit $?
+		if [ $err -gt 0 ]; then
+			echo; echo "$err error(s) found, exiting."
+			exit 1
+		fi
 		echo " success"
 	fi
 
