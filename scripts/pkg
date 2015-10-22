@@ -2297,6 +2297,8 @@ function get_package {
 	    if [ "$3" = "tar" ]; then
 	      tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -xf .src ||
 	        (echo "Retrying using XZ format"; tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -Jxf .src) || return 1
+	    elif [ "$3" = "copy" ]; then
+	      cp .src "${1##*/}"
 	    fi
 	  )
  	;;
@@ -2309,6 +2311,8 @@ function get_package {
 	    if [ "$3" = "tar" ]; then
 	      tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -xf .src ||
 	        (echo "Retrying using XZ format"; tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -Jxf .src) || return 1
+	    elif [ "$3" = "copy" ]; then
+	      cp .src "${1##*/}"
 	    fi
 	  )
 	;;
@@ -2320,6 +2324,8 @@ function get_package {
 	      tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -xf "$1" ||
 	        (echo "Retrying using XZ format"; tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -Jxf "$1") || return 1
 	    fi
+	  elif [ "$3" = "copy" ]; then
+	    cp .src "${1##*/}"
 	  fi
 	;;
 	*)
