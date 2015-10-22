@@ -144,6 +144,9 @@ VERBOSE=${VERBOSE- -v}
 
 # Use -p1 by default to apply a patch
 PATCH_LEVEL=${PATCH_LEVEL:-1}
+SRC_FETCH_PATH=
+SRC_FETCH_METHOD=
+SRC_FETCH_EXTRACT=tar
 
 # The suffix that we use to name different builds. It also matches build
 # versions with this name followed by a number (BUILDVER)
@@ -2284,13 +2287,17 @@ function get_svncached_file {
 
 # get package. Note that we have to try two decompression methods because some
 # recent versions of "tar" are not able to correctly detect the XZ format.
+# $1=path, $2=method, $3=extract, others ignored.
+# Extraction method "tar" (default) causes archive to be extracted.
 function get_package {
   case "$2" in
 	svn)
 	  (
-	     get_svncached_file "$1" .src "${FLX_SRC_CACHE_DIRS}" || return 1
-	     tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -xf .src ||
-	       (echo "Retrying using XZ format"; tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -Jxf .src) || return 1
+	    get_svncached_file "$1" .src "${FLX_SRC_CACHE_DIRS}" || return 1
+	    if [ "$3" = "tar" ]; then
+	      tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -xf .src ||
+	        (echo "Retrying using XZ format"; tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -Jxf .src) || return 1
+	    fi
 	  )
  	;;
 	git)
@@ -2299,16 +2306,20 @@ function get_package {
 	http|ftp)
 	  (
 	    get_cached_file "$1" .src "${FLX_SRC_CACHE_DIRS}" || return 1
-	    tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -xf .src ||
-	      (echo "Retrying using XZ format"; tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -Jxf .src) || return 1
+	    if [ "$3" = "tar" ]; then
+	      tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -xf .src ||
+	        (echo "Retrying using XZ format"; tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -Jxf .src) || return 1
+	    fi
 	  )
 	;;
 	filesystem)
-	  if [ -d "$1" ] ; then
-	    tar --exclude="$PKGLINK" -C "${1%/*}" -c "${1##*/}" | tar --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -x
-	  else
-	    tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -xf "$1" ||
-	      (echo "Retrying using XZ format"; tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -Jxf "$1") || return 1
+	  if [ "$3" = "tar" ]; then
+	    if [ -d "$1" ] ; then
+	      tar --exclude="$PKGLINK" -C "${1%/*}" -c "${1##*/}" | tar --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -x
+	    else
+	      tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -xf "$1" ||
+	        (echo "Retrying using XZ format"; tar --exclude="$PKGLINK" --strip-components=${TAR_STRIP_COMP:-1} ${VERBOSE} -Jxf "$1") || return 1
+	    fi
 	  fi
 	;;
 	*)
@@ -2341,7 +2352,7 @@ function do_source {
     return 1
   fi 
   if [ -n "$SRC_FETCH_PATH" ]; then
-    get_package "$SRC_FETCH_PATH" "$SRC_FETCH_METHOD" "$1"
+    get_package "$SRC_FETCH_PATH" "$SRC_FETCH_METHOD" "$SRC_FETCH_EXTRACT" "$1"
     if [ "$?" != "0" ]; then
       echo "Error on downloading."
       return 1
