@@ -653,7 +653,7 @@ function set_default_perm {
     done
 
     echo "      Fixing symlinks..."
-    find $start_dir -type l -print0 | xargs -0 chown -h root:root
+    find $start_dir -type l -print0 | xargs -r -0 chown -h root:root
 
     echo "      Fixing special files..."
     # second pass : check special files (block, char, fifo)
@@ -1538,7 +1538,7 @@ function do_patch {
       echo "Error: Already patched."
       return 1
     fi
-    find . -path ./.flxdisk -prune -o -name '*.rej' -print -o -name '*~' -print | xargs rm -f
+    find . -path ./.flxdisk -prune -o -name '*.rej' -print -o -name '*~' -print | xargs -r rm -f
 
     err=
     for i in ${PATCH_LIST}; do
@@ -1555,7 +1555,7 @@ function do_patch {
     done
 
     if [ -z "$err" -a -z "$(find . -path ./.flxdisk -prune -o -name '*.rej' -print)" ]; then
-	find . -path ./.flxdisk -prune -o -name '*~' -print | xargs rm -f
+	find . -path ./.flxdisk -prune -o -name '*~' -print | xargs -r rm -f
     else
         echo "FATAL: Some patches failed to apply, aborting."
 	return 1
@@ -1570,7 +1570,7 @@ function do_unpatch {
     local i err
     local UNPATCH_LIST=""
 
-    find . -path ./.flxdisk -prune -o -name '*.rej' -print -o -name '*~' -print | xargs rm -f
+    find . -path ./.flxdisk -prune -o -name '*.rej' -print -o -name '*~' -print | xargs -r rm -f
 
     for i in ${PATCH_LIST}; do
 	UNPATCH_LIST=( $i ${UNPATCH_LIST[@]} )
@@ -1591,7 +1591,7 @@ function do_unpatch {
     done
 
     if [ -z "$err" -a -z "$(find . -path ./.flxdisk -prune -o -name '*.rej' -print)" ]; then
-	find . -path ./.flxdisk -prune -o -name '*~' -print | xargs rm -f
+	find . -path ./.flxdisk -prune -o -name '*~' -print | xargs -r rm -f
     else
         echo "FATAL: Some patches failed to revert, aborting."
 	return 1
@@ -1625,7 +1625,7 @@ function do_strip {
         echo "Error: directory $ROOTDIR doesn't exist. Make sure you did 'prepack'."
         exit 1
     fi
-    find "$ROOTDIR/." -type f -print0 | xargs -0 file | grep ":.*ELF.*\(executable\|shared\).*stripped" | cut -f1 -d: | while read file; do
+    find "$ROOTDIR/." -type f -print0 | xargs -r -0 file | grep ":.*ELF.*\(executable\|shared\).*stripped" | cut -f1 -d: | while read file; do
         rpath=${file%/*}
         filename=${file#$rpath/}
         rpath=${rpath#$ROOTDIR}
@@ -1686,7 +1686,7 @@ function _do_pack_files {
     local FILE_LIST=$*
 
     echo -n "Updating timestamps ... "
-    find . -not -type l -print0 | xargs -0 touch -m
+    find . -not -type l -print0 | xargs -r -0 touch -m
     echo "done."
 
     # full path name of different files
@@ -1847,7 +1847,7 @@ function do_pack {
     echo "done."
 
     echo -n "Updating timestamps ... "
-    find . ! -type l -print0 | xargs -0 touch -m
+    find . ! -type l -print0 | xargs -r -0 touch -m
     echo "done."
 
     # full path name of different files
@@ -1956,7 +1956,7 @@ function do_pack {
     echo "done."
 
     echo -n "Creating $FPNAME.lst ... "
-    ($FIND_CMD . | tr '\n' '\000' | xargs -0 $_FLX sign --ignore-dot --no-depth > $FPNAME.lst) > /dev/null 2>&1
+    ($FIND_CMD . | tr '\n' '\000' | xargs -r -0 $_FLX sign --ignore-dot --no-depth > $FPNAME.lst) > /dev/null 2>&1
     echo "done."
 
     echo -n "Creating $FPNAME.$PKGSUFF ... "
