@@ -2204,7 +2204,7 @@ function get_cached_file {
     while [ $cur_cache -lt ${#caches[*]} ]; do
       if [ -n "${caches[$cur_cache]##*:r}" ]; then
         echo "  Updating cache dir ${caches[$cur_cache]%:r}."
-        cp "$dest" "${caches[$cur_cache]%:r}/$name" || rm -f "${caches[$cur_cache]%:r}"
+        cp "$dest" "${caches[$cur_cache]%:r}/$name" || rm -f "${caches[$cur_cache]%:r}/$name"
       fi
       (( cur_cache++ ))
     done
@@ -2221,7 +2221,7 @@ function get_cached_file {
     (( cur_cache-- ))
     if [ -n "${caches[$cur_cache]##*:r}" ]; then
       echo "  Updating cache dir ${caches[$cur_cache]%:r}."
-      cp "$dir/$name" "${caches[$cur_cache]%:r}" || rm -f "${caches[$cur_cache]%:r}"
+      cp "$dir/$name" "${caches[$cur_cache]%:r}/$name" || rm -f "${caches[$cur_cache]%:r}/$name"
     fi
   done
   return 0
@@ -2262,7 +2262,7 @@ function get_svncached_file {
     while [ $cur_cache -lt ${#caches[*]} ]; do
       if [ -n "${caches[$cur_cache]##*:r}" ]; then
         echo "  Updating cache dir ${caches[$cur_cache]%:r}."
-        cp "$dest" "${caches[$cur_cache]%:r}/$name" || rm -f "${caches[$cur_cache]%:r}"
+        cp "$dest" "${caches[$cur_cache]%:r}/$name" || rm -f "${caches[$cur_cache]%:r}/$name"
       fi
       (( cur_cache++ ))
     done
@@ -2279,7 +2279,7 @@ function get_svncached_file {
     (( cur_cache-- ))
     if [ -n "${caches[$cur_cache]##*:r}" ]; then
       echo "  Updating cache dir ${caches[$cur_cache]%:r}."
-      cp "$dir/$name" "${caches[$cur_cache]%:r}" || rm -f "${caches[$cur_cache]%:r}"
+      cp "$dir/$name" "${caches[$cur_cache]%:r}/$name" || rm -f "${caches[$cur_cache]%:r}/$name"
     fi
   done
   return 0
