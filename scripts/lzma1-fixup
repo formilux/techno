@@ -1,0 +1,38 @@
+#!/bin/bash
+#
+# lzma1-fixup - write the uncompressed size into LZMA1 files - 2016-07-19
+#
+# Copyright (C) 2016 Willy Tarreau
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+#
+usage() {
+	echo "Usage: ${0##*/} file.lzma reference"
+	echo
+	echo "This will adjust the uncompressed size indicated in file.lzma to reflect"
+	echo "the actual size of the reference file to make older decompressors happy."
+	echo "The compressed file must have been produced by an LZMA1-compatible utility"
+	echo "such as 'xz --format=lzma' or 'lzma' from lzma-utils."
+	echo
+}
+
+die() {
+	echo "$@"
+	exit 1;
+}
+
+if [ $# -ne 2 ]; then
+	usage
+	exit 1;
+fi
+
+[ -s "$1" ] || die "$1 doesn't look like a valid LZMA file."
+[ -s "$2" ] || die "$1 doesn't look like a valid reference input file."
+
+size=$(wc -c < "$2") || die "Failed to check reference file $2's size."
+hex=$(printf "\\\\x%02x\\\\x%02x\\\\x%02x\\\\x%02x\\\\x%02x\\\\x%02x\\\\x%02x\\\\x%02x" $((size & 255)) $(((size >> 8) & 255)) $(((size >> 16) & 255)) $(((size >> 24) & 255)) $(((size >> 32) & 255)) $(((size >> 40) & 255)) $(((size >> 48) & 255)) $(((size >> 56) & 255)))
+
+echo "Uncompressed Size: $size"
+echo "Hex version: $hex"
+printf "$hex" | dd of="$1" bs=1 seek=5 count=8 conv=notrunc status=noxfer || die "Failed to update LZMA file $1"
+echo "Done."
