@@ -2196,7 +2196,8 @@ function get_cached_file {
 
   if [ $cur_cache -ge ${#caches[*]} ]; then
     # Object not found in cache, retrieve it and populate all caches
-    wget -c "$from" -O "$dest" || return 1
+    rm -f "$dest" || return 1
+    wget "$from" -O "$dest" || return 1
 
     # Populate caches. We don't exit on error but we remove potentially
     # broken objects.
