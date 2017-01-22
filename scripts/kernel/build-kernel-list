@@ -483,7 +483,7 @@ for cfg in "$@"; do
             mkdir -p initramfs/{dev,proc,root}
             cp "${tools26}/.preinit" initramfs/
             cp "${tools26}/init" initramfs/
-            cp "${tools26}/busybox" initramfs/tar
+            if [ -e "${tools26}/busybox" ]; then cp "${tools26}/busybox" initramfs/; fi
 
             echo "Building initramfs for all-in-one kernel" >>$OUTPUTDIR/$log
             "${MAKE_CMD[@]}" -j $PARALLELCC $BOOTIMG CONFIG_INITRAMFS_SOURCE=$PWD/initramfs </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
