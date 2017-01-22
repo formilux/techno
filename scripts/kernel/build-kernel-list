@@ -1,9 +1,9 @@
 #!/bin/bash
 
-# build-kernel-list - build a list of 2.6 kernels - version 0.0.10 - 2011-10-17
+# build-kernel-list - build a list of 2.6 kernels - version 0.0.11 - 2017-01-22
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
-# Copyright (C) 2001-2011 Benoit Dolez & Willy Tarreau
+# Copyright (C) 2001-2017 Benoit Dolez & Willy Tarreau
 #       mailto: benoit@ant-computing.com,willy@ant-computing.com
 #
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
@@ -64,6 +64,7 @@ usage() {
     echo "x86_64 is used when the config's arch suffix is x86_64 or name contains smp64."
     echo "The config file can be omitted for rerun/install, or be set to \"flx\" for"
     echo "modules to be built and packaged for formilux ; default version will be used."
+    echo "The preinit code will be picked from <platform> (may be an absolute path)."
     echo
     echo "Addons found : ${addons[@]}"
     echo
@@ -478,7 +479,12 @@ for cfg in "$@"; do
             # We now have a complete kernel + modules packaged. We also want to have a
             # self-contained kernel image (allin1).
 
-            tools26="$DIR/inst-mod26${PLATFORM:+-$PLATFORM}"
+	    if [ -n "${PLATFORM}" -a -z "${PLATFORM##/*}" ]; then
+		    tools26="${PLATFORM}"
+	    else
+		    tools26="$DIR/inst-mod26${PLATFORM:+-$PLATFORM}"
+	    fi
+
             [ -d "$tools26/." ] || tools26="$DIR/inst-mod26"
             mkdir -p initramfs/{dev,proc,root}
             cp "${tools26}/.preinit" initramfs/
