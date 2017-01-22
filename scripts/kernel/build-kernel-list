@@ -437,7 +437,7 @@ for cfg in "$@"; do
 	    $_SUDO rm -f ${subarchdir}/lib/modules/${KVER}/build ${subarchdir}/lib/modules/${KVER}/source
 
             # save the modules right now for later use
-            tar --owner=root --group=root --mode=a+r,go-w -C "${subarchdir}/lib/modules" -cf - "${KVER}" > initramfs/modules.tar
+            tar --owner=root --group=root --numeric-owner --mode=a+r,go-w -C "${subarchdir}/lib/modules" -cf - "${KVER}" > initramfs/modules.tar
 
 	    $_SUDO mv $subarchdir/lib/modules $subarchdir/boot && $_SUDO rmdir $subarchdir/lib
 	    # now everything is under $bootdir
