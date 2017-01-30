@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# build-kernel-list - build a list of 2.6 kernels - version 0.0.11 - 2017-01-22
+# build-kernel-list - build a list of 2.6 kernels - version 0.0.12 - 2017-01-30
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
 # Copyright (C) 2001-2017 Benoit Dolez & Willy Tarreau
@@ -488,7 +488,26 @@ for cfg in "$@"; do
             [ -d "$tools26/." ] || tools26="$DIR/inst-mod26"
             mkdir -p initramfs/{dev,proc,root}
             cp "${tools26}/.preinit" initramfs/
-            cp "${tools26}/init" initramfs/
+            if [ -s "${tools26}/init" ]; then
+                    # init is pre-built, let's copy it
+                    cp "${tools26}/init" initramfs/
+            elif [ -s "${tools26}/init.c" -a -s "${tools26}/nolibc.h" ]; then
+                    # init is not there but its sources are, so we can build
+                    echo -n "Building initramfs/init from sources... "
+                    ${CC:-"${CROSS_COMPILE}"gcc} -Os -nostdlib \
+                       -include "${tools26}/nolibc.h" -s -Wl,--gc-sections \
+                       -fno-exceptions -fno-asynchronous-unwind-tables \
+                       -fno-unwind-tables -fomit-frame-pointer \
+                       -o initramfs/init "${tools26}/init.c" -lgcc
+                    ${CROSS_COMPILE}strip -x --strip-unneeded \
+                       -R .comment -R .note -R .note.ABI-tag initramfs/init
+                    echo "done."
+            fi
+
+            if [ ! -s initramfs/init ]; then
+                    echo "WARNING! no init found for initramfs!"
+            fi
+
             if [ -e "${tools26}/busybox" ]; then cp "${tools26}/busybox" initramfs/; fi
 
             echo "Building initramfs for all-in-one kernel" >>$OUTPUTDIR/$log
