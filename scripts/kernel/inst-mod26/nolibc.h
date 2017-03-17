@@ -164,6 +164,15 @@ struct timeval {
 	long    tv_usec;
 };
 
+/* for getdents64() */
+struct linux_dirent64 {
+	uint64_t       d_ino;
+	int64_t        d_off;
+	unsigned short d_reclen;
+	unsigned char  d_type;
+	char           d_name[];
+};
+
 /* commonly an fd_set represents 256 FDs */
 #define FD_SETSIZE 256
 typedef struct { uint32_t fd32[FD_SETSIZE/32]; } fd_set;
@@ -206,22 +215,37 @@ struct rusage {
 #define S_ISLNK(mode)  (((mode) & S_IFLNK) == S_IFLNK)
 #define S_ISSOCK(mode) (((mode) & S_IFSOCK) == S_IFSOCK)
 
-/* fcntl / open */
-#define O_RDONLY            0
-#define O_WRONLY            1
-#define O_RDWR              2
-#define O_CREAT          0x40
-#define O_EXCL           0x80
-#define O_NOCTTY        0x100
-#define O_TRUNC         0x200
-#define O_APPEND        0x400
-#define O_NONBLOCK      0x800
+#define DT_UNKNOWN 0
+#define DT_FIFO    1
+#define DT_CHR     2
+#define DT_DIR     4
+#define DT_BLK     6
+#define DT_REG     8
+#define DT_LNK    10
+#define DT_SOCK   12
+
+/* all the *at functions */
+#ifndef AT_FDWCD
+#define AT_FDCWD             -100
+#endif
 
 /* lseek */
 #define SEEK_SET        0
 #define SEEK_CUR        1
 #define SEEK_END        2
 
+/* reboot */
+#define LINUX_REBOOT_MAGIC1         0xfee1dead
+#define LINUX_REBOOT_MAGIC2         0x28121969
+#define LINUX_REBOOT_CMD_HALT       0xcdef0123
+#define LINUX_REBOOT_CMD_POWER_OFF  0x4321fedc
+#define LINUX_REBOOT_CMD_RESTART    0x01234567
+#define LINUX_REBOOT_CMD_SW_SUSPEND 0xd000fce2
+
+
+/* The format of the struct as returned by the libc to the application, which
+ * significantly differs from the format returned by the stat() syscall flavours.
+ */
 struct stat {
 	dev_t     st_dev;     /* ID of device containing file */
 	ino_t     st_ino;     /* inode number */
@@ -258,7 +282,7 @@ struct stat {
  *   - arguments are in rdi, rsi, rdx, r10, r8, r9 respectively
  *   - the system call is performed by calling the syscall instruction
  *   - syscall return comes in rax
- *   - rcx and r11 may be clobbered, others are preserved.
+ *   - rcx and r8..r11 may be clobbered, others are preserved.
  *   - the arguments are cast to long and assigned into the target registers
  *     which are then simply passed as registers to the asm code, so that we
  *     don't have to experience issues with register contraints.
@@ -275,7 +299,7 @@ struct stat {
 		"syscall\n"                                                   \
 		: "=a" (_ret)                                                 \
 		: "0"(_num)                                                   \
-		: "rcx", "r11", "memory", "cc"                                \
+		: "rcx", "r8", "r9", "r10", "r11", "memory", "cc"                                \
 	);                                                                    \
 	_ret;                                                                 \
 })
@@ -291,7 +315,7 @@ struct stat {
 		: "=a" (_ret)                                                 \
 		: "r"(_arg1),                                                 \
 		  "0"(_num)                                                   \
-		: "rcx", "r11", "memory", "cc"                                \
+		: "rcx", "r8", "r9", "r10", "r11", "memory", "cc"                                \
 	);                                                                    \
 	_ret;                                                                 \
 })
@@ -308,7 +332,7 @@ struct stat {
 		: "=a" (_ret)                                                 \
 		: "r"(_arg1), "r"(_arg2),                                     \
 		  "0"(_num)                                                   \
-		: "rcx", "r11", "memory", "cc"                                \
+		: "rcx", "r8", "r9", "r10", "r11", "memory", "cc"                                \
 	);                                                                    \
 	_ret;                                                                 \
 })
@@ -326,7 +350,7 @@ struct stat {
 		: "=a" (_ret)                                                 \
 		: "r"(_arg1), "r"(_arg2), "r"(_arg3),                         \
 		  "0"(_num)                                                   \
-		: "rcx", "r11", "memory", "cc"                                \
+		: "rcx", "r8", "r9", "r10", "r11", "memory", "cc"                                \
 	);                                                                    \
 	_ret;                                                                 \
 })
@@ -342,10 +366,10 @@ struct stat {
                                                                               \
 	asm volatile (                                                        \
 		"syscall\n"                                                   \
-		: "=a" (_ret)                                                 \
+		: "=a" (_ret), "=r"(_arg4)                                    \
 		: "r"(_arg1), "r"(_arg2), "r"(_arg3), "r"(_arg4),             \
 		  "0"(_num)                                                   \
-		: "rcx", "r11", "memory", "cc"                                \
+		: "rcx", "r8", "r9", "r11", "memory", "cc"                    \
 	);                                                                    \
 	_ret;                                                                 \
 })
@@ -362,10 +386,10 @@ struct stat {
                                                                               \
 	asm volatile (                                                        \
 		"syscall\n"                                                   \
-		: "=a" (_ret)                                                 \
+		: "=a" (_ret), "=r"(_arg4), "=r"(_arg5)                       \
 		: "r"(_arg1), "r"(_arg2), "r"(_arg3), "r"(_arg4), "r"(_arg5), \
 		  "0"(_num)                                                   \
-		: "rcx", "r11", "memory", "cc"                                \
+		: "rcx", "r9", "r11", "memory", "cc"                          \
 	);                                                                    \
 	_ret;                                                                 \
 })
@@ -385,6 +409,45 @@ asm(".section .text\n"
     "syscall\n"                 // really exit
     "hlt\n"                     // ensure it does not return
     "");
+
+/* fcntl / open */
+#define O_RDONLY            0
+#define O_WRONLY            1
+#define O_RDWR              2
+#define O_CREAT          0x40
+#define O_EXCL           0x80
+#define O_NOCTTY        0x100
+#define O_TRUNC         0x200
+#define O_APPEND        0x400
+#define O_NONBLOCK      0x800
+#define O_DIRECTORY   0x10000
+
+/* The struct returned by the stat() syscall, equivalent to stat64(). The
+ * syscall returns 116 bytes and stops in the middle of __unused.
+ */
+struct sys_stat_struct {
+	unsigned long st_dev;
+	unsigned long st_ino;
+	unsigned long st_nlink;
+	unsigned int  st_mode;
+	unsigned int  st_uid;
+
+	unsigned int  st_gid;
+	unsigned int  __pad0;
+	unsigned long st_rdev;
+	long          st_size;
+	long          st_blksize;
+
+	long          st_blocks;
+	unsigned long st_atime;
+	unsigned long st_atime_nsec;
+	unsigned long st_mtime;
+
+	unsigned long st_mtime_nsec;
+	unsigned long st_ctime;
+	unsigned long st_ctime_nsec;
+	long          __unused[3];
+};
 
 #elif defined(__i386__) || defined(__i486__) || defined(__i586__) || defined(__i686__)
 /* Syscalls for i386 :
@@ -523,6 +586,44 @@ asm(".section .text\n"
     "int    $0x80\n"            // exit now
     "hlt\n"                     // ensure it does not
     "");
+
+/* fcntl / open */
+#define O_RDONLY            0
+#define O_WRONLY            1
+#define O_RDWR              2
+#define O_CREAT          0x40
+#define O_EXCL           0x80
+#define O_NOCTTY        0x100
+#define O_TRUNC         0x200
+#define O_APPEND        0x400
+#define O_NONBLOCK      0x800
+#define O_DIRECTORY   0x10000
+
+/* The struct returned by the stat() syscall, 32-bit only, the syscall returns
+ * exactly 56 bytes (stops before the unused array).
+ */
+struct sys_stat_struct {
+	unsigned long  st_dev;
+	unsigned long  st_ino;
+	unsigned short st_mode;
+	unsigned short st_nlink;
+	unsigned short st_uid;
+	unsigned short st_gid;
+
+	unsigned long  st_rdev;
+	unsigned long  st_size;
+	unsigned long  st_blksize;
+	unsigned long  st_blocks;
+
+	unsigned long  st_atime;
+	unsigned long  st_atime_nsec;
+	unsigned long  st_mtime;
+	unsigned long  st_mtime_nsec;
+
+	unsigned long  st_ctime;
+	unsigned long  st_ctime_nsec;
+	unsigned long  __unused[2];
+};
 
 #elif defined(__ARM_EABI__)
 /* Syscalls for ARM in ARM or Thumb modes :
@@ -668,6 +769,52 @@ asm(".section .text\n"
     "svc $0x00\n"
     "");
 
+/* fcntl / open */
+#define O_RDONLY            0
+#define O_WRONLY            1
+#define O_RDWR              2
+#define O_CREAT          0x40
+#define O_EXCL           0x80
+#define O_NOCTTY        0x100
+#define O_TRUNC         0x200
+#define O_APPEND        0x400
+#define O_NONBLOCK      0x800
+#define O_DIRECTORY    0x4000
+
+/* The struct returned by the stat() syscall, 32-bit only, the syscall returns
+ * exactly 56 bytes (stops before the unused array). In big endian, the format
+ * differs as devices are returned as short only.
+ */
+struct sys_stat_struct {
+#if defined(__ARMEB__)
+	unsigned short st_dev;
+	unsigned short __pad1;
+#else
+	unsigned long  st_dev;
+#endif
+	unsigned long  st_ino;
+	unsigned short st_mode;
+	unsigned short st_nlink;
+	unsigned short st_uid;
+	unsigned short st_gid;
+#if defined(__ARMEB__)
+	unsigned short st_rdev;
+	unsigned short __pad2;
+#else
+	unsigned long  st_rdev;
+#endif
+	unsigned long  st_size;
+	unsigned long  st_blksize;
+	unsigned long  st_blocks;
+	unsigned long  st_atime;
+	unsigned long  st_atime_nsec;
+	unsigned long  st_mtime;
+	unsigned long  st_mtime_nsec;
+	unsigned long  st_ctime;
+	unsigned long  st_ctime_nsec;
+	unsigned long  __unused[2];
+};
+
 #elif defined(__aarch64__)
 /* Syscalls for AARCH64 :
  *   - registers are 64-bit
@@ -795,6 +942,46 @@ asm(".section .text\n"
     "mov x8, 93\n"                // NR_exit == 93
     "svc #0\n"
     "");
+
+/* fcntl / open */
+#define O_RDONLY            0
+#define O_WRONLY            1
+#define O_RDWR              2
+#define O_CREAT          0x40
+#define O_EXCL           0x80
+#define O_NOCTTY        0x100
+#define O_TRUNC         0x200
+#define O_APPEND        0x400
+#define O_NONBLOCK      0x800
+#define O_DIRECTORY    0x4000
+
+/* The struct returned by the newfstatat() syscall. Differs slightly from the
+ * x86_64's stat one by field ordering, so be careful.
+ */
+struct sys_stat_struct {
+	unsigned long   st_dev;
+	unsigned long   st_ino;
+	unsigned int    st_mode;
+	unsigned int    st_nlink;
+	unsigned int    st_uid;
+	unsigned int    st_gid;
+
+	unsigned long   st_rdev;
+	unsigned long   __pad1;
+	long            st_size;
+	int             st_blksize;
+	int             __pad2;
+
+	long            st_blocks;
+	long            st_atime;
+	unsigned long   st_atime_nsec;
+	long            st_mtime;
+
+	unsigned long   st_mtime_nsec;
+	long            st_ctime;
+	unsigned long   st_ctime_nsec;
+	unsigned int    __unused[2];
+};
 
 #elif defined(__mips__) && defined(_ABIO32)
 /* Syscalls for MIPS ABI O32 :
@@ -925,7 +1112,7 @@ asm(".section .text\n"
 	register long _arg5 = (long)(arg5);				\
                                                                               \
 	asm volatile (                                                        \
-		"addiu $sp, $sp, -31\n"                                       \
+		"addiu $sp, $sp, -32\n"                                       \
 		"sw %7, 16($sp)\n"                                            \
 		"syscall\n  "                                                 \
 		"addiu $sp, $sp, 32\n"                                        \
@@ -962,6 +1149,44 @@ asm(".section .text\n"
     ".end __start\n"
     "");
 
+/* fcntl / open */
+#define O_RDONLY            0
+#define O_WRONLY            1
+#define O_RDWR              2
+#define O_APPEND       0x0008
+#define O_NONBLOCK     0x0080
+#define O_CREAT        0x0100
+#define O_TRUNC        0x0200
+#define O_EXCL         0x0400
+#define O_NOCTTY       0x0800
+#define O_DIRECTORY   0x10000
+
+/* The struct returned by the stat() syscall. 88 bytes are returned by the
+ * syscall.
+ */
+struct sys_stat_struct {
+	unsigned int  st_dev;
+	long          st_pad1[3];
+	unsigned long st_ino;
+	unsigned int  st_mode;
+	unsigned int  st_nlink;
+	unsigned int  st_uid;
+	unsigned int  st_gid;
+	unsigned int  st_rdev;
+	long          st_pad2[2];
+	long          st_size;
+	long          st_pad3;
+	long          st_atime;
+	long          st_atime_nsec;
+	long          st_mtime;
+	long          st_mtime_nsec;
+	long          st_ctime;
+	long          st_ctime_nsec;
+	long          st_blksize;
+	long          st_blocks;
+	long          st_pad4[14];
+};
+
 #endif
 
 
@@ -970,7 +1195,7 @@ asm(".section .text\n"
  * static will lead to them being inlined in most cases, but it's still possible
  * to reference them by a pointer if needed.
  */
-static __attribute((unused))
+static __attribute__((unused))
 void *sys_brk(void *addr)
 {
 	return (void *)my_syscall1(__NR_brk, addr);
@@ -983,152 +1208,188 @@ void sys_exit(int status)
 	while(1); // shut the "noreturn" warnings.
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_chdir(const char *path)
 {
 	return my_syscall1(__NR_chdir, path);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_chmod(const char *path, mode_t mode)
 {
+#ifdef __NR_fchmodat
+	return my_syscall4(__NR_fchmodat, AT_FDCWD, path, mode, 0);
+#else
 	return my_syscall2(__NR_chmod, path, mode);
+#endif
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_chown(const char *path, uid_t owner, gid_t group)
 {
-        return my_syscall3(__NR_chown, path, owner, group);
+#ifdef __NR_fchownat
+	return my_syscall5(__NR_fchownat, AT_FDCWD, path, owner, group, 0);
+#else
+	return my_syscall3(__NR_chown, path, owner, group);
+#endif
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_chroot(const char *path)
 {
-        return my_syscall1(__NR_chroot, path);
+	return my_syscall1(__NR_chroot, path);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_close(int fd)
 {
-        return my_syscall1(__NR_close, fd);
+	return my_syscall1(__NR_close, fd);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_dup(int fd)
 {
-        return my_syscall1(__NR_dup, fd);
+	return my_syscall1(__NR_dup, fd);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_dup2(int old, int new)
 {
-        return my_syscall2(__NR_dup2, old, new);
+	return my_syscall2(__NR_dup2, old, new);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_execve(const char *filename, char *const argv[], char *const envp[])
 {
-        return my_syscall3(__NR_execve, filename, argv, envp);
+	return my_syscall3(__NR_execve, filename, argv, envp);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 pid_t sys_fork(void)
 {
-        return my_syscall0(__NR_fork);
+	return my_syscall0(__NR_fork);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_fsync(int fd)
 {
-        return my_syscall1(__NR_fsync, fd);
+	return my_syscall1(__NR_fsync, fd);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
+int sys_getdents64(int fd, struct linux_dirent64 *dirp, int count)
+{
+	return my_syscall3(__NR_getdents64, fd, dirp, count);
+}
+
+static __attribute__((unused))
 pid_t sys_getpgrp(void)
 {
-        return my_syscall0(__NR_getpgrp);
+	return my_syscall0(__NR_getpgrp);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 pid_t sys_getpid(void)
 {
-        return my_syscall0(__NR_getpid);
+	return my_syscall0(__NR_getpid);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_ioctl(int fd, unsigned long req, void *value)
 {
-        return my_syscall3(__NR_ioctl, fd, req, value);
+	return my_syscall3(__NR_ioctl, fd, req, value);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_kill(pid_t pid, int signal)
 {
-        return my_syscall2(__NR_kill, pid, signal);
+	return my_syscall2(__NR_kill, pid, signal);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_link(const char *old, const char *new)
 {
-        return my_syscall2(__NR_link, old, new);
+#ifdef __NR_linkat
+	return my_syscall5(__NR_linkat, AT_FDCWD, old, AT_FDCWD, new, 0);
+#else
+	return my_syscall2(__NR_link, old, new);
+#endif
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 off_t sys_lseek(int fd, off_t offset, int whence)
 {
-        return my_syscall3(__NR_lseek, fd, offset, whence);
+	return my_syscall3(__NR_lseek, fd, offset, whence);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_mkdir(const char *path, mode_t mode)
 {
-        return my_syscall2(__NR_mkdir, path, mode);
+#ifdef __NR_mkdirat
+	return my_syscall3(__NR_mkdirat, AT_FDCWD, path, mode);
+#else
+	return my_syscall2(__NR_mkdir, path, mode);
+#endif
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 long sys_mknod(const char *path, mode_t mode, dev_t dev)
 {
-        return my_syscall3(__NR_mknod, path, mode, dev);
+#ifdef __NR_mknodat
+	return my_syscall4(__NR_mknodat, AT_FDCWD, path, mode, dev);
+#else
+	return my_syscall3(__NR_mknod, path, mode, dev);
+#endif
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_mount(const char *src, const char *tgt, const char *fst,
                      unsigned long flags, const void *data)
 {
-        return my_syscall5(__NR_mount, src, tgt, fst, flags, data);
+	return my_syscall5(__NR_mount, src, tgt, fst, flags, data);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_open(const char *path, int flags, mode_t mode)
 {
-        return my_syscall3(__NR_open, path, flags, mode);
+#ifdef __NR_openat
+	return my_syscall4(__NR_openat, AT_FDCWD, path, flags, mode);
+#else
+	return my_syscall3(__NR_open, path, flags, mode);
+#endif
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_pivot_root(const char *new, const char *old)
 {
-        return my_syscall2(__NR_pivot_root, new, old);
+	return my_syscall2(__NR_pivot_root, new, old);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_poll(struct pollfd *fds, int nfds, int timeout)
 {
 	return my_syscall3(__NR_poll, fds, nfds, timeout);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 ssize_t sys_read(int fd, void *buf, size_t count)
 {
-        return my_syscall3(__NR_read, fd, buf, count);
+	return my_syscall3(__NR_read, fd, buf, count);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
+ssize_t sys_reboot(int magic1, int magic2, int cmd, void *arg)
+{
+	return my_syscall4(__NR_reboot, magic1, magic2, cmd, arg);
+}
+
+static __attribute__((unused))
 int sys_sched_yield(void)
 {
-        return my_syscall0(__NR_sched_yield);
+	return my_syscall0(__NR_sched_yield);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_select(int nfds, fd_set *rfds, fd_set *wfds, fd_set *efds, struct timeval *timeout)
 {
 #ifndef __NR_select
@@ -1137,71 +1398,101 @@ int sys_select(int nfds, fd_set *rfds, fd_set *wfds, fd_set *efds, struct timeva
 	return my_syscall5(__NR_select, nfds, rfds, wfds, efds, timeout);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_setpgid(pid_t pid, pid_t pgid)
 {
-        return my_syscall2(__NR_setpgid, pid, pgid);
+	return my_syscall2(__NR_setpgid, pid, pgid);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 pid_t sys_setsid(void)
 {
-        return my_syscall0(__NR_setsid);
+	return my_syscall0(__NR_setsid);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_stat(const char *path, struct stat *buf)
 {
-        return my_syscall2(__NR_stat, path, buf);
+	struct sys_stat_struct stat;
+	long ret;
+
+#ifdef __NR_newfstatat
+	/* only solution for arm64 */
+	ret = my_syscall4(__NR_newfstatat, AT_FDCWD, path, &stat, 0);
+#else
+	ret = my_syscall2(__NR_stat, path, &stat);
+#endif
+	buf->st_dev     = stat.st_dev;
+	buf->st_ino     = stat.st_ino;
+	buf->st_mode    = stat.st_mode;
+	buf->st_nlink   = stat.st_nlink;
+	buf->st_uid     = stat.st_uid;
+	buf->st_gid     = stat.st_gid;
+	buf->st_rdev    = stat.st_rdev;
+	buf->st_size    = stat.st_size;
+	buf->st_blksize = stat.st_blksize;
+	buf->st_blocks  = stat.st_blocks;
+	buf->st_atime   = stat.st_atime;
+	buf->st_mtime   = stat.st_mtime;
+	buf->st_ctime   = stat.st_ctime;
+	return ret;
 }
 
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_symlink(const char *old, const char *new)
 {
-        return my_syscall2(__NR_symlink, old, new);
+#ifdef __NR_symlinkat
+	return my_syscall3(__NR_symlinkat, old, AT_FDCWD, new);
+#else
+	return my_syscall2(__NR_symlink, old, new);
+#endif
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 mode_t sys_umask(mode_t mode)
 {
-        return my_syscall1(__NR_umask, mode);
+	return my_syscall1(__NR_umask, mode);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_umount2(const char *path, int flags)
 {
-        return my_syscall2(__NR_umount2, path, flags);
+	return my_syscall2(__NR_umount2, path, flags);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sys_unlink(const char *path)
 {
-        return my_syscall1(__NR_unlink, path);
+#ifdef __NR_unlinkat
+	return my_syscall3(__NR_unlinkat, AT_FDCWD, path, 0);
+#else
+	return my_syscall1(__NR_unlink, path);
+#endif
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 pid_t sys_wait4(pid_t pid, int *status, int options, struct rusage *rusage)
 {
-        return my_syscall4(__NR_wait4, pid, status, options, rusage);
+	return my_syscall4(__NR_wait4, pid, status, options, rusage);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 pid_t sys_waitpid(pid_t pid, int *status, int options)
 {
-        return sys_wait4(pid, status, options, 0);
+	return sys_wait4(pid, status, options, 0);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 pid_t sys_wait(int *status)
 {
-        return sys_waitpid(-1, status, 0);
+	return sys_waitpid(-1, status, 0);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 ssize_t sys_write(int fd, const void *buf, size_t count)
 {
-        return my_syscall3(__NR_write, fd, buf, count);
+	return my_syscall3(__NR_write, fd, buf, count);
 }
 
 
@@ -1210,7 +1501,7 @@ ssize_t sys_write(int fd, const void *buf, size_t count)
  * is possible to assign pointers to them if needed.
  */
 
-static __attribute((unused))
+static __attribute__((unused))
 int brk(void *addr)
 {
 	void *ret = sys_brk(addr);
@@ -1228,7 +1519,7 @@ void exit(int status)
 	sys_exit(status);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int chdir(const char *path)
 {
 	int ret = sys_chdir(path);
@@ -1240,7 +1531,7 @@ int chdir(const char *path)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int chmod(const char *path, mode_t mode)
 {
 	int ret = sys_chmod(path, mode);
@@ -1252,7 +1543,7 @@ int chmod(const char *path, mode_t mode)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int chown(const char *path, uid_t owner, gid_t group)
 {
 	int ret = sys_chown(path, owner, group);
@@ -1264,7 +1555,7 @@ int chown(const char *path, uid_t owner, gid_t group)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int chroot(const char *path)
 {
 	int ret = sys_chroot(path);
@@ -1276,7 +1567,7 @@ int chroot(const char *path)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int close(int fd)
 {
 	int ret = sys_close(fd);
@@ -1288,7 +1579,7 @@ int close(int fd)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int dup2(int old, int new)
 {
 	int ret = sys_dup2(old, new);
@@ -1300,7 +1591,7 @@ int dup2(int old, int new)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int execve(const char *filename, char *const argv[], char *const envp[])
 {
 	int ret = sys_execve(filename, argv, envp);
@@ -1312,7 +1603,7 @@ int execve(const char *filename, char *const argv[], char *const envp[])
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 pid_t fork(void)
 {
 	pid_t ret = sys_fork();
@@ -1324,7 +1615,7 @@ pid_t fork(void)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int fsync(int fd)
 {
 	int ret = sys_fsync(fd);
@@ -1336,7 +1627,19 @@ int fsync(int fd)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
+int getdents64(int fd, struct linux_dirent64 *dirp, int count)
+{
+	int ret = sys_getdents64(fd, dirp, count);
+
+	if (ret < 0) {
+		SET_ERRNO(-ret);
+		ret = -1;
+	}
+	return ret;
+}
+
+static __attribute__((unused))
 pid_t getpgrp(void)
 {
 	pid_t ret = sys_getpgrp();
@@ -1348,7 +1651,7 @@ pid_t getpgrp(void)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 pid_t getpid(void)
 {
 	pid_t ret = sys_getpid();
@@ -1360,7 +1663,7 @@ pid_t getpid(void)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int ioctl(int fd, unsigned long req, void *value)
 {
 	int ret = sys_ioctl(fd, req, value);
@@ -1372,7 +1675,7 @@ int ioctl(int fd, unsigned long req, void *value)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int kill(pid_t pid, int signal)
 {
 	int ret = sys_kill(pid, signal);
@@ -1384,7 +1687,7 @@ int kill(pid_t pid, int signal)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int link(const char *old, const char *new)
 {
 	int ret = sys_link(old, new);
@@ -1396,7 +1699,7 @@ int link(const char *old, const char *new)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 off_t lseek(int fd, off_t offset, int whence)
 {
 	off_t ret = sys_lseek(fd, offset, whence);
@@ -1408,7 +1711,7 @@ off_t lseek(int fd, off_t offset, int whence)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int mkdir(const char *path, mode_t mode)
 {
 	int ret = sys_mkdir(path, mode);
@@ -1420,7 +1723,7 @@ int mkdir(const char *path, mode_t mode)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int mknod(const char *path, mode_t mode, dev_t dev)
 {
 	int ret = sys_mknod(path, mode, dev);
@@ -1432,7 +1735,7 @@ int mknod(const char *path, mode_t mode, dev_t dev)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int mount(const char *src, const char *tgt,
           const char *fst, unsigned long flags,
           const void *data)
@@ -1446,7 +1749,7 @@ int mount(const char *src, const char *tgt,
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int open(const char *path, int flags, mode_t mode)
 {
 	int ret = sys_open(path, flags, mode);
@@ -1458,7 +1761,7 @@ int open(const char *path, int flags, mode_t mode)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int pivot_root(const char *new, const char *old)
 {
 	int ret = sys_pivot_root(new, old);
@@ -1470,7 +1773,7 @@ int pivot_root(const char *new, const char *old)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int poll(struct pollfd *fds, int nfds, int timeout)
 {
 	int ret = sys_poll(fds, nfds, timeout);
@@ -1482,7 +1785,7 @@ int poll(struct pollfd *fds, int nfds, int timeout)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 ssize_t read(int fd, void *buf, size_t count)
 {
 	ssize_t ret = sys_read(fd, buf, count);
@@ -1494,7 +1797,19 @@ ssize_t read(int fd, void *buf, size_t count)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
+int reboot(int cmd)
+{
+	int ret = sys_reboot(LINUX_REBOOT_MAGIC1, LINUX_REBOOT_MAGIC2, cmd, 0);
+
+	if (ret < 0) {
+		SET_ERRNO(-ret);
+		ret = -1;
+	}
+	return ret;
+}
+
+static __attribute__((unused))
 void *sbrk(intptr_t inc)
 {
 	void *ret;
@@ -1507,7 +1822,7 @@ void *sbrk(intptr_t inc)
 	return (void *)-1;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int sched_yield(void)
 {
 	int ret = sys_sched_yield();
@@ -1519,7 +1834,7 @@ int sched_yield(void)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int select(int nfds, fd_set *rfds, fd_set *wfds, fd_set *efds, struct timeval *timeout)
 {
 	int ret = sys_select(nfds, rfds, wfds, efds, timeout);
@@ -1531,7 +1846,7 @@ int select(int nfds, fd_set *rfds, fd_set *wfds, fd_set *efds, struct timeval *t
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int setpgid(pid_t pid, pid_t pgid)
 {
 	int ret = sys_setpgid(pid, pgid);
@@ -1543,7 +1858,7 @@ int setpgid(pid_t pid, pid_t pgid)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 pid_t setsid(void)
 {
 	pid_t ret = sys_setsid();
@@ -1555,7 +1870,7 @@ pid_t setsid(void)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 unsigned int sleep(unsigned int seconds)
 {
 	struct timeval my_timeval = { seconds, 0 };
@@ -1566,7 +1881,7 @@ unsigned int sleep(unsigned int seconds)
 		return 0;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int stat(const char *path, struct stat *buf)
 {
 	int ret = sys_stat(path, buf);
@@ -1578,7 +1893,7 @@ int stat(const char *path, struct stat *buf)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int symlink(const char *old, const char *new)
 {
 	int ret = sys_symlink(old, new);
@@ -1590,19 +1905,19 @@ int symlink(const char *old, const char *new)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int tcsetpgrp(int fd, pid_t pid)
 {
 	return ioctl(fd, TIOCSPGRP, &pid);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 mode_t umask(mode_t mode)
 {
 	return sys_umask(mode);
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int umount2(const char *path, int flags)
 {
 	int ret = sys_umount2(path, flags);
@@ -1614,7 +1929,7 @@ int umount2(const char *path, int flags)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int unlink(const char *path)
 {
 	int ret = sys_unlink(path);
@@ -1626,7 +1941,7 @@ int unlink(const char *path)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 pid_t wait4(pid_t pid, int *status, int options, struct rusage *rusage)
 {
 	pid_t ret = sys_wait4(pid, status, options, rusage);
@@ -1638,7 +1953,7 @@ pid_t wait4(pid_t pid, int *status, int options, struct rusage *rusage)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 pid_t waitpid(pid_t pid, int *status, int options)
 {
 	pid_t ret = sys_waitpid(pid, status, options);
@@ -1650,7 +1965,7 @@ pid_t waitpid(pid_t pid, int *status, int options)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 pid_t wait(int *status)
 {
 	pid_t ret = sys_wait(status);
@@ -1662,7 +1977,7 @@ pid_t wait(int *status)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 ssize_t write(int fd, const void *buf, size_t count)
 {
 	ssize_t ret = sys_write(fd, buf, count);
@@ -1680,7 +1995,7 @@ ssize_t write(int fd, const void *buf, size_t count)
  * error when building a program made of multiple files (not recommended).
  */
 
-static __attribute((unused))
+static __attribute__((unused))
 void *memmove(void *dst, const void *src, size_t len)
 {
 	ssize_t pos = (dst <= src) ? -1 : (long)len;
@@ -1693,7 +2008,7 @@ void *memmove(void *dst, const void *src, size_t len)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 void *memset(void *dst, int b, size_t len)
 {
 	char *p = dst;
@@ -1703,7 +2018,7 @@ void *memset(void *dst, int b, size_t len)
 	return dst;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 int memcmp(const void *s1, const void *s2, size_t n)
 {
 	size_t ofs = 0;
@@ -1715,7 +2030,7 @@ int memcmp(const void *s1, const void *s2, size_t n)
 	return c1;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 char *strcpy(char *dst, const char *src)
 {
 	char *ret = dst;
@@ -1724,7 +2039,7 @@ char *strcpy(char *dst, const char *src)
 	return ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 char *strchr(const char *s, int c)
 {
 	while (*s) {
@@ -1735,7 +2050,7 @@ char *strchr(const char *s, int c)
 	return NULL;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 char *strrchr(const char *s, int c)
 {
 	const char *ret = NULL;
@@ -1748,7 +2063,7 @@ char *strrchr(const char *s, int c)
 	return (char *)ret;
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 size_t nolibc_strlen(const char *str)
 {
 	size_t len;
@@ -1835,13 +2150,13 @@ int raise(int signal)
 
 /* Here come a few helper functions */
 
-static __attribute((unused))
+static __attribute__((unused))
 void FD_ZERO(fd_set *set)
 {
 	memset(set, 0, sizeof(*set));
 }
 
-static __attribute((unused))
+static __attribute__((unused))
 void FD_SET(int fd, fd_set *set)
 {
 	if (fd < 0 || fd >= FD_SETSIZE)
@@ -1850,7 +2165,7 @@ void FD_SET(int fd, fd_set *set)
 }
 
 /* WARNING, it only deals with the 4096 first majors and 256 first minors */
-static __attribute((unused))
+static __attribute__((unused))
 dev_t makedev(unsigned int major, unsigned int minor)
 {
 	return ((major & 0xfff) << 8) | (minor & 0xff);
