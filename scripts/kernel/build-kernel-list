@@ -497,10 +497,11 @@ for cfg in "$@"; do
                     ${CC:-"${CROSS_COMPILE}"gcc} -Os -nostdlib \
                        -include "${tools26}/nolibc.h" -s -Wl,--gc-sections \
                        -fno-exceptions -fno-asynchronous-unwind-tables \
-                       -fno-unwind-tables -fomit-frame-pointer \
+                       -fno-unwind-tables -fno-ident -fomit-frame-pointer \
                        -o initramfs/init "${tools26}/init.c" -lgcc
                     ${CROSS_COMPILE}strip -x --strip-unneeded \
-                       -R .comment -R .note -R .note.ABI-tag initramfs/init
+                       -R .gnu.attributes -R .mdebug.abi32 \
+                       -R .note -R .note.ABI-tag initramfs/init
                     echo "done."
             fi
 
