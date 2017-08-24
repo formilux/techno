@@ -193,21 +193,26 @@ echo "Source version: ${SRCVER:-unknown}"
 tot_err=0
 for cfg in "$@"; do
     # cfg = dir/config-2.4.27smp-wt4.rh73-flx0.1-p4
+    # or "config-4.9.x-flx2.1-i586" for automatic versionning
+    ver="${cfg##*/}"				# ver=config-2.4.27smp...
+    ver="${ver#*-}"				# ver=2.4.27smp-wt4...
+    major="${ver%%.*}" ; ver="${ver#$major.}"	# ver=4.27smp-wt4.rh73-flx0.1-p4
+    minor="${ver%%.*}" ; ver="${ver#$minor}"	# ver=.27smp-wt4.rh73-flx0.1-p4
+    if [ -n "$ver" -a -z "${ver##.*}" ]; then
+        ver="${ver#.}"				# ver=27smp-wt4.rh73-flx0.1-p4
+    fi
+    sub="${ver%%-*}" ;	sub="${sub%%[^0-9]*}"	# sub=27
+    ver="${ver#$sub}"				# ver=smp-wt4.rh73-flx0.1-p4
+
     if [ -z "$cfg" ]; then
         cfg_auto=1
     elif [ "$cfg" = "flx" ]; then
         cfg="config-0.0.0-flx0.0-$USERARCH"
         cfg_auto=1
+        major=0; minor=0; sub=0
     else
         cfg_auto=0
     fi
-
-    ver="${cfg##*/}"				# ver=config-2.4.27smp...
-    ver="${ver#*-}"				# ver=2.4.27smp-wt4...
-    major="${ver%%.*}" ; ver="${ver#$major.}"	# ver=4.27smp-wt4.rh73-flx0.1-p4
-    minor="${ver%%.*}" ; ver="${ver#$minor.}"	# ver=27smp-wt4.rh73-flx0.1-p4
-    sub="${ver%%-*}"   ; sub="${sub%%[^0-9]*}"	# sub=27
-    ver="${ver#$sub}"				# ver=smp-wt4.rh73-flx0.1-p4
 
     subarch="${ver##*-}"; ver="${ver%-$subarch}" # ver=smp-wt4.rh73-flx0.1
     build="${ver##*-}" ; extra="${ver%-$build}"	# extra=smp-wt4-rh73
