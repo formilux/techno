@@ -169,6 +169,27 @@ fi
 
 [ -e "Makefile" ] || die 1 "No Makefile found in current directory"
 
+# appeared in 2.6.15
+SRCVER="$(${MAKE} kernelversion 2>/dev/null)"
+SRCMAJ=""
+SRCMIN=""
+SRCSUB=""
+SRCEXT=""
+
+# possible input formats : 3.10 3.10-rc7 3.10.15 3.10.15-rc1 2.6.32.8 2.6.32.8-rc1
+SRCMAJ="${SRCVER%%.*}" ; SRCVER="${SRCVER#$SRCMAJ.}"
+SRCMIN="${SRCVER%%.*}" ; SRCVER="${SRCVER#$SRCMIN}"
+if [ -n "$SRCVER" -a -z "${SRCVER##.*}" ]; then
+    SRCVER="${SRCVER#.}"
+    SRCSUB="${SRCVER%%.*}"
+    SRCVER="${SRCVER#$SRCSUB}"
+fi
+
+SRCEXT="${SRCVER}"
+SRCVER="${SRCMAJ}${SRCMIN:+.$SRCMIN}${SRCSUB:+.$SRCSUB}${SRCEXT:+$SRCEXT}"
+
+echo "Source version: ${SRCVER:-unknown}"
+
 tot_err=0
 for cfg in "$@"; do
     # cfg = dir/config-2.4.27smp-wt4.rh73-flx0.1-p4
