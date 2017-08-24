@@ -201,7 +201,10 @@ for cfg in "$@"; do
     if [ -n "$ver" -a -z "${ver##.*}" ]; then
         ver="${ver#.}"				# ver=27smp-wt4.rh73-flx0.1-p4
     fi
-    sub="${ver%%-*}" ;	sub="${sub%%[^0-9]*}"	# sub=27
+    sub="${ver%%-*}"				# sub=27smp
+    if [ "$sub" != "x" ]; then
+        sub="${sub%%[^0-9]*}"			# sub=27
+    fi
     ver="${ver#$sub}"				# ver=smp-wt4.rh73-flx0.1-p4
 
     if [ -z "$cfg" ]; then
@@ -213,6 +216,9 @@ for cfg in "$@"; do
     elif [ "$major.$minor.$sub" = "0.0.0" ]; then
         cfg_auto=0
         major=${SRCMAJ}; minor=${SRCMIN}; sub=${SRCSUB}; ver="${SRCEXT}${ver}"
+    elif [ "$sub" = "x" ]; then
+        cfg_auto=0
+        sub=${SRCSUB}; ver="${SRCEXT}${ver}"
     else
         cfg_auto=0
     fi
