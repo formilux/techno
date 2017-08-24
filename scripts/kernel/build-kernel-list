@@ -167,6 +167,8 @@ if [ -z "$cmd_gzip" ]; then
   fi
 fi
 
+[ -e "Makefile" ] || die 1 "No Makefile found in current directory"
+
 tot_err=0
 for cfg in "$@"; do
     # cfg = dir/config-2.4.27smp-wt4.rh73-flx0.1-p4
