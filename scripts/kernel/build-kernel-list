@@ -210,6 +210,9 @@ for cfg in "$@"; do
         cfg="config-0.0.0-flx0.0-$USERARCH"
         cfg_auto=1
         major=0; minor=0; sub=0
+    elif [ "$major.$minor.$sub" = "0.0.0" ]; then
+        cfg_auto=0
+        major=${SRCMAJ}; minor=${SRCMIN}; sub=${SRCSUB}; ver="${SRCEXT}${ver}"
     else
         cfg_auto=0
     fi
