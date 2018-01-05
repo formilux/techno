@@ -181,7 +181,7 @@ SRCMAJ="${SRCVER%%.*}" ; SRCVER="${SRCVER#$SRCMAJ.}"
 SRCMIN="${SRCVER%%.*}" ; SRCVER="${SRCVER#$SRCMIN}"
 if [ -n "$SRCVER" -a -z "${SRCVER##.*}" ]; then
     SRCVER="${SRCVER#.}"
-    SRCSUB="${SRCVER%%.*}"
+    SRCSUB="${SRCVER%%[^0-9]*}"
     SRCVER="${SRCVER#$SRCSUB}"
 fi
 
