@@ -51,6 +51,7 @@ usage() {
     echo "    ${0##*/} [ -h, --help ] [ -i,--install,--no-compile ]"
     echo "             [ -s, --suffix ] [ -r, --rerun ] [ -a arch ]"
     echo "             [ -m make ] [ -b bootimg ] [ -p platform ]"
+    echo "             [ -R, --release ]"
     echo "             config_file..."
     echo
     echo "Output will be sent to \$OUTPUTDIR=$OUTPUTDIR"
@@ -66,6 +67,7 @@ usage() {
     echo "The config file can be omitted for rerun/install, or be set to \"flx\" for"
     echo "modules to be built and packaged for formilux ; default version will be used."
     echo "The preinit code will be picked from <platform> (may be an absolute path)."
+    echo "Use -R to force consider only the release part of the version and ignore -rc."
     echo
     echo "Addons found : ${addons[@]}"
     echo
@@ -108,6 +110,7 @@ fi
 do_compile=1
 do_suffix=0
 do_rerun=0
+do_release=0
 while [ $# -gt 0 ]; do
     case "$1" in
     -a|--arch)
@@ -136,6 +139,10 @@ while [ $# -gt 0 ]; do
 	;;
     -r|--rerun)
 	do_rerun=1
+	shift
+	;;
+    -R|--release)
+	do_release=1
 	shift
 	;;
     -s|--suffix)
@@ -189,6 +196,9 @@ fi
 
 SRCEXT="${SRCVER}"
 SRCVER="${SRCMAJ}${SRCMIN:+.$SRCMIN}${SRCSUB:+.$SRCSUB}${SRCEXT:+$SRCEXT}"
+if [ $do_release -eq 1 ]; then
+	SRCEXT="${SRCEXT%%-rc[0-9]*}"
+fi
 
 echo "Source version: ${SRCVER:-unknown}"
 
