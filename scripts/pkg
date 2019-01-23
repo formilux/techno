@@ -1818,6 +1818,10 @@ function do_pack {
     $_FLX sign --no-depth / >/dev/null 2>&1
     if [ $? -ne 0 ] ; then
 	echo "Error: the 'flx' tool does not seem to be usable (invoked as \$_FLX=$FLX). Check your environment."
+	echo "If the command is not found but is in your PATH, you should check that sudo isn't resetting your env or your PATH"
+	set -x
+	$_FLX sign --no-depth /
+	set +x
 	exit 1
     fi
 
