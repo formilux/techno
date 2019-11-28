@@ -2529,7 +2529,7 @@ function set_flx_arch {
             armv7n*hf)            FLX_GNU_CPU=cortex-a9  ;; # with neon
             armv7pj4b*)           FLX_GNU_CPU=marvell-pj4b;;
             armv7pj4*)            FLX_GNU_CPU=marvell-pj4;;
-            armv7*hf)             FLX_GNU_CPU=cortex-a9  ;;
+            armv7*hf)             FLX_GNU_CPU=           ;;
             armv7*)               FLX_GNU_CPU=           ;;
             arm*)                 FLX_GNU_CPU=arm926ej-s ;;
             mips64*)              FLX_GNU_CPU=mips64     ;;
