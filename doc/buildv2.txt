@@ -1,0 +1,206 @@
+2019-11-30 - improving the build process and dependencies
+
+
+Current state and issues
+------------------------
+
+Currently there are different limitations to the flexibility of the build
+process that are caused by the fact that we're still supporting both the old
+and the new method at the same time :
+
+  - originally, the lpk files were package lists to use as filters to select
+    packages. Most of them would just contain an approximate list, often '*'
+
+  - originally the prf files were installation profiles, with very detailed
+    package versions for each file, allowing to pick two different files from
+    different versions of the same package (often by accident)
+
+  - recently, the lpk files became a description of what exact packages the
+    distribution is composed of, and the prf files became just a list of files
+    to extract from approximate packages that ought to be matched against the
+    lpk.
+
+The lpk evolved to support an architecture, now most often passed as a variable
+(@@DEFAULT_ARCH@@), and a set of filters including or excluding a line for a
+given list of models.
+
+The problem this method pauses is easier seen in the embedded world. Most often
+a device is made for a single purpose but needs to be compatible with a number
+of features. Due to space restrictions, it's quite common to want to shrink as
+much as possible the non-essential features. And due to performance limitations
+it's quite common to want to optimize as much as possible for essential ones.
+These build optimizations are not easy to translate into the current model, as
+they involve tickering with the architecture (e.g. DEFAULT_ARCH) for all
+packages at once, or duplicating certain lines to have a different architecture
+for another model. The architecture in question is not sufficient to accurately
+represent the intent because it tends to be used as-is as a build target in a
+number of packages. In addition it contains the ABI (arch, ISA, floating point,
+extensions like SIMD/crypto) which are not generic cross-architectures.
+
+The device's usage cannot be represented solely by a generic model either,
+because the model count would simply explode and make the lpk files
+unmaintainable.
+
+We seem to need to refine that filtering and definition.
+
+
+Binary package compatibility, speed optimizations
+-------------------------------------------------
+
+First, we need to make it clear that the architecture appearing in the compiled
+package is not just the architecture but it also includes a "build mode". This
+mode would define whether or not the package is suitable for inclusion as a
+dependency for another package, or suitable for being packaged. As such, it
+would include the optimizations (small/default/fast), features adjustments
+(full/standard/minimal), and any other such type of package variant. The
+architecture part needs to take into account the binary compatibility so that
+it cannot happend by accident to use some code that could be incompatible with
+the caller's ABI. This is approximately what we currently have with the arch,
+CPU,ABI and float. We'd possibly need to include a few more fields so that we
+don't have to create artificially complicated names, especially when the
+compatibility is granted. For example, it's fine to build a number crunching
+application making use of SIMD like AVX/NEON and crypto extensions like AES-NI
+or ARM's crypto but still relying on regular libs. The current model doesn't
+permit this because it forces a new arch for everyone.
+
+So the package description must in fact include the architecture + ABI + mode
+for each package, and dependent packages should not use their own architecture
+to resolve this, but the exact definition that appears in the lpk file for the
+current model being built.
+
+This would also significantly improve reuse between package variants, because
+it would then become possible to use a compatible toolchain by default (such
+as armv7thf) and still enable extensions on a per-package basis.
+
+The set of extensions appearing in the package's name should be limited to
+functional ones only so that the rules involved in building such names remain
+manageable. We should not see "aes-ni" nor "neon" in a package, but it makes
+sense to make "crypto" and "simd" appear if relevant to all archs.
+
+Since some models will run on devices where such extensions do not exist, it
+means that the model must be able to select which name has to be used, so that
+we are not forced to build multiple strictly-identical packages with all
+names when building on architectures which ignore such variations. Having the
+ability to mention on an lpk line something like "pc64:crypto,simd" could be
+particularly useful, but it's likely that we don't really need to do this and
+instead we should have multiple lines, among which only one should ever match,
+unless there is no filter, which serves as the default one. We could then have
+this:
+
+   number-cruncher-0.1.2-flx2.4 @@CRYPTO_SIMD_ARCH@@ pc64,armv8mtd
+   number-cruncher-0.1.2-flx2.4 @@CRYPTO_ARCH@@ pc32
+   number-cruncher-0.1.2-flx2.4 @@SIMD_ARCH@@ armv7mtd
+   number-cruncher-0.1.2-flx2.4 @@SPEED_ARCH@@   # this becomes a catch-all
+
+An alternate way to specify it could look like:
+
+   number-cruncher-0.1.2-flx2.4 @@SPEED_ARCH@@  pc64:@@CRYPTO_SIMD_ARCH@@,pc32:@@CRYPTO_ARCH@@,armv7mtd:@@SIMD_ARCH@@,*
+
+In this case it is confusing and probably that this should be used instead:
+
+   number-cruncher-0.1.2-flx2.4 pc64:@@CRYPTO_SIMD_ARCH@@,pc32:@@CRYPTO_ARCH@@,armv7mtd:@@SIMD_ARCH@@,*@@SPEED_ARCH@@
+
+
+Refining usage
+--------------
+
+Right now the same generic models like "pc64" or "armv8mtd" are used to boot
+about everywhere. We already had to fork such models into a product+model
+naming scheme to allow some packages to exist with variants, like "toolbox" and
+"gateway". But even then it's still not enough to translate into detailed usage
+as it's visible that the lpk and PRF files become hard to maintain with many
+entries for all possible combinations of arch and usage. In addition, even for
+a given usage we can face hardware restrictions. For example we might want to
+have a huge and fast x86_64 "gateway" device to make high performance firewalls
+or gateways, and a much smaller armv8-a or MIPS variant having mostly the same
+features, but built for size and with a smaller set of supported features in
+certain packages.
+
+A good example of this is OpenSSL. On x86 it's important to have it enabled
+with engines, all ASM crypto variants, a large set of supported algorithms,
+and built for speed. When trying to install it on a MIPS device having barely
+13 MB of flash for the whole rootfs, it's not possible to use 2 MB just for
+this library. Then it needs to be built without ASM nor engines, optimized
+for size, possibly with a smaller set of supported algorithm focusing on the
+most common ones found for this use case. And this is not dictated by the
+hardware (e.g. the device) because the same hardware could require to have
+everything enabled for a different usage (such as a VPN gateway) where other
+components are not installed and save space.
+
+So we have this relation that is currently not translated in our model :
+
+    device + product + usage intent => build options
+
+We could speak about a "profile" here. And it must be part of a small subset
+and short so as to be able to appear as the "mode" next to the architecture
+in the binary package name. Ideally there should be none by default and the
+architecture would automatically dictate a default one, though it is not even
+certain this would make as much sense as doing it per device+product.
+
+The difficulty is that this profile will have both to be enforced onto all
+packages and sometimes only to some specific packages. It looks likely that
+when building a product for a given device, there will already be a default
+profile, but that a given package may still use a different profile for
+that combination.
+
+The probably we'll have a file to declare default build modes like this:
+
+    product.device => default build mode
+
+Probably that this should even be adjusted by the profile as well so that
+only a profile has to be mentioned in a few files :
+
+    product.device         => default build mode
+    product.device.profile => other default build mode
+
+It becomes apparent that some build modes need to be common across all packages
+and dictated by the distribution, while others will probably be specific to a
+given package (and cannot be used as defaults).
+
+It becomes obvious that the same build mode needs to separately specify
+multiple sets of options:
+
+- compiler optimizations:  fast, standard, small
+- architecture optimizations: default, crypto +/- simd, maybe even more specific
+- features optimizations: full, standard, essential
+
+It would be much easier to solve dependencies if a set of variables was
+automatically set to mention the presence of a package. For example, we could
+have a line in an lpk indicating that the "lua" package is not enabled for a
+small NOR-based board. This line would automatically set an "HAVE_LUA" variable
+that all packages source. Then when building haproxy, the Lua dependency would
+automatically be dropped. For SSL/TLS where multiple libs may be used, we could
+have "HAVE_SSL=openssl" or "HAVE_OPENSSL=1". Or probably that we should just
+use "HAVE_SSL=1" and "HAVE_OPENSSL=1" which are easier to use (one being the
+package and the other one the functionality).
+
+This however means that we would benefit from being able to set some variables
+based on these combinations even without declaring a package.
+
+Probably that we should use a number of intermediary variables between the
+product/device/profile setting and the packages to ease the configuration.
+
+For example a file would then describe a list of variables in the profile
+file:
+
+   gateway.armv7mtd.nor16mb CC_OPTIM=small CPU_OPTIM=default FEAT_OPTIM=standard USE_MTD=1 USE_OPENSSL=1 OPENSSL_PROFILE=essential
+   gateway.armv7mtd CC_OPTIM=default CPU_OPTIM=default FEAT_OPTIM=standard USE_OPENSSL=1 USE_LUA=1
+
+Then the lpk file would have rules indicating which features need to be use:
+
+   openssl-x.x.x  ?USE_OPENSSL profile=$OPENSSL_PROFILE HAVE_OPENSSL=1 HAVE_SSL=1
+   lua-x.x.x      ?USE_LUA     profile=$LUA_PROFILE     HAVE_LUA=1
+
+One difficulty here is to figure how to automatically remove these ones from
+the PRF files, as this is currently handled by multiple files. Maybe instead
+the PRF files should be able to silently ignore files coming from explicitly
+disabled packages. In this case we'd rather have options working in the reverse
+way:
+
+   gateway.armv7mtd.nor16mb CC_OPTIM=small CPU_OPTIM=default FEAT_OPTIM=standard DISABLE_BLKDEV=1 DISABLE_LUA=1 OPENSSL_PROFILE=essential DISABLE_DISK=1
+   gateway.armv7mtd CC_OPTIM=default CPU_OPTIM=default FEAT_OPTIM=standard DISABLE_MTD=1
+
+Regarding MTD vs BLKDEV, when some components are provided as alternatives,
+having to explicitly enable/disable them is not necessarily convenient, and
+maybe instead we should provide a choice such as "STORAGE=MTD/BLKDEV".
+
