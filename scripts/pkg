@@ -1699,7 +1699,7 @@ function _do_pack_files {
     if [ "$BUILDMODEL" == "shared" -o "$BUILDMODEL" == "static" ]; then
         echo -n "Creating $FPNAME.$BUILDMODEL ... "
         # we want everything, including directories.
-        cut -f1 -d' ' $FILE_LIST|sed -e 's,/$,,' |  tar -T - --no-recursion --numeric-owner -cf - | gzip -9 >$FPNAME.$BUILDMODEL 2>/dev/null
+        cut -f1 -d' ' $FILE_LIST|sed -e 's,/$,,' |  tar --no-recursion -T - --numeric-owner -cf - | gzip -9 >$FPNAME.$BUILDMODEL 2>/dev/null
 	echo "done."
 	return 0
     fi
@@ -1771,7 +1771,7 @@ function _do_pack_files {
     echo -n "Creating $FPNAME.$PKGSUFF ... "
 
     # we want everything, including directories.
-    cut -f1 -d' ' $FILE_LIST|sed -e 's,/$,,' |  tar -T - --no-recursion --numeric-owner -cf - | gzip -9 >$FPNAME.$PKGSUFF 2>/dev/null
+    cut -f1 -d' ' $FILE_LIST|sed -e 's,/$,,' |  tar --no-recursion -T - --numeric-owner -cf - | gzip -9 >$FPNAME.$PKGSUFF 2>/dev/null
 
     echo "done."
     return 0
