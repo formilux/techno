@@ -55,11 +55,12 @@ usage() {
     echo
     echo "Output will be sent to \$OUTPUTDIR=$OUTPUTDIR"
     echo "Using: CROSS_COMPILE=$CROSS_COMPILE"
-    echo "       CC=$CC HOSTCC=$HOSTCC PARALLELCC=$PARALLELCC"
+    echo "       CC=$CC USRCC=$USRCC HOSTCC=$HOSTCC PARALLELCC=$PARALLELCC"
     echo "       ARCH=$USERARCH DEFAULT_ARCH=$DEFAULT_ARCH KEEPDIR=$KEEPDIR"
     echo "       MAKE=$MAKE BOOTIMG=$BOOTIMG PLATFORM=$PLATFORM"
     echo "Note: this script needs sudo during the install phase."
     echo "CC may be used to force a command (eg: \"distcc gcc\")."
+    echo "USRCC may be used to force a different CC to build init."
     echo "Use --suffix to automatically suffix the build version to the EXTRAVERSION."
     echo "x86_64 is used when the config's arch suffix is x86_64 or name contains smp64."
     echo "The config file can be omitted for rerun/install, or be set to \"flx\" for"
@@ -74,6 +75,7 @@ OUTPUTDIR=${OUTPUTDIR:-$PWD/KERNEL-PKG}
 PARALLELDEP=${PARALLELDEP:-10}
 PARALLELCC=${PARALLELCC:-6}
 CC=${CC:-}
+USRCC=${USRCC:-$CC}
 HOSTCC=${HOSTCC:-gcc}
 _SUDO=${_SUDO-sudo}
 USERARCH=${ARCH}
@@ -531,7 +533,7 @@ for cfg in "$@"; do
             elif [ -s "${tools26}/init.c" -a -s "${tools26}/nolibc.h" ]; then
                     # init is not there but its sources are, so we can build
                     echo -n "Building initramfs/init from sources... "
-                    ${CC:-"${CROSS_COMPILE}"gcc} -Os -nostdlib \
+                    ${USRCC:-"${CROSS_COMPILE}"gcc} -Os -nostdlib \
                        -include "${tools26}/nolibc.h" -s -Wl,--gc-sections \
                        -fno-exceptions -fno-asynchronous-unwind-tables \
                        -fno-unwind-tables -fno-ident -fomit-frame-pointer \
