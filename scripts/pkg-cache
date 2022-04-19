@@ -33,7 +33,8 @@ function do_update() {
 	done
 	chmod -R u+w ${PKGCACHEDIR}/* 2>/dev/null
 	for repopath in ${FLXREPOS} ; do
-		if [ ! -d "$repopath/" ] ; then
+		# fails if $repopath is not an ssh-rsync path (i.e host:/tmp/) or is not a local path
+		if ! [[ $repopath/ =~ ^[^/]*:/.* || -d $repopath/ ]] ; then
 			echo "$repopath is not a valid package repository" >&2
 			exit 1
 		fi
