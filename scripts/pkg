@@ -2933,6 +2933,40 @@ function do_changelog {
     return 0
 }
 
+# run <cmd> on a [remote] path
+# in:   cmd, the command to run
+#       [options ...], <cmd> options
+#       path ( /etc/foobar or server:/etc/foobar )
+# return: return from <cmd> or ssh error code
+#
+# if path is in the form <server>:<path>, then ssh <server> <cmd> <options> <path> is evalated
+# otherwise evaluates <cmd> <options> <path>
+#
+# This function works for tools like touch or chmod - but taking a single path
+# The expected pattern to call the tool is:
+#  <tool> <options> <path> (WARNING single path parameter only)
+function rcmd() {
+    [ $# -ne 0 ] || return 255
+
+    local cmd="$1";  shift
+    if [ $# -eq 0 ]; then
+        "${cmd}"
+        return $?
+    fi
+
+    # last param -> the path to run "cmd" against (WARNING - only one supported)
+    local path="${!#}"
+    if [[ ${path} =~ ^[^/]*:.* ]]; then
+        local -a cmd_params
+        for ((i=1; i<=$#-1; i++)); do
+            cmd_params[i]="\"${!i}\""
+        done
+        ssh "${path%%:*}" "${cmd}" "${cmd_params[@]}" "\"${path#*:}\""
+    else
+        "${cmd}" "$@"
+    fi
+}
+
 # marks the current package as released
 function do_release {
     local last_pkg
@@ -2965,7 +2999,7 @@ function do_release {
 		exit 1
 	fi
 
-	if [ ! -d "$reporoot/." ]; then
+	if ! rcmd test -d "$reporoot/."; then
 		echo "Critical error : .repository does not point to a valid directory ('$reporoot') !"
 		exit 1
 	fi
@@ -2985,8 +3019,8 @@ function do_release {
 	exit 1
     fi
 
-    if [ -n "$reporoot" -a -d "$reporoot/${EXACTPKG##*/}" ]; then
-	if [ -e "$reporoot/${EXACTPKG##*/}/RELEASED" ]; then
+    if [ -n "$reporoot" ] && rcmd test -d "$reporoot/${EXACTPKG##*/}" ; then
+	if rcmd test -e "$reporoot/${EXACTPKG##*/}/RELEASED" ; then
 		echo "Error: This package has already been released."
 		echo "Please use 'pkg newpkg' to change the version."
 	else
@@ -3035,8 +3069,8 @@ function do_release {
 	  echo "Error: cannot copy the package to the repository ($reporoot). Aborting."
 	  exit 2
 	fi
-	touch "$reporoot/${EXACTPKG##*/}/RELEASED"
-	chmod -R a-w "$reporoot/${EXACTPKG##*/}"
+	rcmd touch "$reporoot/${EXACTPKG##*/}/RELEASED"
+	rcmd chmod -R a-w "$reporoot/${EXACTPKG##*/}"
       fi
 
       if ! mv "$PKGDIR" "$PKGROOT/" ; then
