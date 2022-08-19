@@ -2936,11 +2936,16 @@ function do_changelog {
 # run <cmd> on a [remote] path
 # in:   cmd, the command to run
 #       [options ...], <cmd> options
-#       path ( /etc/foobar or server:/etc/foobar )
+#       path (ie /etc/foobar or <server>:/etc/foobar or ssh://<server>/etc/foobar )
 # return: return from <cmd> or ssh error code
 #
-# if path is in the form <server>:<path>, then ssh <server> <cmd> <options> <path> is evalated
-# otherwise evaluates <cmd> <options> <path>
+# if path is in the form ssh://<hostname>/<path>
+# or path is in the form <hostname>:<path> then run
+#	ssh <hostname> <cmd> <options> <path>
+# else if path is in the form file:///<path> then run
+#	<cmd> <options> <path>
+# otherwise run
+#	<cmd> <options> <path>
 #
 # This function works for tools like touch or chmod - but taking a single path
 # The expected pattern to call the tool is:
@@ -2956,12 +2961,29 @@ function rcmd() {
 
     # last param -> the path to run "cmd" against (WARNING - only one supported)
     local path="${!#}"
-    if [[ ${path} =~ ^[^/]*:.* ]]; then
-        local -a cmd_params
-        for ((i=1; i<=$#-1; i++)); do
-            cmd_params[i]="\"${!i}\""
-        done
-        ssh "${path%%:*}" "${cmd}" "${cmd_params[@]}" "\"${path#*:}\""
+
+    if [[ ${path} =~ (^[^/]*)://([^/]*)(/.*) ]] || [[ ${path} =~ (^)([^/]*):(.*) ]] ; then
+        local scheme="${BASH_REMATCH[1]}"
+        local hostname="${BASH_REMATCH[2]}"
+        local rpath="${BASH_REMATCH[3]}"
+
+        case "$scheme" in
+            ""|"ssh")
+                [[ ! -z "${hostname}" ]] || return 255
+                local -a cmd_params
+                for ((i=1; i<=$#-1; i++)); do
+                    cmd_params[i]="\"${!i}\""
+                done
+                ssh "${hostname}" "${cmd}" "${cmd_params[@]}" "\"${rpath}\""
+            ;;
+            "file")
+                [[ -z "${hostname}" ]] || return 255
+                "${cmd}" "${@:1:$(($#-1))}" "${rpath}"
+            ;;
+            *)
+                return 255
+            ;;
+        esac
     else
         "${cmd}" "$@"
     fi
