@@ -137,7 +137,15 @@ PATH=${PATH//::/:}
 export PATH
 
 PKG_EXACTPKG=${PKG_EXACTPKG:-0}
-PKG_NOCHOICE=${PKG_NOCHOICE:-0}
+
+# interactive mode: only when both stdin/stdout are a terminal
+if [ -z "$PKG_NOCHOICE" ]; then
+    if [ -t 0 -a -t 1 ]; then
+         PKG_NOCHOICE=0
+    else
+         PKG_NOCHOICE=1
+    fi
+fi
 
 # verbose flag for tar
 VERBOSE=${VERBOSE- -v}
