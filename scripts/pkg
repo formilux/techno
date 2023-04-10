@@ -3101,6 +3101,20 @@ function do_release {
 	exit 1
     fi
 
+    # perform a few sanitfy checks for unused patches and junk files
+    if [ "$PKG_NOCHOICE" != "1" ] && ! do_check; then
+        echo
+        REPLY=""
+        while [ "$REPLY" != "y" -a "$REPLY" != "n" ] &&
+              read -p "Some sanity checks failed, are you sure you still want to release [y/n]? "; do
+             :
+        done
+        if [ "$REPLY" != "y" ]; then
+            echo "Aborting!"
+            exit 1
+        fi
+    fi
+
     # identify last changelog entry
     last_pkg=""
     if [ -e "$PKGDIR/ChangeLog" ]; then
