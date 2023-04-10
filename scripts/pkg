@@ -2871,7 +2871,7 @@ function usage {
     echo "  pkg setpkg [ new_pkg ]"
     echo "    ex: pkg setpkg openssl-0.9.6g-${BUILDSFX}${BUILDVER}.1"
     echo
-    echo "  pkg { info|cat|edit|unpack|changelog|tar } [ pkg ]"
+    echo "  pkg { info|cat|edit|unpack|changelog|tar|home } [ pkg ]"
     echo "    ex: pkg info"
     echo "        pkg info bash"
     echo "        pkg edit modutils-2.4"
@@ -3149,6 +3149,18 @@ function do_release {
     return 0
 }
 
+# shows the packages's home dir and nothing else. Useful for grep, diff etc.
+function do_home {
+    # some important checks before things get wrong
+    if [ -z "$PKGDIR" -o -z "$EXACTPKG" ]; then
+	echo "Critical error : PKGDIR and EXACTPKG must be set !"
+	exit 1
+    fi
+
+    echo "$PKGDIR"
+    return 0
+}
+
 # emits a tar of the minimal package
 function do_tar {
     local last_pkg
@@ -3311,7 +3323,7 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 	    KNOWNCMD=1
 	    pkgfilefind $1
 	    ;;
-	info|edit|cat|unpack|changelog|tar)
+	info|edit|cat|unpack|changelog|tar|home)
 	    CHAINCMD=0
 	    KNOWNCMD=1
 	    get_name ${ARGLIST[0]} %L %P %D
