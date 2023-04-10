@@ -2879,7 +2879,7 @@ function usage {
     echo "  pkg setpkg [ new_pkg ]"
     echo "    ex: pkg setpkg openssl-0.9.6g-${BUILDSFX}${BUILDVER}.1"
     echo
-    echo "  pkg { info|cat|edit|unpack|changelog|tar|home|log } [ pkg ]"
+    echo "  pkg { info|cat|edit|unpack|changelog|tar|home|log|check } [ pkg ]"
     echo "    ex: pkg info"
     echo "        pkg info bash"
     echo "        pkg edit modutils-2.4"
@@ -2999,6 +2999,44 @@ function rcmd() {
     else
         "${cmd}" "$@"
     fi
+}
+
+# checks if the package's directory is clean or not; returns 0 on success
+# or if no package was found, otherwise 1 if suspicious files are found,
+# and lists them.
+function do_check {
+    local found=0 ret=0
+    local file patch
+
+    if [ -z "$PKGDIR" -o -z "$EXACTPKG" ]; then
+        return 0
+    fi
+
+    set -- "$PKGDIR/.build.cfg"* "$PKGDIR/build.cfg."* "$PKGDIR/"*"~" "$PKGDIR/"*".rej" "$PKGDIR/"*".orig" "$PKGDIR/core"*
+    if [ "${#@}" -gt 0 ]; then
+        for file in "$@"; do
+            if [ -e "$file" ]; then
+                echo "Suspicious file: $file"
+                ret=1
+            fi
+        done
+    fi
+
+    for file in "$PKGDIR/patches/"*; do
+        if [ -e "$file" ]; then
+            found=0
+            for patch in ${PATCH_LIST[*]}; do
+                if [ "$patch" = "${file##*/}" ]; then
+                    found=1
+                fi
+            done
+            if [ "$found" != "1" ]; then
+                echo "Found unused patch ${file##*/}"
+                ret=1
+            fi
+        fi
+    done
+    return $ret
 }
 
 # marks the current package as released
@@ -3361,7 +3399,7 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
 	    KNOWNCMD=1
 	    pkgfilefind $1
 	    ;;
-	info|edit|cat|unpack|changelog|tar|home|log)
+	info|edit|cat|unpack|changelog|tar|home|log|check)
 	    CHAINCMD=0
 	    KNOWNCMD=1
 	    get_name ${ARGLIST[0]} %L %P %D
