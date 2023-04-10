@@ -2884,6 +2884,8 @@ function usage {
     echo "        pkg info bash"
     echo "        pkg edit modutils-2.4"
     echo "        pkg cat gzip-1.3"
+    echo ""
+    echo "  pkg { diff } pkg1 [pkg2]"
     echo
     echo "  pkg { clean | compile | config | compile_only | build }*"
     echo "  pkg { prepack | strip | pack | delpack | release }*"
@@ -3429,6 +3431,35 @@ while [ $CHAINCMD -gt 0 -a ${#ARGLIST[@]} -gt 0 ]; do
        $_PKG compile || exit $?
        $_SUDO $_PKG prepack strip pack || exit $?
        exit 0
+    fi
+
+    # run a diff between the two packages $1 and $2
+    if [ "$ACTION" == "diff" ]; then
+        if [ -z "$1" ]; then
+            echo "Error: the 'diff' command requires one or two package names."
+            exit 1
+        fi
+
+        if ! h1=$("$_PKG" home "$1"); then
+            echo "Error: failed to retrieve home dir for package '$1'."
+            exit 1
+        fi
+
+        if [ -n "$2" ]; then
+            if ! h2=$("$_PKG" home "$2"); then
+                echo "Error: failed to retrieve home dir for package '$2'."
+                exit 1
+            fi
+        else
+            get_name "$2" %L %P %D
+            if [ ! -d "$PKGDIR" ]; then
+                echo "Error: failed to retrieve home dir for current package."
+                exit 1
+            fi
+            h2="$PKGDIR"
+        fi
+
+        exec diff -durN --color --no-dereference -F '^\s*function\s\|[0-9a-zA-Z_]()\s*{$' "$h1" "$h2"
     fi
 
     if [ "$ACTION" != "newpkg" -a "$ACTION" != "install" -a "$ACTION" != "search" -a "$ACTION" != "filesearch" -a "$ACTION" != "filefind" ]; then
