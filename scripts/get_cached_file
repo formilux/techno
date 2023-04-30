@@ -32,7 +32,8 @@ function get_cached_file {
 
   if [ $cur_cache -ge ${#caches[*]} ]; then
     # Object not found in cache, retrieve it and populate all caches
-    ${_WGET} -c "$from" -O "$dest" || return 1
+    rm -f "$dest" || return 1
+    ${_WGET} "$from" -O "$dest" || return 1
 
     # Populate caches. We don't exit on error but we remove potentially
     # broken objects.
@@ -40,7 +41,8 @@ function get_cached_file {
     while [ $cur_cache -lt ${#caches[*]} ]; do
       if [ -n "${caches[$cur_cache]##*:r}" ]; then
         echo "  Updating cache dir ${caches[$cur_cache]%:r}."
-        cp "$dest" "${caches[$cur_cache]%:r}/$name" || rm -f "${caches[$cur_cache]%:r}"
+        echo "$from" > "${caches[$cur_cache]%:r}/$name.url" || rm -f "${caches[$cur_cache]%:r}/$name.url"
+        cp "$dest" "${caches[$cur_cache]%:r}/$name" || rm -f "${caches[$cur_cache]%:r}/$name"
       fi
       (( cur_cache++ ))
     done
@@ -57,7 +59,8 @@ function get_cached_file {
     (( cur_cache-- ))
     if [ -n "${caches[$cur_cache]##*:r}" ]; then
       echo "  Updating cache dir ${caches[$cur_cache]%:r}."
-      cp "$dir/$name" "${caches[$cur_cache]%:r}" || rm -f "${caches[$cur_cache]%:r}"
+      echo "$from" > "${caches[$cur_cache]%:r}/$name.url" || rm -f "${caches[$cur_cache]%:r}/$name.url"
+      cp "$dir/$name" "${caches[$cur_cache]%:r}/$name" || rm -f "${caches[$cur_cache]%:r}/$name"
     fi
   done
   return 0
