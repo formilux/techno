@@ -505,7 +505,7 @@ for cfg in "$@"; do
 	    fi
 
             # install kernel
-	    $_SUDO cp arch/${ARCH}/boot/$BOOTIMG${IMGEXT:+.$IMGEXT} .config System.map $bootdir >> $OUTPUTDIR/$log 2>&1; err=$?
+	    $_SUDO cp arch/${ARCH}/boot/$BOOTIMG${IMGEXT:+.$IMGEXT} .config System.map $bootdir/ >> $OUTPUTDIR/$log 2>&1; err=$?
 	    if [ $err -ne 0 ]; then
 		echo "######### cp $BOOTIMG${IMGEXT:+.$IMGEXT} .config System.map ... returned error code $err #########" | tee -a $OUTPUTDIR/$log
 		[ -z "$KEEPDIR" ] && $_SUDO rm -rf $destdir
@@ -577,7 +577,7 @@ for cfg in "$@"; do
 	    fi
 
             echo "Packaging all-in-one kernel" >>$OUTPUTDIR/$log
-	    $_SUDO cp arch/${ARCH}/boot/$BOOTIMG${IMGEXT:+.$IMGEXT} .config System.map $bootdir >> $OUTPUTDIR/$log 2>&1; err=$?
+	    $_SUDO cp arch/${ARCH}/boot/$BOOTIMG${IMGEXT:+.$IMGEXT} .config System.map $bootdir/ >> $OUTPUTDIR/$log 2>&1; err=$?
 	    if [ $err -ne 0 ]; then
 		echo "######### cp $BOOTIMG${IMGEXT:+.$IMGEXT} .config System.map ... returned error code $err #########" | tee -a $OUTPUTDIR/$log
 		[ -z "$KEEPDIR" ] && $_SUDO rm -rf $destdir
@@ -585,13 +585,19 @@ for cfg in "$@"; do
 		continue
 	    fi
 
+            # let's also recompress System.map and .config for the all-in-1
+            # archive because they're huge and never needed for anything but
+            # debugging, and this image is often deployed on limited flash.
+	    $_SUDO sh -c "$cmd_gzip <$bootdir/System.map >$bootdir/System.map.gz 2>/dev/null && rm -f $bootdir/System.map"
+	    $_SUDO sh -c "$cmd_gzip <$bootdir/.config >$bootdir/.config.gz 2>/dev/null && rm -f $bootdir/.config"
+
 	    # let's build the signature file
-	    $_SUDO find $subarchdir/ -xdev \( -name $BOOTIMG${IMGEXT:+.$IMGEXT} -o -name .config -o -name System.map \) -printf "%P\n" | \
+	    $_SUDO find $subarchdir/ -xdev \( -name $BOOTIMG${IMGEXT:+.$IMGEXT} -o -name '.config*' -o -name 'System.map*' \) -printf "%P\n" | \
 		sh -c "( cd $subarchdir && $_SUDO xargs flx sign --ignore-dot --no-depth)" \
 		>$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-allin1-$subarch.lst
 
 	    # let's build the tar.gz
-	    $_SUDO find $subarchdir/ -xdev \( -name $BOOTIMG${IMGEXT:+.$IMGEXT} -o -name .config -o -name System.map \) -printf "%P\n" | \
+	    $_SUDO find $subarchdir/ -xdev \( -name $BOOTIMG${IMGEXT:+.$IMGEXT} -o -name '.config*' -o -name 'System.map*' \) -printf "%P\n" | \
 		$_SUDO tar -C $subarchdir --no-recursion -T - -vcf - 2>>$OUTPUTDIR/$log | \
 		${cmd_gzip} 2>/dev/null >$OUTPUTDIR/kernel-${KPKG}-${BUILDVERSION}-allin1-$subarch.tgz
 
