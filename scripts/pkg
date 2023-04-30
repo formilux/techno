@@ -2188,13 +2188,68 @@ function get_cached_file {
   local dest="$1"; shift
   local -a caches=( $* )
   local cur_cache=0
-  local name dir
+  local name dir skip
 
   # retrieve the name as the last slash-delimited part which contains a dot.
   name=$(echo -n "$from" | sed -e 's#.*/\([^/;]*\.[^/;]*\).*#\1#')
 
+  # If the resulting name is too short (less than 8 non-digit chars), or if it
+  # still contains '?' or '=', we'll try to resolve a more suitable name so
+  # that we don't get a "v1.1.tar.gz" nor "archive.tar.gz?ref=blah". We could
+  # even do it all the time but stay conservative.
+  short="${name//[0-9.\/-]/}"
+  if [ -z "${name##*[?=]*}" -o "${#short}" -lt 8 ]; then
+    # compute a prefix made of a few relevant words from the URL. First we
+    # shorten some well-known site prefixes
+    short=$(echo $from |
+      sed -e 's!^https\?://github\.com/[^/]*/!!' \
+          -e 's!^https\?://gitlab[^/]*/[^/]*/!!' \
+          -e 's!^https\?://[^/]*dl\.sourceforge\.net/[^/]*/!!' \
+          -e 's!^https\?://[^/]*downloads\.sourceforge\.net/[^/]*/!!' \
+          -e 's!^https\?://[^/]*/?p=\([^;]*/\)*\([^;]\)!\2!' \
+          -e 's!^\(ftp\|https\?\)://ftp\.gnu\.org/pub/gnu/!!' \
+          -e 's!^\(ftp\|https\?\)://ftp\.gnu\.org/gnu/!!' \
+          -e 's!^https\?://download\.savannah\.gnu\.org/[^/]*/!!' \
+          -e 's!^\(ftp\|https\?\)://\(ftp\|www\|mirrors\.edge\)\.kernel\.org/.*/!!' \
+          -e 's!^\(ftp\|https\?\)://\(www\.openssl\.org\|www\.openbsd\.org\|gnupg\.org\)/.*/!!' \
+          -e 's!^\(ftp\|https\?\)://[^/]*\.\(debian.org\|netfilter.org\)/.*/!!')
+
+    # now we remove irrelevant subdir components and concatenate remaining ones
+    skip=; name=
+    for i in ${short//[\/=?;]/ }; do
+      if [ -n "$skip" ]; then
+        skip=
+        continue
+      fi
+      case "$i" in
+        http:|https:|ftp:|git:|svn:) skip=1;     continue ;;  # scheme
+        *.com|*.org|*.net|*.info)                continue ;;  # domain names
+        download|downloads|pub|archive|archives) continue ;;  # subdirs
+        tags|refs|releases|tree|repository|-)    continue ;;  # subdirs
+        archive.tar.gz)                          continue ;;  # dummy name
+        p|a|h|sf|ref|snapshot)                   continue ;;  # query string args
+        tar|tgz|tar.gz|zip|patch)                continue ;;  # archive formats
+        *)
+          # often the accumulated prefix matches the new component, eg
+          # /path/version/path-version gives path-version-path-version
+          # so we remove the redundant part. Similarly we don't cumulate
+          # a filename that starts like the dir name.
+          i="${i%.git}"
+          if [ "${i#$name}" != "${i}" ]; then
+            name="${i}"
+          elif [ "${name%${i%%.*}}" != "${name}" ]; then
+            name="${name%${i%%.*}}${i}"
+          else
+            name="${name:+$name-}${i}"
+          fi
+          ;;
+      esac
+    done
+  fi
+
   # we only accept the name if it does not end in ".git" and contains at least
-  # one digit. Otherwise we use an md5 of the full URL.
+  # one digit. Otherwise we use an md5 of the full URL. Otherwise we just set
+  # a prefix to distinguish possible similarly named files (e.g. git tags).
   if [ -z "${name##*.git}" -o -n "${name##*[0-9]*}" ]; then
      set -- $(echo -n "$from" | md5sum)
      name="url-$1"
