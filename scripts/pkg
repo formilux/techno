@@ -2548,6 +2548,7 @@ function set_flx_arch {
             i?86*|c3*|gx|lx|p[34]|k[67]) FLX_ARCH_FAMILY=x86        ;;
             x86*|atom*|core*)            FLX_ARCH_FAMILY=x86        ;;
             arm*)                        FLX_ARCH_FAMILY=arm        ;;
+            riscv*)                      FLX_ARCH_FAMILY=riscv      ;;
             mips*)                       FLX_ARCH_FAMILY=mips       ;;
             sparc*|sun4u)                FLX_ARCH_FAMILY=sparc      ;;
             parisc*)                     FLX_ARCH_FAMILY=hppa       ;;
@@ -2602,6 +2603,7 @@ function set_flx_arch {
             x86*)                 FLX_GNU_ARCH=x86-64     ;;
             armv7*)               FLX_GNU_ARCH=armv7-a    ;;
             arm*)                 FLX_GNU_ARCH=armv5te    ;;
+            riscv64*)             FLX_GNU_ARCH=rv64gc     ;;
             mips64*)              FLX_GNU_ARCH=mips64     ;;
             mips*)                FLX_GNU_ARCH=mips32     ;;
             sparc64|sun4u)        FLX_GNU_ARCH=ultrasparc ;;
@@ -2710,6 +2712,7 @@ function set_flx_arch {
             ppc*)                     FLX_ENDIAN=big ;;
             armeb*)                   FLX_ENDIAN=big ;;
             arm*)                     FLX_ENDIAN=little ;;
+            riscv*)                   FLX_ENDIAN=little ;;
         esac
     fi
 
@@ -2877,6 +2880,18 @@ function set_compiler_options {
     	    GCC_OPT_SMALL="-Os"
     	    ;;
     	    
+	riscv*)
+	    GCC_ARCH_CURRENT="${FLX_GNU_ARCH:+-march=$FLX_GNU_ARCH}"
+	    GCC_ARCH_COMMON="${FLX_GNU_ARCH:+-march=$FLX_GNU_ARCH}"
+	    GCC_ARCH_SMALL="${FLX_GNU_ARCH_SMALL:+-march=$FLX_GNU_ARCH_SMALL}"
+	    GCC_CPU_CURRENT=""
+	    GCC_CPU_COMMON=""
+	    GCC_CPU_SMALL=""
+	    GCC_OPT_FASTEST="-O3 -fomit-frame-pointer"
+	    GCC_OPT_FAST="-O2"
+	    GCC_OPT_SMALL="-Os"
+	    ;;
+
     	sparc*)
             # Note: -m64 is mandatory for 64-bit on sparc
     	    GCC_ARCH_CURRENT="${FLX_GNU_ARCH:+-mcpu=$FLX_GNU_ARCH} -m$FLX_BITS"
