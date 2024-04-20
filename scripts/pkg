@@ -1804,7 +1804,11 @@ function do_pack {
 
 
     if [ -e "$PKGDIR/RELEASED" -a ! -e "$PKGDIR/.repository" ]; then
-      echo "Can't pack, the package is already released."
+      echo "Can't pack, the package is already released and doesn't come from a remote repository."
+      echo "Hint: if it was manually copied from another repository, please do not forget to set"
+      echo "      the original repository's base address in the .repository file. Otherwise if it"
+      echo "      was meant to be a local development package made from a raw copy, please remove"
+      echo "      the RELEASED file and make sure the directory is writable."
       exit 1
     fi
 
