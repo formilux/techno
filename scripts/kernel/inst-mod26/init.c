@@ -191,42 +191,43 @@ enum {
 
 /* all supported configuration language tokens */
 enum {
-	TOK_LN = 0,            /* ln : make a symlink */
-	TOK_MD,                /* md : mkdir */
-	TOK_MT,                /* mt : mount */
-	TOK_RE,                /* re : remount */
-	TOK_IN,                /* in : set init program */
-	TOK_BR,                /* br : branch (=execute without forking) */
-	TOK_EX,                /* ex : execute */
-	TOK_RX,                /* rx : execute under chroot */
+	TOK_BI,                /* bi : bind a directory */
 	TOK_BL,                /* bl : make block devices */
-	TOK_CH,                /* ch : make char devices */
-	TOK_FI,                /* fi : make a fifo */
-	TOK_MA,                /* ma : set umask */
+	TOK_BR,                /* br : branch (=execute without forking) */
 	TOK_CA,                /* ca : cat file */
 	TOK_CD,                /* cd : chdir */
+	TOK_CH,                /* ch : make char devices */
 	TOK_CP,                /* cp : copy file */
 	TOK_CR,                /* cr : chroot (without chdir) */
-	TOK_SW,                /* sw : switch root = chdir + chroot . + reopen console */
-	TOK_PR,                /* pr : pivot root */
-	TOK_MV,                /* mv : move a filesystem */
-	TOK_BI,                /* bi : bind a directory */
-	TOK_UM,                /* um : umount a filesystem */
-	TOK_LO,                /* lo : losetup */
 	TOK_EC,                /* ec : echo */
 	TOK_EQ,                /* eq : compare two strings */
-	TOK_TE,                /* te : test an environment variable */
-	TOK_RD,                /* rd : read a command from the console */
-	TOK_RM,                /* rm : remove files */
-	TOK_ST,                /* st : stat file existence */
-	TOK_WK,                /* wk : wait key */
-	TOK_TD,                /* td : test /dev for devtmpfs support */
-	TOK_TA,                /* ta : tar "t"/"x"/"xv" archive $2 to dir #3 */
-	TOK_LS,                /* ls : list files in DIR $1 */
+	TOK_EX,                /* ex : execute */
+	TOK_FI,                /* fi : make a fifo */
 	TOK_HA,                /* ha : halt */
+	TOK_HE,                /* he : help */
+	TOK_IN,                /* in : set init program */
+	TOK_LN,                /* ln : make a symlink */
+	TOK_LO,                /* lo : losetup */
+	TOK_LS,                /* ls : list files in DIR $1 */
+	TOK_MA,                /* ma : set umask */
+	TOK_MD,                /* md : mkdir */
+	TOK_MT,                /* mt : mount */
+	TOK_MV,                /* mv : move a filesystem */
 	TOK_PO,                /* po : power off */
+	TOK_PR,                /* pr : pivot root */
 	TOK_RB,                /* rb : reboot */
+	TOK_RD,                /* rd : read a command from the console */
+	TOK_RE,                /* re : remount */
+	TOK_RM,                /* rm : remove files */
+	TOK_RX,                /* rx : execute under chroot */
 	TOK_SP,                /* sp : suspend */
+	TOK_ST,                /* st : stat file existence */
+	TOK_SW,                /* sw : switch root = chdir + chroot . + reopen console */
+	TOK_TA,                /* ta : tar "t"/"x"/"xv" archive $2 to dir #3 */
+	TOK_TD,                /* td : test /dev for devtmpfs support */
+	TOK_TE,                /* te : test an environment variable */
+	TOK_UM,                /* um : umount a filesystem */
+	TOK_WK,                /* wk : wait key */
 	/* better add new commands above */
 	TOK_OB,	               /* {  : begin a command block */
 	TOK_CB,	               /* }  : end a command block */
@@ -248,46 +249,92 @@ enum {
  * number.
  */
 static const struct token tokens[] = {
-	"ln", 'L', 2,   /* TOK_LN */
-	"md", 'D', 1,   /* TOK_MD */
-	"mt", 'M', 3,   /* TOK_MT */
-	"re",   0, 3,   /* TOK_RE */
-	"in", 'I', 1,   /* TOK_IN */
-	"br",   0, 1,   /* TOK_BR */
-	"ex", 'E', 1,   /* TOK_EX */
-	"rx", 'R', 2,   /* TOK_RX */
-	"bl", 'B', 6,   /* TOK_BL */
-	"ch", 'C', 6,   /* TOK_CH */
-	"fi", 'F', 4,   /* TOK_FI */
-	"ma", 'U', 1,   /* TOK_MA */
-	"ca",   0, 1,   /* TOK_CA */
-	"cd",   0, 1,   /* TOK_CD */
-	"cp",   0, 2,   /* TOK_CP */
-	"cr",   0, 1,   /* TOK_CR */
-	"sw",   0, 1,   /* TOK_SW */
-	"pr", 'P', 2,   /* TOK_PR */
-	"mv", 'K', 2,   /* TOK_MV */
-	"bi", 'K', 2,   /* TOK_BI */
-	"um", 'O', 1,   /* TOK_UM */
-	"lo", 'l', 2,   /* TOK_LO */
-	"ec",   0, 0,   /* TOK_EC */
-	"eq",   0, 2,   /* TOK_EQ */
-	"te",   0, 1,   /* TOK_TE */
-	"rd",   0, 0,   /* TOK_RD */
-	"rm",   0, 1,   /* TOK_RM */
-	"st",   0, 1,   /* TOK_ST */
-	"wk",   0, 2,   /* TOK_WK */
-	"td",   0, 0,   /* TOK_TD */
-	"ta",   0, 3,   /* TOK_TA */
-	"ls",   0, 0,   /* TOK_LS */
-	"ha",   0, 0,   /* TOK_HA */
-	"po",   0, 0,   /* TOK_PO */
-	"rb",   0, 0,   /* TOK_RB */
-	"sp",   0, 0,   /* TOK_SP */
-	"{",  '{', 0,   /* TOK_OB */
-	"}",  '}', 0,   /* TOK_CB */
-	".",  '.', 0,   /* TOK_DOT : put every command before this one */
+	/* TOK_BI */ "bi", 'K', 2,
+	/* TOK_BL */ "bl", 'B', 6,
+	/* TOK_BR */ "br",   0, 1,
+	/* TOK_CA */ "ca",   0, 1,
+	/* TOK_CD */ "cd",   0, 1,
+	/* TOK_CH */ "ch", 'C', 6,
+	/* TOK_CP */ "cp",   0, 2,
+	/* TOK_CR */ "cr",   0, 1,
+	/* TOK_EC */ "ec",   0, 0,
+	/* TOK_EQ */ "eq",   0, 2,
+	/* TOK_EX */ "ex", 'E', 1,
+	/* TOK_FI */ "fi", 'F', 4,
+	/* TOK_HA */ "ha",   0, 0,
+	/* TOK_HE */ "he", '?', 0,
+	/* TOK_IN */ "in", 'I', 1,
+	/* TOK_LN */ "ln", 'L', 2,
+	/* TOK_LO */ "lo", 'l', 2,
+	/* TOK_LS */ "ls",   0, 0,
+	/* TOK_MA */ "ma", 'U', 1,
+	/* TOK_MD */ "md", 'D', 1,
+	/* TOK_MT */ "mt", 'M', 3,
+	/* TOK_MV */ "mv", 'K', 2,
+	/* TOK_PO */ "po",   0, 0,
+	/* TOK_PR */ "pr", 'P', 2,
+	/* TOK_RB */ "rb",   0, 0,
+	/* TOK_RD */ "rd",   0, 0,
+	/* TOK_RE */ "re",   0, 3,
+	/* TOK_RM */ "rm",   0, 1,
+	/* TOK_RX */ "rx", 'R', 2,
+	/* TOK_SP */ "sp",   0, 0,
+	/* TOK_ST */ "st",   0, 1,
+	/* TOK_SW */ "sw",   0, 1,
+	/* TOK_TA */ "ta",   0, 3,
+	/* TOK_TD */ "td",   0, 0,
+	/* TOK_TE */ "te",   0, 1,
+	/* TOK_UM */ "um", 'O', 1,
+	/* TOK_WK */ "wk",   0, 2,
+	/**** end of commands dumped by the help command ****/
+
+	/* TOK_OB */ "{",  '{', 0,
+	/* TOK_CB */ "}",  '}', 0,
+
+	/**** all supported commands must be before this one ****/
+	/* TOK_DOT*/ ".",  '.', 0,
 };
+
+/* One string per token, each terminated by a zero */
+static const char tokens_help[] =
+	/* TOK_BI */ "BInd old_dir new_dir : mount --bind\0"
+	/* TOK_BL */ "BLockdev mode uid gid major minor rule\0"
+	/* TOK_BR */ "BRanch cmd [args] : execve\0"
+	/* TOK_CA */ "CAt file\0"
+	/* TOK_CD */ "ChDir dir\0"
+	/* TOK_CH */ "CHardev mode uid gid major minor rule\0"
+	/* TOK_CP */ "CP src dst\0"
+	/* TOK_CR */ "ChRoot dir\0"
+	/* TOK_EC */ "ECho string\0"
+	/* TOK_EQ */ "EQ str1 str2 : compare strings\0"
+	/* TOK_EX */ "EXec cmd [args] : fork+execve\0"
+	/* TOK_FI */ "FIfo mode uid gid name\0"
+	/* TOK_HA */ "HAlt\0"
+	/* TOK_HE */ "HElp [cmd]\0"
+	/* TOK_IN */ "INit path\0"
+	/* TOK_LN */ "LN target link : symlink\0"
+	/* TOK_LO */ "LOsetup /dev/loopX file\0"
+	/* TOK_LS */ "LS [-e|-l] dir\0"
+	/* TOK_MA */ "uMAsk umask\0"
+	/* TOK_MD */ "MkDir path [mode]\0"
+	/* TOK_MT */ "MounT dev[(major:minor)] mnt type [{rw|ro} [flags]]\0"
+	/* TOK_MV */ "MoVe old_dir new_dir : mount --move\0"
+	/* TOK_PO */ "POwer off\0"
+	/* TOK_PR */ "PivotRoot new_root old_relative\0"
+	/* TOK_RB */ "ReBoot\0"
+	/* TOK_RD */ "ReaD prompt\0"
+	/* TOK_RE */ "REmount dev[(major:minor)] mnt type [{rw|ro} [flags]]\0"
+	/* TOK_RM */ "RM file\0"
+	/* TOK_RX */ "Remote-eXec dir cmd [args] : fork+chroot+execve\0"
+	/* TOK_SP */ "SusPend\0"
+	/* TOK_ST */ "STat file\0"
+	/* TOK_SW */ "SWitchroot root\0"
+	/* TOK_TA */ "TAr [x|xv|t] file [dir]\0"
+	/* TOK_TD */ "TestDev : test if /dev is devtmpfs\0"
+	/* TOK_TE */ "TEst var=val\0"
+	/* TOK_UM */ "UMount dir\0"
+	/* TOK_WK */ "WaitKey prompt delay\0"
+	;
 
 /* mandatory device nodes : name, mode, gid, major, minor */
 static const struct dev_node dev_nodes[] =  {
@@ -322,6 +369,7 @@ static char *var_str[MAX_FIELDS];
 static char mounts[MAX_MNT_SIZE];
 static struct dev_varstr var[MAX_FIELDS];
 static int error;       /* an error has emerged from last operation */
+static int error_num;   /* a copy of errno when error != 0 */
 static int linuxrc;     /* non-zero if we were called as 'linuxrc' */
 static char tmp_path[MAXPATHLEN];
 
@@ -331,8 +379,44 @@ static char tmp_path[MAXPATHLEN];
  */
 
 
+/* prints character <c> */
+static void pchar(char c)
+{
+	write(1, &c, 1);
+}
+
+/* prints string <s> up to <n> chars */
+static void printn(const char *c, int n)
+{
+	const char *p = c;
+
+	while (*p && n--)
+		p++;
+
+	write(1, c, p-c);
+}
+
+/* same as above but also adds a trailing '\n' */
+static void printnln(const char *c, int n)
+{
+	printn(c, n);
+	pchar('\n');
+}
+
+/* Used to emit informative messages */
+static void print(const char *c)
+{
+	printn(c, -1);
+}
+
+/* same as above but also adds a trailing '\n' */
+static void println(const char *c)
+{
+	printnln(c, -1);
+}
+
 /* Used only to emit debugging messages when compiled with -DDEBUG */
-static void print(char *c)
+static void debug(char *c)
 {
 #ifdef DEBUG
 	char *p = c;
@@ -491,27 +575,24 @@ static char *addchr(char *dest, char chr)
 	return dest;
 }
 
-/* appends an 8-bit unsigned integer <num> to the end <dest> of a string and
+/* appends a 32-bit unsigned integer <num> to the end <dest> of a string and
  * returns the pointer to the new end. No size checks are performed.
  */
-static char *addint(char *dest, uint8_t num)
+static char *adduint(char *dest, uint32_t num)
 {
-	int div;
-	char *out = dest;
+	uint32_t div;
 
-	for (div = (1 << 16) + (10 << 8) + 100; div > 0;) {
-		int q, r, d;
-		d = (unsigned char)div;
-		q = num / d; r = num % d;
-		div >>= 8;
+	for (div = 1; num / div >= 10; div *= 10)
+		;
 
-		if (!div || (out != dest) || q) {
-			*out++ = q + '0';
-		}
-		num = r;
+	while (div) {
+		*dest++ = '0' + num / div;
+		num %= div;
+		div /= 10;
 	}
-	*out = '\0';
-	return out;
+
+	*dest = '\0';
+	return dest;
 }
 
 /* appends an 8-bit unsigned hex integer <num> to the end <dest> of a string
@@ -680,13 +761,15 @@ static int mknod_chown(mode_t mode, uid_t uid, gid_t gid, uint8_t major, uint8_t
 	int error;
 
 	if (mknod(name, mode, makedev(major, minor)) == -1 && chmod(name, mode) == -1) {
+		error_num = errno;
 		error = 1;
-		print("init/error : mknod("); print(name); print(") failed\n");
+		debug("init/error : mknod("); debug(name); debug(") failed\n");
 	}
 
 	if (chown(name, uid, gid) == -1) {
+		error_num = errno;
 		error = 1;
-		print("init/error : chown("); print(name); print(") failed\n");
+		debug("init/error : chown("); debug(name); debug(") failed\n");
 	}
 
 	return error;
@@ -718,8 +801,11 @@ static int recursive_mkdir(const char *path, mode_t mode)
 				tmp_path[pos] = 0;
 				ret = recursive_mkdir(tmp_path, 0755);
 				tmp_path[pos] = '/';
-				if (ret == 0)
+				if (ret == 0) {
 					ret = mkdir(tmp_path, mode);
+					if (ret < 0)
+						error_num = errno;
+				}
 				break;
 			}
 		}
@@ -745,7 +831,7 @@ static void reopen_console()
 	dup2(0, 1); // stdout
 	dup2(0, 2); // stderr
 
-	print("init/info : reopened /dev/console\n");
+	debug("init/info : reopened /dev/console\n");
 }
 
 /* return 0 if at least one entry is missing */
@@ -812,6 +898,7 @@ static int tar_extract(const char *action, const char *file, const char *dir)
 		action = "";
 
 	ret = fd = open(file, O_RDONLY, 0);
+	error_num = errno;
 	if (ret < 0)
 		goto out_ret;
 
@@ -823,6 +910,7 @@ static int tar_extract(const char *action, const char *file, const char *dir)
 		 * consecutive empty blocks seen.
 		 */
 		len = read(fd, blk.buffer, sizeof(blk.buffer));
+		error_num = errno;
 		if (len < sizeof(blk.buffer))
 			goto out_fail;
 
@@ -847,11 +935,8 @@ static int tar_extract(const char *action, const char *file, const char *dir)
 		len += my_strlcpy(dest + len, blk.hdr.prefix, 156);     // max 155 copied.
 		len += my_strlcpy(dest + len, blk.hdr.name, 101);       // max 100 copied.
 
-		if (action[0] == 't' || (action[0] == 'x' && action[1] == 'v')) {
-			dest[len] = '\n';
-			write(1, dest, len + 1);
-			dest[len] = 0;
-		}
+		if (action[0] == 't' || (action[0] == 'x' && action[1] == 'v'))
+			printnln(dest, len);
 
 		/* now concatenate <dir>, "/" and <dest> into <name> */
 		pos = 0;
@@ -888,15 +973,20 @@ static int tar_extract(const char *action, const char *file, const char *dir)
 			case  0  :
 			case '0' : /* normal file */
 				ret = outfd = open(name, O_CREAT|O_WRONLY|O_TRUNC|O_LARGEFILE, mode);
-				chown(name, uid, gid);
+				if (ret >= 0)
+					chown(name, uid, gid);
+				error_num = errno;
 				/* the error is handled below by not copying the data */
 				break;
 			case '1' : /* hard link */
 				ret = link(dest, name);
+				error_num = errno;
 				break;
 			case '2' : /* symlink */
 				ret = symlink(dest, name);
-				chown(name, uid, gid);
+				if (ret >= 0)
+					chown(name, uid, gid);
+				error_num = errno;
 				break;
 			case '3' : /* char dev */
 				ret = -mknod_chown(mode | S_IFCHR, uid, gid, major, minor, name);
@@ -926,6 +1016,7 @@ static int tar_extract(const char *action, const char *file, const char *dir)
 				len = sizeof(buffer);
 			len = (len + 511) & -512;
 			len = read(fd, buffer, len);
+			error_num = errno;
 			if (len <= 0)
 				goto out_fail;
 
@@ -935,6 +1026,7 @@ static int tar_extract(const char *action, const char *file, const char *dir)
 
 			if (outfd >= 0) {
 				if (write(outfd, buffer, len) < 0) {
+					error_num = errno;
 					close(outfd);
 					outfd = -1;
 				}
@@ -990,6 +1082,7 @@ static int list_dir(const char *fmt, const char *dir)
 		fmt++;
 
 	ret = fd = open(dir, O_RDONLY | O_DIRECTORY, 0);
+	error_num = errno;
 	if (ret < 0)
 		goto out_ret;
 
@@ -1039,10 +1132,9 @@ static int list_dir(const char *fmt, const char *dir)
 				default      : str = "? "; break;
 				}
 #endif
-				write(1, str, 2);
+				printn(str, 2);
 			}
-			write(1, d->d_name, my_strlen(d->d_name));
-			write(1, "\n", 1);
+			println(d->d_name);
 		}
 	}
 	/* here we have ret = 0 on success or -1 on error. We may want to change
@@ -1073,10 +1165,13 @@ static char *get_dev_type()
 	int best;
 	char *ptr, *end, *mnt, *match;
 
-	if ((fd = open("/proc/mounts", O_RDONLY, 0)) == -1)
+	if ((fd = open("/proc/mounts", O_RDONLY, 0)) == -1) {
+		error_num = errno;
 		return NULL;
+	}
 
 	len = read(fd, mounts, sizeof(mounts) - 1);
+	error_num = errno;
 	close(fd);
 	if (len <= 0)
 		return NULL;
@@ -1132,6 +1227,7 @@ char *find_arg(char *arg)
 			return NULL;
 
 		cmdline_len = read(fd, cmdline, sizeof(cmdline)-1);
+		error_num = errno;
 		close(fd);
 		if (cmdline_len <= 0)
 			return NULL;
@@ -1186,6 +1282,7 @@ static int read_cfg(char *cfg_file)
 	if (cfg_line == NULL) {
 		if (((cfg_fd = open(cfg_file, O_RDONLY, 0)) == -1) ||
 		    ((cfg_size = read(cfg_fd, cfg_data, sizeof(cfg_data) - 1)) == -1)) {
+			error_num = errno;
 			return -1;
 		}
 		close(cfg_fd);
@@ -1452,18 +1549,18 @@ static void name_and_minor(char *name, uint8_t *minor, int fields)
 			name = addhex(name, var[f].u.num.value);
 			goto recalc_int;
 		case 'i' :
-			name = addint(name, var[f].u.num.value);
+			name = adduint(name, var[f].u.num.value);
 			goto recalc_int;
 		case 'I' :
 			if (var[f].u.num.value)
-				name = addint(name, var[f].u.num.value);
+				name = adduint(name, var[f].u.num.value);
 		recalc_int:
 			min += (var[f].u.num.value - var[f].u.num.low) * var[f].scale;
 			break;
 		case 0 :
 			break;
 		default:
-			print("init/conf : field type must be c, h, i or I\n");
+			debug("init/conf : field type must be c, h, i or I\n");
 		}
 	}
 	if (minor)
@@ -1566,7 +1663,7 @@ static void multidev(mode_t mode, uid_t uid, gid_t gid, uint8_t major, uint8_t m
 		}
 	}
 	else {
-		print("var string incomplete\n");
+		debug("var string incomplete\n");
 	}
 
 	/* now we must "compile" the variable fields */
@@ -1584,7 +1681,7 @@ static void multidev(mode_t mode, uid_t uid, gid_t gid, uint8_t major, uint8_t m
 			break;
 		case 'h':
 			if (hex_range(var[i].u.chr.set, &var[i].u.num.low, &var[i].u.num.high)) {
-				print("init/conf : error in hex range\n");
+				debug("init/conf : error in hex range\n");
 				continue;
 			}
 			var[i].u.num.value = var[i].u.num.low;
@@ -1592,7 +1689,7 @@ static void multidev(mode_t mode, uid_t uid, gid_t gid, uint8_t major, uint8_t m
 		case 'i':
 		case 'I':
 			if (int_range(var[i].u.chr.set, &var[i].u.num.low, &var[i].u.num.high)) {
-				print("init/conf : error in int range\n");
+				debug("init/conf : error in int range\n");
 				continue;
 			}
 			var[i].u.num.value = var[i].u.num.low;
@@ -1706,23 +1803,23 @@ int main(int argc, char **argv, char **envp)
 		 * we don't test the presence of /dev/console.
 		 */
 		if (linuxrc || !is_dev_populated()) {
-			print("init/info: /dev/console not found, rebuilding /dev.\n");
+			debug("init/info: /dev/console not found, rebuilding /dev.\n");
 			if (mount("/dev", "/dev", "devtmpfs", MS_MGC_VAL, "size=4k,nr_inodes=4096,mode=755") == -1 &&
 			    mount("/dev", "/dev", "tmpfs",    MS_MGC_VAL, "size=4k,nr_inodes=4096,mode=755") == -1) {
-				print("init/err: cannot mount /dev.\n");
+				debug("init/err: cannot mount /dev.\n");
 			}
 			else {
 				int i;
 				if (chdir("/dev") == -1)
-					print("init/error : cannot chdir(/dev)\n");
+					debug("init/error : cannot chdir(/dev)\n");
 
-				print("init/info: /dev has been mounted.\n");
+				debug("init/info: /dev has been mounted.\n");
 				for (i = 0; i < sizeof(dev_nodes) / sizeof(dev_nodes[0]); i++) {
 					mknod_chown(dev_nodes[i].mode, UID_ROOT, dev_nodes[i].gid,
 						    dev_nodes[i].major, dev_nodes[i].minor, (char *)dev_nodes[i].name);
 				}
 				symlink("/proc/self/fd", "fd");
-				print("init/info: /dev has been rebuilt.\n");
+				debug("init/info: /dev has been rebuilt.\n");
 
 				chdir("/");
 				/* if /dev was empty, we may not have had /dev/console, so the
@@ -1738,21 +1835,21 @@ int main(int argc, char **argv, char **envp)
 		/* if /dev/root is non-existent, we'll try to make it now */
 
 		if (stat("/dev/root", &statf) == -1) {
-			print("init/info : /dev/root does not exist. Rebuilding...\n");
+			debug("init/info : /dev/root does not exist. Rebuilding...\n");
 			if (stat("/", &statf) == 0) {
 				if (mknod("/dev/root", 0600 | S_IFBLK, statf.st_dev) == -1) {
-					print("init/error : mknod(/dev/root) failed\n");
+					debug("init/error : mknod(/dev/root) failed\n");
 				}
 			}
 			else {
-				print("init/error : cannot stat(/)\n");
+				debug("init/error : cannot stat(/)\n");
 			}
 		}
 	}
 
 	/* here, the cwd is still "/" */
 	if (cfg_ok) {
-		print("ready to parse file : "); print(cfg_file); print("\n");
+		debug("ready to parse file : "); debug(cfg_file); debug("\n");
 
 		run_level = brace_level = 0;
 		context[brace_level].error = 0;
@@ -1765,7 +1862,7 @@ int main(int argc, char **argv, char **envp)
 			if (cmd_input == INPUT_KBD) {
 				int len;
 				char *cmd_ptr = cmd_line;
-				char prompt[sizeof(cmd_line) + MAX_BRACE_LEVEL + 4];
+				char prompt[sizeof(cmd_line) + MAX_BRACE_LEVEL + 16];
 				char *p = prompt;
 				int lev1, lev2;
 
@@ -1773,7 +1870,11 @@ int main(int argc, char **argv, char **envp)
 					p += my_strlcpy(p, ret_msg, sizeof(cmd_line));
 
 				ret_msg = NULL;
-				p += my_strlcpy(p, error ? "ER\n>" : "OK\n>", 5);
+				p = addcst(p, error ? "ER (" : "OK\n>");
+				if (error) {
+					p = adduint(p, error_num);
+					p = addcst(p, ")\n>");
+				}
 
 				lev1 = run_level;
 				lev2 = brace_level;
@@ -1789,7 +1890,7 @@ int main(int argc, char **argv, char **envp)
 					*p++ = '}';
 				}
 				*p++ = ' ';
-				write(1, prompt, p-prompt);
+				printn(prompt, p-prompt);
 
 				len = read(0,  cmd_line, sizeof(cmd_line)-1);
 				if (len > 0) {
@@ -1837,10 +1938,10 @@ int main(int argc, char **argv, char **envp)
 
 			if (token == TOK_CB) { /* closing brace */
 				if (cond & TOK_COND) {
-					print("Conditions not permitted with a closing brace.\n");
+					debug("Conditions not permitted with a closing brace.\n");
 					/* we close the brace anyway, ignoring the condition. */
 				} else if (brace_level == 0) {
-					print("Too many closing braces.\n");
+					debug("Too many closing braces.\n");
 					error = context[brace_level].error;
 					continue;
 				}
@@ -1855,7 +1956,7 @@ int main(int argc, char **argv, char **envp)
 			}
 			else if (token == TOK_OB) { /* opening brace */
 				if (brace_level == MAX_BRACE_LEVEL - 1) {
-					print("Too many brace levels.\n");
+					debug("Too many brace levels.\n");
 					error = context[brace_level].error;
 					break;
 				}
@@ -1907,7 +2008,7 @@ int main(int argc, char **argv, char **envp)
 				 * shell, this one might be called with 'auto'...
 				 * So we flush them all.
 				 */
-				print("<I>nit : used config name for init\n");
+				debug("<I>nit : used config name for init\n");
 
 				/* in keyboard mode, specifying init stops any further parsing,
 				 * so that the rest of the config file can be skipped.
@@ -1948,11 +2049,37 @@ int main(int argc, char **argv, char **envp)
 
 				error = !res || !streq(res, "devtmpfs");
 				goto finish_cmd;
+			} else if (token == TOK_HE) {
+				int i;
+				const char *help = tokens_help;
+
+				/* ? / help : show supported commands */
+				if (!cfg_args[1])
+					println("Supported commands:");
+				println("# long short args help");
+				for (i = 0; i < TOK_OB; i++) {
+					if (!cfg_args[1] ||
+					    streqlen(cfg_args[1], tokens[i].lcmd, 2) ||
+					    (!cfg_args[1][1] && cfg_args[1][0] == tokens[i].scmd)) {
+						print("   ");
+						printn(tokens[i].lcmd, 2);
+						print("    ");
+						pchar(tokens[i].scmd ? tokens[i].scmd : '-');
+						print("    ");
+						pchar(tokens[i].minargs + '0');
+						print("   ");
+						if (*help)
+							print(help);
+						pchar('\n');
+					}
+					help = help + my_strlen(help) + 1;
+				}
+				goto finish_cmd;
 			}
 
 			/* other options are reserved for pid 1/linuxrc/rebuild and prompt mode */
 			if (!pid1 && !linuxrc && !rebuild && cmd_input != INPUT_KBD) {
-				print("Command ignored since pid not 1\n");
+				debug("Command ignored since pid not 1\n");
 				error = context[brace_level].error;
 				continue;
 
@@ -1962,14 +2089,9 @@ int main(int argc, char **argv, char **envp)
 				   wk <string> <delay> : display message and wait for a key for at most <delay> seconds.
 				   returns TRUE if a key is pressed, FALSE otherwise.
 				*/
-				char *msg;
-				int len;
 
-				if (cfg_args[1] != NULL) {
-					len = my_strlen(cfg_args[1]);
-					cfg_args[1][len] = '\n';
-					write(1, cfg_args[1], len + 1);
-				}
+				if (cfg_args[1] != NULL)
+					println(cfg_args[1]);
 
 				if (token == TOK_WK) {
 					error = !keypressed(my_atoul(cfg_args[2]));
@@ -1996,14 +2118,15 @@ int main(int argc, char **argv, char **envp)
 				/* md path [ mode ] :  make a directory */
 				if (recursive_mkdir(cfg_args[1], (cfg_args[2] == NULL) ? 0755 : base8_to_ul(cfg_args[2])) == -1) {
 					error = 1;
-					print("<D>irectory : mkdir() failed\n");
+					debug("<D>irectory : mkdir() failed\n");
 				}
 				goto finish_cmd;
 			case TOK_LN:
 				/* ln from to : make a symlink */
 				if (symlink(cfg_args[1], cfg_args[2]) == -1) {
+					error_num = errno;
 					error = 1;
-					print("<S>ymlink : symlink() failed\n");
+					debug("<S>ymlink : symlink() failed\n");
 				}
 				goto finish_cmd;
 			case TOK_CA:
@@ -2016,15 +2139,19 @@ int main(int argc, char **argv, char **envp)
 				struct stat stat_buf;
 
 				err = 1;
-				if (stat(cfg_args[1], &stat_buf) == -1)
+				if (stat(cfg_args[1], &stat_buf) == -1) {
+					error_num = errno;
 					goto stat_err;
+				}
 
 				src = open(cfg_args[1], O_RDONLY, 0);
+				error_num = errno;
 				if (src < 0)
 					goto open_err_src;
 
 				if (token == TOK_CP) {
 					dst = open(cfg_args[2], O_CREAT|O_WRONLY|O_TRUNC|O_LARGEFILE, stat_buf.st_mode);
+					error_num = errno;
 					if (dst < 0)
 						goto open_err_dst;
 				} else {
@@ -2036,10 +2163,13 @@ int main(int argc, char **argv, char **envp)
 					len = read(src, buffer, sizeof(buffer));
 					if (len == 0)
 						break;
+					error_num = errno;
 					if (len < 0)
 						goto read_err;
-					if (write(dst, buffer, len) < 0)
+					if (write(dst, buffer, len) < 0) {
+						error_num = errno;
 						goto write_err;
+					}
 				}
 				err = 0;
 				read_err:
@@ -2058,6 +2188,7 @@ int main(int argc, char **argv, char **envp)
 				struct stat stat_buf;
 
 				if (stat(cfg_args[1], &stat_buf) == -1) {
+					error_num = errno;
 					error = 1;
 				}
 				goto finish_cmd;
@@ -2068,8 +2199,9 @@ int main(int argc, char **argv, char **envp)
 
 				while (cfg_args[arg]) {
 					if (unlink(cfg_args[arg]) == -1) {
+						error_num = errno;
 						error = 1;
-						print("Unlink : unlink() failed\n");
+						debug("Unlink : unlink() failed\n");
 					}
 					arg++;
 				}
@@ -2080,7 +2212,8 @@ int main(int argc, char **argv, char **envp)
 			case TOK_CH:
 				/* ch <mode> <uid> <gid> <major> <minor> <naming rule> : build a character device */
 				if (chdir("/dev") == -1) {
-					print("<B>lock_dev/<C>har_dev : cannot chdir(/dev)\n");
+					error_num = errno;
+					debug("<B>lock_dev/<C>har_dev : cannot chdir(/dev)\n");
 					error = 1;
 					goto finish_cmd;
 				}
@@ -2093,7 +2226,8 @@ int main(int argc, char **argv, char **envp)
 			case TOK_FI:
 				/* F <mode> <uid> <gid> <name> : build a fifo */
 				if (chdir("/dev") == -1) {
-					print("<F>ifo : cannot chdir(/dev)\n");
+					error_num = errno;
+					debug("<F>ifo : cannot chdir(/dev)\n");
 					error = 1;
 					goto finish_cmd;
 				}
@@ -2107,7 +2241,7 @@ int main(int argc, char **argv, char **envp)
 
 			/* other options are reserved for pid 1/linuxrc/prompt mode only */
 			if (!pid1 && !linuxrc && cmd_input != INPUT_KBD) {
-				print("Command ignored since pid not 1\n");
+				debug("Command ignored since pid not 1\n");
 				error = context[brace_level].error;
 				continue;
 			}
@@ -2155,26 +2289,28 @@ int main(int argc, char **argv, char **envp)
 
 					dev = makedev(imaj, imin);
 					if (mknod(mntdev, S_IFBLK|0600, dev) == -1) { /* makes the node as required */
+						error_num = errno;
 						error = 1;
-						print("<M>ount : mknod() failed\n");
+						debug("<M>ount : mknod() failed\n");
 					}
 				}
 		
 				mntarg = MS_RDONLY;
 				if (cfg_args[4] != NULL && streq(cfg_args[4], "rw")) {
-					print("<M>ount : 'rw' flag found, mounting read/write\n");
+					debug("<M>ount : 'rw' flag found, mounting read/write\n");
 					mntarg &= ~MS_RDONLY;
 				}
 				else {
-					print("<M>ount : 'rw' flag not found, mounting read only\n");
+					debug("<M>ount : 'rw' flag not found, mounting read only\n");
 				}
 
 				if (token == TOK_RE)
 					mntarg |= MS_REMOUNT;
 
 				if (mount(mntdev, cfg_args[2], cfg_args[3], MS_MGC_VAL | mntarg, cfg_args[5]) == -1) {
+					error_num = errno;
 					error = 1;
-					print("<M>ount : error during mount()\n");
+					debug("<M>ount : error during mount()\n");
 				}
 
 				break;
@@ -2225,7 +2361,7 @@ int main(int argc, char **argv, char **envp)
 						tcsetpgrp(0, getpid());
 						setpgid(0, getpid());
 						execve(exec_args[0], exec_args, envp);
-						print("<E>xec(child) : execve() failed\n");
+						debug("<E>xec(child) : execve() failed\n");
 						if (token != TOK_BR)
 							exit(1);
 					}
@@ -2258,15 +2394,17 @@ int main(int argc, char **argv, char **envp)
 				else if (res > 0) {
 					int ret;
 
-					print("<E>xec(parent) : waiting for termination\n");
+					debug("<E>xec(parent) : waiting for termination\n");
 					while (((ret = wait(&error)) != -1) && (ret != res))
-						print("<E>xec(parent) : signal received\n");
-		    
-					error = (ret == -1) || ((WIFEXITED(error) > 0) ? WEXITSTATUS(error) : 1);
-					print("<E>xec(parent) : child exited\n");
+						debug("<E>xec(parent) : signal received\n");
+
+					error_num = ((WIFEXITED(error) > 0) ? WEXITSTATUS(error) : 1);
+					error = (ret == -1) || error_num;
+					debug("<E>xec(parent) : child exited\n");
 				}
 				else {
-					print("<E>xec : fork() failed\n");
+					error_num = errno;
+					debug("<E>xec : fork() failed\n");
 					error = 1;
 				}
 				break;
@@ -2278,26 +2416,30 @@ int main(int argc, char **argv, char **envp)
 			case TOK_CD:
 				/* cd <new_dir> : change current directory */
 				if (chdir(cfg_args[1]) == -1) {
+					error_num = errno;
 					error = 1;
-					print("cd : error during chdir()\n");
+					debug("cd : error during chdir()\n");
 				}
 				break;
 			case TOK_CR:
 				/* cr <new_root> : change root without chdir */
 				if (chroot(cfg_args[1]) == -1) {
+					error_num = errno;
 					error = 1;
-					print("cr (chroot) : error during chroot()\n");
+					debug("cr (chroot) : error during chroot()\n");
 				}
 				break;
 			case TOK_SW:
 				/* sw <new_root> : switch root + reopen console from new root if it exists */
 				if (chroot(cfg_args[1]) == -1) {
+					error_num = errno;
 					error = 1;
-					print("cr (chroot) : error during chroot()\n");
+					debug("cr (chroot) : error during chroot()\n");
 				}
 				if (chdir("/") == -1) {
+					error_num = errno;
 					error = 1;
-					print("cd : error during chdir()\n");
+					debug("cd : error during chdir()\n");
 				}
 				/* replace stdin/stdout/stderr with newer ones */
 				reopen_console();
@@ -2305,19 +2447,22 @@ int main(int argc, char **argv, char **envp)
 			case TOK_PR:
 				/* P <new_root> <put_old_relative> : pivot root */
 				if (chdir(cfg_args[1]) == -1) {
+					error_num = errno;
 					error = 1;
-					print("<P>ivot : error during chdir(new root)\n");
+					debug("<P>ivot : error during chdir(new root)\n");
 				}
 
 				if (pivot_root(".", cfg_args[2]) == -1) {
+					error_num = errno;
 					error = 1;
-					print("<P>ivot : error during pivot_root()\n");
+					debug("<P>ivot : error during pivot_root()\n");
 				}
 
 				chroot(".");
 				if (chdir("/") == -1) {
+					error_num = errno;
 					error = 1;
-					print("<P>ivot : error during chdir(/)\n");
+					debug("<P>ivot : error during chdir(/)\n");
 				}
 
 				/* replace stdin/stdout/stderr with newer ones */
@@ -2336,8 +2481,9 @@ int main(int argc, char **argv, char **envp)
 				 * <new_dir> will show the same contents as <old_dir>.
 				 */
 				if (mount(cfg_args[1], cfg_args[2], cfg_args[1], MS_MGC_VAL | MS_BIND, NULL) == -1) {
+					error_num = errno;
 					error = 1;
-					print("<bi> : error during mount|bind\n");
+					debug("<bi> : error during mount|bind\n");
 				}
 				if (token == TOK_BI)
 					break;
@@ -2345,8 +2491,9 @@ int main(int argc, char **argv, char **envp)
 			case TOK_UM:
 				/* um <old_dir> : umount <old_dir> after a pivot. */
 				if (umount2(cfg_args[1], MNT_DETACH) == -1) {
+					error_num = errno;
 					error = 1;
-					print("<um> : error during umount\n");
+					debug("<um> : error during umount\n");
 				}
 				break;
 			case TOK_LO: {
@@ -2355,26 +2502,30 @@ int main(int argc, char **argv, char **envp)
 				int lfd, ffd;
 
 				if ((lfd = open(cfg_args[1], O_RDONLY, 0)) < 0) {
+					error_num = errno;
 					error = 1;
-					print("(l)osetup : error opening loop device\n");
+					debug("(l)osetup : error opening loop device\n");
 					break;
 				}
 				if ((ffd = open(cfg_args[2], O_RDONLY, 0)) < 0) {
+					error_num = errno;
 					error = 1;
-					print("(l)osetup : error opening image\n");
+					debug("(l)osetup : error opening image\n");
 					goto losetup_close_all;
 				}
 				memset(&loopinfo, 0, sizeof (loopinfo));
 				my_strlcpy(loopinfo.lo_name, cfg_args[2], LO_NAME_SIZE);
 				if (ioctl(lfd, LOOP_SET_FD, (void *)(long)ffd) < 0) {
+					error_num = errno;
 					error = 1;
-					print("(l)osetup : error during LOOP_SET_FD\n");
+					debug("(l)osetup : error during LOOP_SET_FD\n");
 					goto losetup_close_all;
 				}
 				if (ioctl(lfd, LOOP_SET_STATUS, &loopinfo) < 0) {
+					error_num = errno;
 					error = 1;
 					ioctl(lfd, LOOP_CLR_FD, (void *)0);
-					print("(l)osetup : error during LOOP_SET_STATUS\n");
+					debug("(l)osetup : error during LOOP_SET_STATUS\n");
 					goto losetup_close_all;
 				}
 				losetup_close_all:
@@ -2394,10 +2545,11 @@ int main(int argc, char **argv, char **envp)
 				               token == TOK_PO ? LINUX_REBOOT_CMD_POWER_OFF :
 				               token == TOK_RB ? LINUX_REBOOT_CMD_RESTART :
 				               /* TOK_SP */      LINUX_REBOOT_CMD_SW_SUSPEND);
+				error_num = errno;
 				break;
 			}
 			default:
-				print("unknown cmd in /.preinit\n");
+				debug("unknown cmd in /.preinit\n");
 				break;
 			}
 		finish_cmd:
@@ -2405,39 +2557,39 @@ int main(int argc, char **argv, char **envp)
 				error = !error;
 		} /* while (1) */
 	} else if (pid1 && !linuxrc) {
-		print("init/info : error while opening configuration file : ");
-		print(cfg_file); print("\n");
+		debug("init/info : error while opening configuration file : ");
+		debug(cfg_file); debug("\n");
 
 		/* /.preinit was not found. In this case, we take default actions :
 		 *   - mount /proc
 		 *   - mount /var as tmpfs if it's empty and /tmp is a symlink
 		 */
 		if (mount("/proc", "/proc", "proc", MS_MGC_VAL, NULL) == -1)
-			print("init/err: cannot mount /proc.\n");
+			debug("init/err: cannot mount /proc.\n");
 		else
-			print("init/info: /proc mounted RW.\n");
+			debug("init/info: /proc mounted RW.\n");
 
 		/* we'll see if we want to build /var */
 		if ((stat("/var/tmp", &statf) == -1) && /* no /var/tmp */
 		    (stat("/tmp", &statf) == 0) && S_ISLNK(statf.st_mode)) { /* and /tmp is a symlink */
-			print("init/info: building /var.\n");
+			debug("init/info: building /var.\n");
 			if (mount("/var", "/var", "tmpfs", MS_MGC_VAL, NULL) == -1)
-				print("init/err: cannot mount /var.\n");
+				debug("init/err: cannot mount /var.\n");
 			else {
-				print("init/info: /var has been mounted.\n");
+				debug("init/info: /var has been mounted.\n");
 				recursive_mkdir("/var/tmp", 01777);
 				recursive_mkdir("/var/run",  0755);
-				print("init/info: /var has been built.\n");
+				debug("init/info: /var has been built.\n");
 			}
 		}
 	}
 	else {
-		print("init/info : error while opening configuration file : ");
-		print(cfg_file); print("\n");
+		debug("init/info : error while opening configuration file : ");
+		debug(cfg_file); debug("\n");
 	}
 
 	if (rebuild) {
-		print("end of rebuild\n");
+		debug("end of rebuild\n");
 		/* nothing more to do */
 		return 0;
 	}
@@ -2476,7 +2628,7 @@ int main(int argc, char **argv, char **envp)
 	/* the old linuxrc behaviour doesn't exec on exit. */
 	if (*argv != NULL) {
 		err = execve(*argv, argv, envp);
-		print("init/error : last execve() failed\n");
+		debug("init/error : last execve() failed\n");
 
 		/* we'll get a panic there, so let some time for the user to read messages */
 		if (pid1)
