@@ -340,6 +340,7 @@ for cfg in "$@"; do
 
 	echo "Building kernel and modules" | tee -a $OUTPUTDIR/$log
         rm -rf initramfs && mkdir initramfs
+	"${MAKE_CMD[@]}" prepare </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
 	"${MAKE_CMD[@]}" -j $PARALLELCC $BOOTIMG modules </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
 	if [ $err -ne 0 ]; then
 	    echo "######### make $BOOTIMG modules returned error code $err #########" | tee -a $OUTPUTDIR/$log
@@ -368,6 +369,10 @@ for cfg in "$@"; do
         fi
     else
 	echo "Skipping compilation" | tee -a $OUTPUTDIR/$log
+        # make sure to regenerate the correct version (e.g. if another "make"
+        # was run since last command such as "make dtbs", without forcing the
+        # version).
+	"${MAKE_CMD[@]}" prepare </dev/null >>$OUTPUTDIR/$log 2>&1; err=$?
     fi
 
     # we can build several packages from one distro
