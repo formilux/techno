@@ -1,10 +1,10 @@
 #!/bin/bash
 
 #
-# scripts/flxrescan - rescans and updates a prf  - version 0.0.5 - 2009-11-27
+# scripts/flxrescan - rescans and updates a prf  - version 0.0.6 - 2025-09-03
 # This file is part of the Formilux project : http://formilux.ant-computing.com/
 #
-# Copyright (C) 2001-2003 Benoit Dolez & Willy Tarreau
+# Copyright (C) 2001-2025 Benoit Dolez & Willy Tarreau
 #       mailto: benoit@ant-computing.com,willy@ant-computing.com
 #
 # This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
@@ -51,9 +51,19 @@ function main {
 	    continue
         fi
 
-	# look for the first exact match
-	set -- $( grep -F -- "$file" "$pkgsrc" | awk '{ if ($8=="'$file'") { print $0;exit;}}' )
-	if [ -z "$*" ]; then
+	# look for the first exact match, we support extracting files
+        # designated by '*'/'?'/'**' in prf. We're looking for at least
+        # one match.
+        awk "{re = \"$file\";
+              gsub(/([.()|+^\$\\\\])/, \"\\\\\\\\&\", re); # Escape regex chars
+              gsub(/\*/, \"[^/]*\", re); # *: any string except '/'
+              gsub(/\[\^\/\]\*\[\^\/\]\*/, \".*\", re);  # **: any string including '/'
+              gsub(/\?/, \"[^/]\", re);  # ?: any char but '/'
+              gsub(/\[!/, \"[^\", re);   # [!abc] becomes [^abc]
+              re = \"^\" re \"\$\";      # full match
+              if (\$8 ~ re) print \$0; }" "$pkgsrc" | grep -q .
+
+	if [ $? -ne 0 ]; then
 	    pkgsrc=${pkgsrc##*/}
 	    pkgsrc=${pkgsrc%.lst}
 	    if [ $unversionned = 1 ]; then
