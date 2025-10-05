@@ -63,14 +63,20 @@
   Eg: init2=, INIT=, ...
 */
 
+#ifndef _GNU_SOURCE
+# define _GNU_SOURCE
+#endif
+
 #ifndef NOLIBC
 #include <stdint.h>
 #include <stdio.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/sysmacros.h>
 #include <string.h>
 #include <ctype.h>
 #include <sys/mount.h>
@@ -78,10 +84,41 @@
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <linux/loop.h>
+#include <sched.h>
 #include <errno.h>
 #include <dirent.h>
 #include <syscall.h>
 #include <linux/reboot.h>
+#include <sys/reboot.h>
+#endif
+
+#include <linux/random.h>
+
+#ifndef NOLIBC
+# define my_syscall0 syscall
+# define my_syscall1 syscall
+# define my_syscall2 syscall
+# define my_syscall3 syscall
+# define my_syscall4 syscall
+# define my_syscall5 syscall
+#endif
+
+#if defined(__NR_kexec_file_load)
+#include <linux/kexec.h>
+# ifndef LINUX_REBOOT_CMD_KEXEC
+#  define LINUX_REBOOT_CMD_KEXEC 0x45584543
+# endif
+#endif
+
+#if defined(__NR_finit_module) || defined(__NR_delete_module)
+// Note: file only present starting with kernel 3.8
+//# include <linux/module.h>
+# if !defined(MODULE_INIT_IGNORE_MODVERSIONS)
+#  define MODULE_INIT_IGNORE_MODVERSIONS 1
+# endif
+# if !defined(MODULE_INIT_COMPRESSED_FILE)
+#  define MODULE_INIT_COMPRESSED_FILE 4
+# endif
 #endif
 
 /*
@@ -113,11 +150,18 @@ struct linux_dirent64 {
 	char           d_name[];
 };
 
-static int getdents64(int fd, struct linux_dirent64 *dirp, unsigned int count)
+#if (!defined(__GLIBC__) || __GLIBC__ < 2 || (__GLIBC__ == 2 && __GLIBC_MINOR__ < 30))
+static long getdents64(int fd, struct linux_dirent64 *dirp, unsigned long count)
 {
-	return syscall(SYS_getdents64, fd, dirp, count);
+	return my_syscall3(SYS_getdents64, fd, dirp, count);
 }
 #endif
+
+int pivot_root(const char *new_root, const char *put_old);
+#endif
+
+#undef alloca
+#define alloca(size)   __builtin_alloca(size)
 
 /*
  * configuration settings and convenience defines
@@ -131,6 +175,7 @@ static int getdents64(int fd, struct linux_dirent64 *dirp, unsigned int count)
 #define MAX_CMDLINE_LEN 512
 #define MAX_BRACE_LEVEL	10
 #define MAX_MNT_SIZE	1024
+#define MAX_PART_SIZE	16384
 
 /* well-known UID/GID */
 #define UID_ROOT        0
@@ -180,6 +225,32 @@ struct dev_node {
 	char   major, minor;
 } __attribute__((__aligned__(1)));
 
+/* RNDADDENTROPY ioctl */
+struct rnd {
+	int entropy_count;
+	int buf_size;
+	char buf[1024];
+};
+
+/* flags for blkdev->flags below */
+#define BLKD_F_IGNORE         0x00000001
+#define BLKD_F_DETECTED       0x00000002 // partition was already detected
+#define BLKD_F_FLASH          0x00000004 // partition could be a /flash
+#define BLKD_F_IMAGE1         0x00000008 // partition matches the first of 2 images
+#define BLKD_F_IMAGE2         0x00000010 // partition matches the second of 2 images
+
+struct blkdev {
+	char *name;
+	unsigned int major;
+	unsigned int minor;
+	unsigned long long size; // in kB
+	struct blkdev *next;
+	struct blkdev *part;
+	unsigned int flags; // BLKD_F_xxx
+	unsigned int pref;  // 0+: position in preference list
+	char type[16]; // FS type
+};
+
 /* possible states for variable parsing */
 enum {
 	VAR_NONE = 0,
@@ -200,17 +271,30 @@ enum {
 	TOK_CP,                /* cp : copy file */
 	TOK_CR,                /* cr : chroot (without chdir) */
 	TOK_EC,                /* ec : echo */
+	TOK_EN,                /* en : env */
 	TOK_EQ,                /* eq : compare two strings */
 	TOK_EX,                /* ex : execute */
 	TOK_FI,                /* fi : make a fifo */
+	TOK_FP,                /* fp : find partitions */
 	TOK_HA,                /* ha : halt */
 	TOK_HE,                /* he : help */
 	TOK_IN,                /* in : set init program */
 	TOK_LN,                /* ln : make a symlink */
 	TOK_LO,                /* lo : losetup */
+	TOK_LP,                /* lp : list partitions */
 	TOK_LS,                /* ls : list files in DIR $1 */
+#if defined(__NR_kexec_file_load)
+	TOK_KX,                /* kx : kexec */
+#endif
 	TOK_MA,                /* ma : set umask */
 	TOK_MD,                /* md : mkdir */
+	TOK_ML,                /* ml : modlist */
+#ifdef __NR_finit_module
+	TOK_MP,                /* mp : modprobe */
+#endif
+#ifdef __NR_delete_module
+	TOK_MR,                /* mr : rmmod */
+#endif
 	TOK_MT,                /* mt : mount */
 	TOK_MV,                /* mv : move a filesystem */
 	TOK_PO,                /* po : power off */
@@ -218,14 +302,18 @@ enum {
 	TOK_RB,                /* rb : reboot */
 	TOK_RD,                /* rd : read a command from the console */
 	TOK_RE,                /* re : remount */
+	TOK_RF,                /* rf : random feed */
 	TOK_RM,                /* rm : remove files */
 	TOK_RX,                /* rx : execute under chroot */
+	TOK_SE,                /* se : setenv */
+	TOK_SL,                /* sl : sleep */
 	TOK_SP,                /* sp : suspend */
 	TOK_ST,                /* st : stat file existence */
 	TOK_SW,                /* sw : switch root = chdir + chroot . + reopen console */
 	TOK_TA,                /* ta : tar "t"/"x"/"xv" archive $2 to dir #3 */
 	TOK_TD,                /* td : test /dev for devtmpfs support */
 	TOK_TE,                /* te : test an environment variable */
+	TOK_TN,                /* tn : test that argument is non-empty */
 	TOK_UM,                /* um : umount a filesystem */
 	TOK_WK,                /* wk : wait key */
 	/* better add new commands above */
@@ -249,50 +337,67 @@ enum {
  * number.
  */
 static const struct token tokens[] = {
-	/* TOK_BI */ "bi", 'K', 2,
-	/* TOK_BL */ "bl", 'B', 6,
-	/* TOK_BR */ "br",   0, 1,
-	/* TOK_CA */ "ca",   0, 1,
-	/* TOK_CD */ "cd",   0, 1,
-	/* TOK_CH */ "ch", 'C', 6,
-	/* TOK_CP */ "cp",   0, 2,
-	/* TOK_CR */ "cr",   0, 1,
-	/* TOK_EC */ "ec",   0, 0,
-	/* TOK_EQ */ "eq",   0, 2,
-	/* TOK_EX */ "ex", 'E', 1,
-	/* TOK_FI */ "fi", 'F', 4,
-	/* TOK_HA */ "ha",   0, 0,
-	/* TOK_HE */ "he", '?', 0,
-	/* TOK_IN */ "in", 'I', 1,
-	/* TOK_LN */ "ln", 'L', 2,
-	/* TOK_LO */ "lo", 'l', 2,
-	/* TOK_LS */ "ls",   0, 0,
-	/* TOK_MA */ "ma", 'U', 1,
-	/* TOK_MD */ "md", 'D', 1,
-	/* TOK_MT */ "mt", 'M', 3,
-	/* TOK_MV */ "mv", 'K', 2,
-	/* TOK_PO */ "po",   0, 0,
-	/* TOK_PR */ "pr", 'P', 2,
-	/* TOK_RB */ "rb",   0, 0,
-	/* TOK_RD */ "rd",   0, 0,
-	/* TOK_RE */ "re",   0, 3,
-	/* TOK_RM */ "rm",   0, 1,
-	/* TOK_RX */ "rx", 'R', 2,
-	/* TOK_SP */ "sp",   0, 0,
-	/* TOK_ST */ "st",   0, 1,
-	/* TOK_SW */ "sw",   0, 1,
-	/* TOK_TA */ "ta",   0, 3,
-	/* TOK_TD */ "td",   0, 0,
-	/* TOK_TE */ "te",   0, 1,
-	/* TOK_UM */ "um", 'O', 1,
-	/* TOK_WK */ "wk",   0, 2,
+	/* TOK_BI */ { "bi", 'K', 2, },
+	/* TOK_BL */ { "bl", 'B', 6, },
+	/* TOK_BR */ { "br",   0, 1, },
+	/* TOK_CA */ { "ca",   0, 1, },
+	/* TOK_CD */ { "cd",   0, 1, },
+	/* TOK_CH */ { "ch", 'C', 6, },
+	/* TOK_CP */ { "cp",   0, 2, },
+	/* TOK_CR */ { "cr",   0, 1, },
+	/* TOK_EC */ { "ec",   0, 0, },
+	/* TOK_EN */ { "en",   0, 0, },
+	/* TOK_EQ */ { "eq",   0, 2, },
+	/* TOK_EX */ { "ex", 'E', 1, },
+	/* TOK_FI */ { "fi", 'F', 4, },
+	/* TOK_FP */ { "fp",   0, 1, },
+	/* TOK_HA */ { "ha",   0, 0, },
+	/* TOK_HE */ { "he", '?', 0, },
+	/* TOK_IN */ { "in", 'I', 1, },
+	/* TOK_LN */ { "ln", 'L', 2, },
+	/* TOK_LO */ { "lo", 'l', 2, },
+	/* TOK_LP */ { "lp",   0, 0, },
+	/* TOK_LS */ { "ls",   0, 0, },
+#if defined(__NR_kexec_file_load)
+	/* TOK_KX */ { "kx",   0, 2, },
+#endif
+	/* TOK_MA */ { "ma", 'U', 1, },
+	/* TOK_MD */ { "md", 'D', 1, },
+	/* TOK_ML */ { "ml",   0, 0, },
+#ifdef __NR_finit_module
+	/* TOK_MP */ { "mp",   0, 1, },
+#endif
+#ifdef __NR_delete_module
+	/* TOK_MR */ { "mr",   0, 1, },
+#endif
+	/* TOK_MT */ { "mt", 'M', 3, },
+	/* TOK_MV */ { "mv", 'K', 2, },
+	/* TOK_PO */ { "po",   0, 0, },
+	/* TOK_PR */ { "pr", 'P', 2, },
+	/* TOK_RB */ { "rb",   0, 0, },
+	/* TOK_RD */ { "rd",   0, 0, },
+	/* TOK_RE */ { "re",   0, 3, },
+	/* TOK_RF */ { "rf",   0, 0, },
+	/* TOK_RM */ { "rm",   0, 1, },
+	/* TOK_RX */ { "rx", 'R', 2, },
+	/* TOK_SE */ { "se", 'S', 1, },
+	/* TOK_SL */ { "sl",   0, 1, },
+	/* TOK_SP */ { "sp",   0, 0, },
+	/* TOK_ST */ { "st",   0, 1, },
+	/* TOK_SW */ { "sw",   0, 1, },
+	/* TOK_TA */ { "ta",   0, 3, },
+	/* TOK_TD */ { "td",   0, 0, },
+	/* TOK_TE */ { "te",   0, 1, },
+	/* TOK_TN */ { "tn",   0, 1, },
+	/* TOK_UM */ { "um", 'O', 1, },
+	/* TOK_WK */ { "wk",   0, 2, },
 	/**** end of commands dumped by the help command ****/
 
-	/* TOK_OB */ "{",  '{', 0,
-	/* TOK_CB */ "}",  '}', 0,
+	/* TOK_OB */ { "{",  '{', 0, },
+	/* TOK_CB */ { "}",  '}', 0, },
 
 	/**** all supported commands must be before this one ****/
-	/* TOK_DOT*/ ".",  '.', 0,
+	/* TOK_DOT*/ { ".",  '.', 0, }
 };
 
 /* One string per token, each terminated by a zero */
@@ -306,17 +411,30 @@ static const char tokens_help[] =
 	/* TOK_CP */ "CP src dst\0"
 	/* TOK_CR */ "ChRoot dir\0"
 	/* TOK_EC */ "ECho string\0"
+	/* TOK_EN */ "ENv : show environment\0"
 	/* TOK_EQ */ "EQ str1 str2 : compare strings\0"
 	/* TOK_EX */ "EXec cmd [args] : fork+execve\0"
 	/* TOK_FI */ "FIfo mode uid gid name\0"
+	/* TOK_FP */ "FindPart ${img} [fstype...]: (sets {chosen,second}_{part,type})\0"
 	/* TOK_HA */ "HAlt\0"
 	/* TOK_HE */ "HElp [cmd]\0"
 	/* TOK_IN */ "INit path\0"
 	/* TOK_LN */ "LN target link : symlink\0"
 	/* TOK_LO */ "LOsetup /dev/loopX file\0"
+	/* TOK_LP */ "ListPartitions [-r] : -r for rescan\0"
 	/* TOK_LS */ "LS [-e|-l] dir\0"
+#if defined(__NR_kexec_file_load)
+	/* TOK_KX */ "KeXec kernel initrd|- [cmdline*|-]\0"
+#endif
 	/* TOK_MA */ "uMAsk umask\0"
 	/* TOK_MD */ "MkDir path [mode]\0"
+	/* TOK_ML */ "ModList: list loaded kernel modules\0"
+#ifdef __NR_finit_module
+	/* TOK_MP */ "ModProbe [-f] path [\"args...\"]\0"
+#endif
+#ifdef __NR_delete_module
+	/* TOK_MR */ "ModRm [-f] name\0"
+#endif
 	/* TOK_MT */ "MounT dev[(major:minor)] mnt type [{rw|ro} [flags]]\0"
 	/* TOK_MV */ "MoVe old_dir new_dir : mount --move\0"
 	/* TOK_PO */ "POwer off\0"
@@ -324,17 +442,59 @@ static const char tokens_help[] =
 	/* TOK_RB */ "ReBoot\0"
 	/* TOK_RD */ "ReaD prompt\0"
 	/* TOK_RE */ "REmount dev[(major:minor)] mnt type [{rw|ro} [flags]]\0"
+	/* TOK_RF */ "Random Feed [file|dir]*\0"
 	/* TOK_RM */ "RM file\0"
 	/* TOK_RX */ "Remote-eXec dir cmd [args] : fork+chroot+execve\0"
+	/* TOK_SE */ "SetEnv name [value]\0"
+	/* TOK_SL */ "SLeep sec[.frac]: sleep this delay or forever if <0 or 'inf'\0"
 	/* TOK_SP */ "SusPend\0"
 	/* TOK_ST */ "STat file\0"
 	/* TOK_SW */ "SWitchroot root\0"
 	/* TOK_TA */ "TAr [x|xv|t] file [dir]\0"
 	/* TOK_TD */ "TestDev : test if /dev is devtmpfs\0"
 	/* TOK_TE */ "TEst var=val\0"
+	/* TOK_TN */ "TestNon-empty ${var}: returns true if set and not empty\0"
 	/* TOK_UM */ "UMount dir\0"
 	/* TOK_WK */ "WaitKey prompt delay\0"
 	;
+
+/* errno names from 1, each ending with \0. The list ends on \xFF. */
+static const char errstr[] = ""
+        /* EPERM */     "PERM\0"
+        /* ENOENT */    "NOENT\0"
+        /* ESRCH */     "SRCH\0"
+        /* EINTR */     "INTR\0"
+        /* EIO */       "IO\0"
+        /* ENXIO */     "NXIO\0"
+        /* E2BIG */     "2BIG\0"
+        /* ENOEXEC */   "NOEXEC\0"
+        /* EBADF */     "BADF\0"
+        /* ECHILD */    "CHILD\0"
+        /* EAGAIN */    "AGAIN\0"
+        /* ENOMEM */    "NOMEM\0"
+        /* EACCES */    "ACCES\0"
+        /* EFAULT */    "FAULT\0"
+        /* ENOTBLK */   "NOTBLK\0"
+        /* EBUSY */     "BUSY\0"
+        /* EEXIST */    "EXIST\0"
+        /* EXDEV */     "XDEV\0"
+        /* ENODEV */    "NODEV\0"
+        /* ENOTDIR */   "NOTDIR\0"
+        /* EISDIR */    "ISDIR\0"
+        /* EINVAL */    "INVAL\0"
+        /* ENFILE */    "NFILE\0"
+        /* EMFILE */    "MFILE\0"
+        /* ENOTTY */    "NOTTY\0"
+        /* ETXTBSY */   "TXTBSY\0"
+        /* EFBIG */     "FBIG\0"
+        /* ENOSPC */    "NOSPC\0"
+        /* ESPIPE */    "SPIPE\0"
+        /* EROFS */     "ROFS\0"
+        /* EMLINK */    "MLINK\0"
+        /* EPIPE */     "PIPE\0"
+        /* EDOM */      "DOM\0"
+        /* ERANGE */    "RANGE\0"
+	"\xff\0"; /* end marker */
 
 /* mandatory device nodes : name, mode, gid, major, minor */
 static const struct dev_node dev_nodes[] =  {
@@ -367,11 +527,13 @@ static int cmdline_len;
 static char *cst_str[MAX_FIELDS];
 static char *var_str[MAX_FIELDS];
 static char mounts[MAX_MNT_SIZE];
+static char parts[MAX_PART_SIZE]; // /proc/partitions
 static struct dev_varstr var[MAX_FIELDS];
 static int error;       /* an error has emerged from last operation */
 static int error_num;   /* a copy of errno when error != 0 */
 static int linuxrc;     /* non-zero if we were called as 'linuxrc' */
 static char tmp_path[MAXPATHLEN];
+static struct blkdev *blkdevs;
 
 
 /*
@@ -441,6 +603,25 @@ static unsigned long my_atoul(const char *s)
 		s++;
 	}
 	return res;
+}
+
+/* reads the digits in <s>, stores them as a number in <ret> and
+ * returns the pointer to the first non-digit character.
+ */
+static char *my_atoull_next(char *s, unsigned long long *ret)
+{
+	unsigned long long res = 0;
+	unsigned long long digit;
+
+	while (*s) {
+		digit = *s - '0';
+		if (digit > 9)
+			break;
+		res = res * 10ULL + digit;
+		s++;
+	}
+	*ret = res;
+	return s;
 }
 
 static int streq(const char *str1, const char *str2)
@@ -612,6 +793,23 @@ static char *addhex(char *dest, uint8_t num)
 	return dest;
 }
 
+/* looks up errno value <num> into errstr and retuns a pointer to its name if
+ * found otherwise NULL.
+ */
+static const char *find_errstr(int num)
+{
+	const char *ret = errstr;
+
+	while (*ret != '\xff') {
+		/* ok valid names present */
+		if (!--num)
+			return ret;
+		while (*(ret++))
+			;
+	}
+	return NULL;
+}
+
 /* breaks a 3-fields, comma-separated string into 3 fields */
 static int varstr_break(char *str, char *type, char **set, uint8_t *scale)
 {
@@ -712,6 +910,133 @@ static unsigned long base8_to_ul_lim(const char *ascii, unsigned int limit)
 static unsigned long base8_to_ul(const char *ascii)
 {
 	return base8_to_ul_lim(ascii, ~0);
+}
+
+/* Measures the environment size in total bytes and number of variables.
+ * Trailing zeroes are accounted for in the number of bytes so that the result
+ * can be used to allocate a copy of this environment. Similarly the trailing
+ * NULL entry is accounted for in the number of entries. It also returns the
+ * pointer to the final NULL (the environment's tail).
+ */
+static char **env_size(char **envp, int *bytes, int *entries)
+{
+	*bytes = 0;
+	*entries = 1;
+	while (*envp != NULL) {
+		*bytes += my_strlen(*envp) + 1;
+		(*entries)++;
+		envp++;
+	}
+	return envp;
+}
+
+/* Finds the pointers to the tail of the environment, i.e. the first byte after
+ * the final 0 is set into env_store, and the pointer to the final NULL is
+ * returned. Note that if the environment is totally empty, env_store will be
+ * assigned a NULL.
+ */
+static char **env_get_tail(char **envp, char **env_store)
+{
+	*env_store = NULL;
+	while (*envp != NULL) {
+		*env_store = *envp;
+		envp++;
+	}
+	return envp;
+}
+
+/* duplicate <old_env> into <new_env> using <env_store> for the contents, and
+ * terminate it with a NULL. The caller must ensure that all contents fit into
+ * env_store and new_env, including the trailing NULL for new_env. This may be
+ * used when expanding the allocation area for adding new entries. <env_store>
+ * is updated, and the pointer to the final NULL is returned in order to help
+ * with appending new variables.
+ */
+static char **env_dup(char **new_env, char **old_env, char **env_store)
+{
+	char *store = *env_store;
+
+	while (*old_env)
+		store = addcst(*(new_env++) = store, *(old_env++)) + 1;
+	*env_store = store;
+
+	/* and the final NULL */
+	*new_env = NULL;
+	return new_env;
+}
+
+/* append line <line> to the environment in <env_tail> stored at <env_store>.
+ * The caller is responsible for making sure that there is at least one entry
+ * left in <env_tail> so that the NULL it contain can be replaced and appended
+ * again, and enough bytes left in <env_store> for the line and its trailing 0.
+ * <env_store> is updated to point past the trailing zero and <env_tail> is
+ * updated to point to the new NULL, so that multiple calls can be chained for
+ * multiple variables. The function is expected to only be called after
+ * env_dup() or itself, so that <env_store> already points to the first byte
+ * past the end of the environment, and <env_tail> points to the final NULL.
+ */
+static char **env_append_line(char **env_tail, char **env_store, const char *line)
+{
+	char *store = *env_store;
+
+	*env_tail = store;
+	/* and the final NULL */
+	*(++env_tail) = NULL;
+	store = addcst(store, line) + 1;
+	*env_store = store;
+	return env_tail;
+}
+
+/* append line "name=value" to the environment in <env_tail> stored at
+ * <env_store>. The caller is responsible for making sure that there is at
+ * least one entry left in <env_tail> so that the NULL it contain can be
+ * replaced and appended again, and enough bytes left in <env_store> for the
+ * line and its trailing 0. <env_store> is updated to point past the trailing
+ * zero and the pointer to the final NULL is returned so that multiple calls
+ * can be chained for multiple variables. The function is expected to only be
+ * called after env_dup() or itself, so that <env_store> already points to the
+ * first byte past the end of the environment, and <env_tail> points to the
+ * final NULL.
+ */
+static char **env_append_var(char **env_tail, char **env_store, const char *name, const char *value)
+{
+	char *store = *env_store;
+
+	/* add our new variable */
+	*env_tail = store;
+
+	/* and the final NULL */
+	*(++env_tail) = NULL;
+
+	store = addcst(store, name);
+	store = addchr(store, '=');
+	store = addcst(store, value);
+	store++; // \0
+	*env_store = store;
+	return env_tail;
+}
+
+/* opens file <file> and reads up to <size> bytes from it into <buffer>, then
+ * closes the file and returns the number of bytes read, or <0 on error, in
+ * which case error_num will be set to errno. If <size> is at least 1, a
+ * trailing zero is appended, even if it means truncating that file.
+ */
+static int read_from_file(const char *file, char *buffer, int size)
+{
+	int fd, len;
+
+	fd = open(file, O_RDONLY, 0);
+	if (fd == -1) {
+		error_num = errno;
+		return -1;
+	}
+
+	len = read(fd, buffer, size - 1);
+	error_num = errno;
+	close(fd);
+	if (len >= 0)
+		buffer[len] = 0;
+	return len;
 }
 
 /* flushes stdin and waits for it to be done */
@@ -838,7 +1163,6 @@ static void reopen_console()
 static int is_dev_populated()
 {
 	struct stat statf;
-	int i;
 
 	if (stat("/dev/console", &statf) == -1)
 		return 0;
@@ -952,6 +1276,8 @@ static int tar_extract(const char *action, const char *file, const char *dir)
 		uid  = base8_to_ul_lim(blk.hdr.uid,  sizeof(blk.hdr.uid));
 		gid  = base8_to_ul_lim(blk.hdr.gid,  sizeof(blk.hdr.gid));
 		size = base8_to_ul_lim(blk.hdr.size, sizeof(blk.hdr.size));
+		major = base8_to_ul_lim(blk.hdr.devmajor, sizeof(blk.hdr.devmajor));
+		minor = base8_to_ul_lim(blk.hdr.devminor, sizeof(blk.hdr.devminor));
 
 		if (*action == 'x') {
 			/* extract */
@@ -1148,6 +1474,137 @@ out_ret:
 	return ret;
 }
 
+/* Uses rnd->buf to feed rnd->buf_size bytes to random device opened in
+ * <rand_fd>. One bit per 16 input bytes is accounted for. The number of
+ * entropy bits added is returned.
+ */
+static int _feed_random_to_dev(int rand_fd, struct rnd *rnd)
+{
+	if (rnd->buf_size > sizeof(rnd->buf))
+		rnd->buf_size = sizeof(rnd->buf);
+	rnd->entropy_count = (rnd->buf_size + 15) / 16;
+	if (ioctl(rand_fd, RNDADDENTROPY, rnd) < 0)
+		return 0;
+	return rnd->entropy_count;
+}
+
+/* feeds <area> for <size> bytes to random opened in <rand_fd> counting one bit
+ * per 16 input bytes. The number of entropy bits added is returned.
+ */
+static int feed_random_area_to_dev(int rand_fd, const void *area, int size)
+{
+	struct rnd rnd;
+	int tot_ent = 0;
+	int ret;
+
+	while (size > 0) {
+		rnd.buf_size = sizeof(rnd.buf);
+		if (rnd.buf_size > size)
+			rnd.buf_size = size;
+		memcpy(rnd.buf, area, rnd.buf_size);
+		if (!_feed_random_to_dev(rand_fd, &rnd))
+			break;
+		tot_ent += rnd.entropy_count;
+		size -= rnd.buf_size;
+	}
+	return tot_ent;
+}
+
+/* read file/link <path> and pass its contents as entropy to rand_fd.
+ * Returns the number of bits added, possibly 0 (e.g. nothing useful)
+ * or -1 on failure.
+ */
+static int feed_random_from_file(int rand_fd, const char *path)
+{
+	struct stat statf;
+	struct rnd rnd;
+	int tot_ent = 0;
+	int size, ret;
+	int fd;
+
+	if (stat(path, &statf) == -1)
+		return -1;
+
+	tot_ent = feed_random_area_to_dev(rand_fd, &statf, sizeof(statf));
+	if (S_ISREG(statf.st_mode)) {
+		/* regular file. We use O_NONBLOCK so that /proc/kmsg works
+		 * as well. We limit ourselves to 128kB.
+		 */
+		fd = open(path, O_NONBLOCK | O_RDONLY);
+		if (fd < 0)
+			return tot_ent;
+
+		for (size = 0; size < 131072; size += ret) {
+			rnd.buf_size = read(fd, rnd.buf, sizeof(rnd.buf));
+			if (rnd.buf_size <= 0)
+				break;
+			if (!_feed_random_to_dev(rand_fd, &rnd))
+				break;
+			tot_ent += rnd.entropy_count;
+		}
+		close(fd);
+	}
+	return tot_ent;
+}
+
+/* Try to feed /dev/random with the contents of the specified dirs/files.
+ * Dirs are opened, all their entries names and stats are used for the hash
+ * (e.g useful with device trees or PCI entries), links and files are read
+ * and fed as-is. Each stat counts for one bit. Each read link or file counts
+ * for one bit every 16 bytes.
+ */
+static int feed_random_from_path(char *const *args)
+{
+	struct linux_dirent64 *d;
+	struct timeval tv;
+	char buffer[4096];
+	char path[256];
+	char *fpath;
+	int tot_ent = 0;
+	int rand_fd;
+	int pos, fd;
+	int len;
+
+	rand_fd = open("/dev/random", O_WRONLY | O_NONBLOCK);
+	if (rand_fd < 0)
+		return tot_ent;
+
+	gettimeofday(&tv, NULL);
+	tot_ent += feed_random_area_to_dev(rand_fd, &tv, sizeof(tv));
+
+	for (; *args; args++) {
+		len = my_strlcpy(path, *args, sizeof(path));
+		if (len + 2 >= sizeof(path))
+			continue;
+		path[len++] = '/';
+		path[len] = 0;
+		fpath = path + len;
+
+		fd = open(*args, O_RDONLY | O_DIRECTORY, 0);
+		if (fd < 0) {
+			/* either not found or not a directory */
+			tot_ent += feed_random_from_file(rand_fd, *args);
+			args++;
+			continue;
+		}
+
+		while ((len = getdents64(fd, (void *)buffer, sizeof(buffer))) > 0) {
+			for (pos = 0; pos < len; pos += d->d_reclen) {
+				d = (struct linux_dirent64 *)&buffer[pos];
+				if (streq(d->d_name, "kcore") || streq(d->d_name, "kallsyms") ||
+				    streq(d->d_name, "kmem")  || streq(d->d_name, "mem"))
+					continue;
+				my_strlcpy(fpath, d->d_name, path + sizeof(path) - fpath);
+				tot_ent += feed_random_from_file(rand_fd, path);
+			}
+		}
+		close(fd);
+	}
+
+	close(rand_fd);
+	return tot_ent;
+}
+
 /*
  * Functions below are totally specific to the program and its configuration
  * language.
@@ -1160,24 +1617,14 @@ out_ret:
 static char *get_dev_type()
 {
 	/* scan /proc/mounts for the best match for /dev */
-	int fd;
 	int len;
 	int best;
 	char *ptr, *end, *mnt, *match;
 
-	if ((fd = open("/proc/mounts", O_RDONLY, 0)) == -1) {
-		error_num = errno;
-		return NULL;
-	}
-
-	len = read(fd, mounts, sizeof(mounts) - 1);
-	error_num = errno;
-	close(fd);
-	if (len <= 0)
+	if ((len = read_from_file("/proc/mounts", mounts, sizeof(mounts))) <= 0)
 		return NULL;
 
 	end = mounts + len;
-	*end = 0;
 
 	best = 0;
 	for (ptr = mounts; ptr < end; ptr++) {
@@ -1221,18 +1668,13 @@ char *find_arg(char *arg)
 
 	/* read cmdline the first time */
 	if (cmdline_len <= 0) {
-		int fd;
-
-		if ((fd = open("/proc/cmdline", O_RDONLY, 0)) == -1)
+		if ((cmdline_len = read_from_file("/proc/cmdline", cmdline, sizeof(cmdline))) <= 0)
 			return NULL;
-
-		cmdline_len = read(fd, cmdline, sizeof(cmdline)-1);
-		error_num = errno;
-		close(fd);
-		if (cmdline_len <= 0)
-			return NULL;
-
-		cmdline[cmdline_len++] = 0;
+		/* trim trailing LFs */
+		while (cmdline_len > 0 && cmdline[cmdline_len-1] == '\n')
+			cmdline[--cmdline_len] = 0;
+		/* always include trailing zero */
+		cmdline_len++;
 	}
 
 	/* search for the required arg in cmdline */
@@ -1276,18 +1718,13 @@ char *find_arg(char *arg)
  */
 static int read_cfg(char *cfg_file)
 {
-	int cfg_fd;
 	int cfg_size;
 
 	if (cfg_line == NULL) {
-		if (((cfg_fd = open(cfg_file, O_RDONLY, 0)) == -1) ||
-		    ((cfg_size = read(cfg_fd, cfg_data, sizeof(cfg_data) - 1)) == -1)) {
-			error_num = errno;
+		cfg_size = read_from_file(cfg_file, cfg_data, sizeof(cfg_data));
+		if (cfg_size < 0)
 			return -1;
-		}
-		close(cfg_fd);
 		cfg_line = cfg_data;
-		cfg_data[cfg_size] = 0;
 	}
 	return 0;
 }
@@ -1336,7 +1773,7 @@ static int parse_cfg(char **cfg_data, char *bufend, char **envp)
 		}
 
 		/* terminate the line cleanly to avoid further tests */
-		while (c = *cfg_line) {
+		while ((c = *cfg_line)) {
 			*cfg_line++ = '\0';
 			if (c == '\n')
 				break;
@@ -1364,8 +1801,8 @@ static int parse_cfg(char **cfg_data, char *bufend, char **envp)
 
 		for (; *p && (nbargs < MAX_CFG_ARGS - 1); nbargs++) {
 			int backslash = 0, quote = 0, var_state = VAR_NONE;
-			char *dollar_ptr, *name_beg, *name_end;
-			char *brace_end, *def_beg, *def_end, *repl;
+			char *dollar_ptr = NULL, *name_beg = NULL, *name_end = NULL;
+			char *brace_end = NULL, *def_beg = NULL, *def_end = NULL, *repl = NULL;
 
 			cfg_args[nbargs] = p;
 
@@ -1716,12 +2153,166 @@ static void multidev(mode_t mode, uid_t uid, gid_t gid, uint8_t major, uint8_t m
 	}
 }
 
+/* Checks in a blkdev list if <name> appears and returns a pointer to its
+ * predecessor if found, or to the last pointer pointing to NULL if not found,
+ * in order to know where to add the new device.
+ */
+static struct blkdev **blkdev_find_part(struct blkdev **root, const char *name)
+{
+	while (*root && !streq((*root)->name, name))
+		root = &(*root)->next;
+	return root;
+}
+
+/* finds from the root where a device name should be attached:
+ *  - if the name does not end with a digit, it's a device
+ *  - if the candidate's name ends in a digit and the new one has the same name
+ *    followed by 'p' and digits, it's a partition of that one;
+ *  - if the candidate's name does not end in a digit and the new one has the
+ *    same name followed only by digits, it's a partition of that one;
+ *  - if a candidate has exactly the same name, the device was already added,
+ *    so NULL is returned.
+ *  - otherwise it's a new device.
+ * Note that parents must be added before partitions, which is already the case
+ * in /proc/partitions.
+ */
+static struct blkdev **blkdev_find_parent(struct blkdev **root, const char *name)
+{
+	int namelen = my_strlen(name);
+	int commlen;
+
+	while (*root) {
+		for (commlen = 0; name[commlen] && name[commlen] == (*root)->name[commlen]; commlen++)
+			;
+		if (commlen && commlen == my_strlen((*root)->name)) {
+			if (commlen == namelen)
+				return NULL; // exact match, already there
+
+			if ((unsigned char)((*root)->name[commlen-1] - '0') <= 9) {
+				/* root ends with digit */
+				if (name[commlen] == 'p' && (unsigned char)(name[commlen + 1] - '0') <= 9)
+					return &(*root)->part; // matches with 'pXX' after digit
+			} else {
+				/* root ends without digit */
+				if ((unsigned char)(name[commlen] - '0') <= 9)
+					return &(*root)->part; // matches with extra digits
+			}
+			/* does not match (e.g. sda1 vs sda11) */
+		}
+		root = &(*root)->next;
+	}
+	/* new device, append to the end */
+	return root;
+}
+
+/* detect and return the FS type of device (or file) in <path>. A const string
+ * is returned, or NULL if unknown.
+ */
+static const char *find_fs_type(const char *path)
+{
+	uint8_t buf[1536 + 1]; /* normally suffices */
+	uint32_t sig32;
+	int len;
+
+	len = read_from_file(path, (char*)buf, sizeof(buf));
+	if (len < sizeof(buf) - 1)
+		return NULL; // short/failed read
+
+	/* first, check the 4 first bytes which say a lot about most
+	 * FS. We process them in big endian because that's easier to
+	 * visually match against hex dumps during testing.
+	 */
+	sig32 = (buf[0] * 16777216U) + (buf[1] * 65536) + (buf[2] * 256) + buf[3];
+	switch (sig32) {
+	case 0xffffffff: return "empty";
+	case 0x1f8b0800: return "gzip";
+	case 0xfd377a58: return "xz";
+	case 0x68737173: // "hsqs"
+		return buf[0x1c] >= 4 ? "squashfs" : // v4
+		                        "squashfs3"; // v2 (0x2) or v3 (0x3)
+	case 0x42534658: return "xfs";   // "XFSB"
+	case 0x55424923: return "ubi";   // only on mtd
+	case 0x31181006: return "ubifs"; // only on mtd
+	case 0x27051956: // uimage/ukernel/uinitrd
+		return (buf[0x1e] == 2) ? "ukernel" :
+		       (buf[0x1e] == 3) ? "uinitrd" :
+		       "uimage";
+	case 0x1985e001: // "jffs2:dirent"
+	case 0x851901e0:
+	case 0x1985e002: // "jffs2:inode"
+	case 0x851902e0:
+	case 0x19852003: // "jffs2:clean"
+	case 0x85190320:
+	case 0x19852004: // "jffs2:padding"
+	case 0x85190420:
+	case 0x19852006: // "jffs2:summary"
+	case 0x85190620:
+	case 0x1985e008: // "jffs2:xattr"
+	case 0x851908e0:
+	case 0x1985e009: // "jffs2:xref"
+	case 0x851909e0:
+		return "jffs2";
+	}
+
+	/* let's now check for the ext2/3/4 family (0xef53) */
+	if (buf[0x438] == 0x53 && buf[0x439] == 0xef)
+		return (buf[0x45c] & 0x04) ? // has_journal
+		       (buf[0x460] & 0x40) ? // extent
+		       "ext4" : "ext3" : "ext2";
+
+	/* fat / mbr ? we'd have 0x55 AA at 0x1FE. */
+	if (buf[0x1fe] == 0x55 && buf[0x1ff] == 0xaa) {
+		/* FAT starts with a boot sector made of an in-sector
+		 * jump opcode (0xEB + dist or 0xE9 + dist lower than
+		 * 0x200). It also (almost?) always has 512 bytes per
+		 * sector (@0xB), has 2 FATs (@0x10) and a type (@0x15)
+		 * in F0..FF. Otherwise it's just an MBR.
+		 */
+		if ((buf[0] == 0xeb || (buf[0] == 0xE9 && buf[2] <= 0x1)) && // short/near jump
+		    (buf[0xb] == 0 && buf[0xc] == 2) && // 512 bytes per sector
+		    (buf[0x10] == 2) && // 2 FATs
+		    (unsigned char)(buf[0x15] - 0xf0) <= 0x0F)
+			return "vfat";
+		else
+			return "mbr";
+	}
+
+	/* not found */
+	return NULL;
+}
+
+/* try to detect and fill the FS type of this partition. We won't try to create
+ * the devices, they are expected to already be there.
+ */
+static void blkdev_find_part_type(struct blkdev *part)
+{
+	const char *type;
+	char *path;
+
+	if (part->flags & BLKD_F_DETECTED)
+		goto leave; // detection already done
+
+	if (part->size < 1024)
+		goto leave; // less than 1MB is not for us
+
+	path = addcst(tmp_path, "/dev/");
+	path = addcst(path, part->name);
+	type = find_fs_type(tmp_path);
+	if (type) {
+		my_strlcpy(part->type, type, sizeof(part->type));
+		part->flags |= BLKD_F_DETECTED;
+	}
+ leave:
+	return;
+}
+
 int main(int argc, char **argv, char **envp)
 {
 	int old_umask;
 	int pid1, err;
 	int cfg_ok;
 	int rebuild;
+	int single_cmd = 0;
 	int token;
 	int cmd_input = INPUT_FILE;
 	char cmd_line[256]; /* one line of config from the prompt */
@@ -1730,6 +2321,7 @@ int main(int argc, char **argv, char **envp)
 	char *cfg_file;
 	char *ret_msg = NULL;
 	int brace_level, kbd_level, run_level;
+	int env_bytes, env_entries;
 	char *conf_init, *force_init;
 	char missing_arg_msg[] = "0 args needed\n";
 	struct {
@@ -1792,12 +2384,13 @@ int main(int argc, char **argv, char **envp)
 	}
 
 	old_umask = umask(0);
-	cfg_ok = (read_cfg(cfg_file) == 0);
-
-	chdir("/"); /* be sure not to stay under /dev ! */
+	cfg_ok = 0;
 
 	/* do nothing if we're not called as the first process */
 	if (pid1 || linuxrc || rebuild) {
+		cfg_ok = (read_cfg(cfg_file) == 0);
+		chdir("/"); /* be sure not to stay under /dev ! */
+
 		/* check if /dev is already populated : /dev/console should exist. We
 		 * can safely ignore and overwrite /dev in case of linuxrc, reason why
 		 * we don't test the presence of /dev/console.
@@ -1846,6 +2439,27 @@ int main(int argc, char **argv, char **envp)
 			}
 		}
 	}
+	else {
+		/* We weren't called as linuxrc, pid1 nor rebuild. If passed
+		 * "-z" followed by at least one word, it will be processed as
+		 * a single command to be executed as if read from a file.
+		 */
+		if (argc > 2 && streq(argv[1], "-z")) {
+			int i;
+
+			cfg_line = cfg_data;
+			for (i = 2; i < argc; i++) {
+				cfg_line += my_strlcpy(cfg_line, argv[i], cfg_data + sizeof(cfg_data) - cfg_line);
+				if (cfg_line + 1 < cfg_data + sizeof(cfg_data))
+					*(cfg_line++) = i + 1 < argc ? ' ' : '\n';
+				*cfg_line = 0;
+			}
+			/* now the config is made of this unique line */
+			cfg_line = cfg_data;
+			cfg_ok = 1;
+			single_cmd = 1;
+		}
+	}
 
 	/* here, the cwd is still "/" */
 	if (cfg_ok) {
@@ -1872,7 +2486,14 @@ int main(int argc, char **argv, char **envp)
 				ret_msg = NULL;
 				p = addcst(p, error ? "ER (" : "OK\n>");
 				if (error) {
+					const char *errname;
+
 					p = adduint(p, error_num);
+					errname = find_errstr(error_num);
+					if (errname) {
+						p = addcst(p, " ");
+						p = addcst(p, errname);
+					}
 					p = addcst(p, ")\n>");
 				}
 
@@ -1989,8 +2610,8 @@ int main(int argc, char **argv, char **envp)
 			/* skip conditionnal executions if they cannot change the error status,
 			 * as well as blocks of code excluded from the evaluation
 			 */
-			if ((cond & TOK_COND_OR) && !context[brace_level].error ||
-			    (cond & TOK_COND_AND) && context[brace_level].error ||
+			if (((cond & TOK_COND_OR) && !context[brace_level].error) ||
+			    ((cond & TOK_COND_AND) && context[brace_level].error) ||
 			    (run_level < brace_level)) {
 				error = context[brace_level].error;
 				continue;
@@ -2022,7 +2643,7 @@ int main(int argc, char **argv, char **envp)
 					conf_init = cfg_args[1];
 					continue;
 				}
-			} else if (token == TOK_TE) {
+			} else if (token == TOK_TE || token == TOK_EN) {
 				/* te <var=val> : compare an environment variable to a value.
 				 * In fact, look for the exact assignment in the environment.
 				 * The result is OK if found, NOK if not.
@@ -2030,13 +2651,40 @@ int main(int argc, char **argv, char **envp)
 				char **env = envp;
 
 				while (*env) {
-					//printf("testing <%s> against <%s>\n", cfg_args[1], *env);
-					if (streq(*env, cfg_args[1]))
+					if (token == TOK_EN)
+						println(*env);
+					else if (streq(*env, cfg_args[1]))
 						break;
 					env++;
 				}
-				error = (*env == NULL);
+				error = token != TOK_EN && (*env == NULL);
 				goto finish_cmd;
+			} else if (token == TOK_TN) {
+				/* tn ${string} : test if expands to non-empty string.
+				 * The result is OK if non-empty, NOK if not.
+				 */
+				error = !(cfg_args[1] && *cfg_args[1]);
+				goto finish_cmd;
+			} else if (token == TOK_SE) {
+				/* se name [value]: setenv name [value].
+				 * first we need to remove an hypothetical occurrence of the variable,
+				 * then duplicate the environment in the stack and append the new
+				 * variable.
+				 */
+				my_getenv(envp, cfg_args[1], 1);
+				if (cfg_args[1] && cfg_args[2]) {
+					int name_len  = my_strlen(cfg_args[1]);
+					int value_len = my_strlen(cfg_args[2]);
+					char *env_store, **new_envp;
+
+					env_size(envp, &env_bytes, &env_entries);
+					new_envp   = alloca((env_entries + 1) * sizeof(*new_envp));
+					env_store  = alloca(env_bytes + name_len + value_len + 2); // name=val\0
+					env_append_var(env_dup(new_envp, envp, &env_store),
+						       &env_store, cfg_args[1], cfg_args[2]);
+
+					envp = new_envp;
+				}
 			} else if (token == TOK_EQ) {
 				/* eq str1 str2 : compare two strings (possibly containing variables).
 				 * The result is OK if identical, otherwise NOK.
@@ -2049,6 +2697,27 @@ int main(int argc, char **argv, char **envp)
 
 				error = !res || !streq(res, "devtmpfs");
 				goto finish_cmd;
+			} else if (token == TOK_SL) {
+				/* sl delay[.frac] : sleep for <delay> sec or forever if <0 or 'inf' */
+				unsigned long long sec;
+				char *delay = cfg_args[1];
+				unsigned int digit;
+				struct timeval tv, *tv_ptr;
+				char *dot;
+
+				tv_ptr = NULL;
+				if (!streq(cfg_args[1], "inf") && *(cfg_args[1]) != '-') {
+					dot = my_atoull_next(delay, &sec);
+					tv.tv_sec = sec;
+					tv.tv_usec = 0;
+					if (*(dot++) == '.') {
+						unsigned int mul = 1000000;
+						while ((mul /= 10) && (digit = (unsigned char)*(dot++) - '0') <= 9)
+							tv.tv_usec += mul * digit;
+					}
+					tv_ptr = &tv;
+				}
+				select(0, NULL, NULL, NULL, tv_ptr);
 			} else if (token == TOK_HE) {
 				int i;
 				const char *help = tokens_help;
@@ -2078,7 +2747,7 @@ int main(int argc, char **argv, char **envp)
 			}
 
 			/* other options are reserved for pid 1/linuxrc/rebuild and prompt mode */
-			if (!pid1 && !linuxrc && !rebuild && cmd_input != INPUT_KBD) {
+			if (!pid1 && !linuxrc && !rebuild && !single_cmd && cmd_input != INPUT_KBD) {
 				debug("Command ignored since pid not 1\n");
 				error = context[brace_level].error;
 				continue;
@@ -2129,13 +2798,304 @@ int main(int argc, char **argv, char **envp)
 					debug("<S>ymlink : symlink() failed\n");
 				}
 				goto finish_cmd;
+			case TOK_FP:    /* fp: find partitions. */
+			case TOK_LP: {	/* lp: list partitions. */
+				struct blkdev **parent, *spare = NULL;
+				struct blkdev *mbr, *part, *part1, *part2;
+				unsigned long long major, minor, size;
+				char linebuf[256];
+				int arg_pos, best_pos = MAX_CFG_ARGS;
+				char *dev;
+				char *ptr;
+
+				/* "lp -r" rescans the whole table */
+				if (token == TOK_LP && cfg_args[1] && cfg_args[1][0] == '-' && cfg_args[1][1] == 'r')
+					blkdevs = NULL;
+
+				if (read_from_file("/proc/partitions", parts, sizeof(parts)) == -1) {
+					error = 1;
+					debug("ListPart: cannot read /proc/partitions\n");
+					goto finish_cmd;
+				}
+
+				/* input format:
+				 * major minor  #blocks  name
+				 *
+				 *    1        0      16384 ram0
+				 *    1        1      16384 ram1
+				 */
+				for (ptr = parts; *ptr; ) {
+					if (!spare)
+						spare = alloca(sizeof(*spare));
+
+					/* skip spaces */
+					while (*ptr == ' ')
+						ptr++;
+					if (!*ptr)
+						break;
+					/* skip empty lines */
+					if (*ptr == '\n') {
+						ptr++;
+						continue;
+					}
+					/* skip title */
+					if ((unsigned char)(*ptr - '0') > 9) {
+						ptr++;
+						continue;
+					}
+
+					/* OK the line starts with a digit, it interests us */
+					ptr = my_atoull_next(ptr, &major);
+					while (*ptr == ' ')
+						ptr++;
+
+					ptr = my_atoull_next(ptr, &minor);
+					while (*ptr == ' ')
+						ptr++;
+
+					ptr = my_atoull_next(ptr, &size);
+					while (*ptr == ' ')
+						ptr++;
+
+					dev = ptr;
+					while (*ptr && *ptr != '\n')
+						ptr++;
+					if (*ptr)
+						*(ptr++) = 0;
+					/* OK, ptr now points to the next line and we
+					 * have all our elements in major/minor/size/dev.
+					 */
+					//printf("major=%d minor=%d size=%u dev=%s\n", (int)major, (int)minor, (int)size, dev);
+					parent = blkdev_find_parent(&blkdevs, dev);
+					if (!parent)
+						continue; // already there
+					/* the parent is the start of a sub-tree where to attach
+					 * that new device, let's fill the struct and attach it.
+					 */
+					parent = blkdev_find_part(parent, dev);
+
+					/* if the parent doesn't point to NULL, it points to that
+					 * device, hence it's already there.
+					 */
+					if (*parent)
+						continue;
+
+					/* it was not there, let's add it */
+					spare->next = spare->part = NULL;
+					spare->major = major;
+					spare->minor = minor;
+					spare->size = size;
+					spare->name = alloca(ptr - dev + 1);
+					addcst(spare->name, dev);
+					spare->flags = 0;
+					spare->type[0] = 0;
+					*parent = spare;
+					spare = NULL;
+				}
+
+				if (token == TOK_LP) {
+					/* only list devices that are or contain a partition */
+					for (mbr = blkdevs; mbr; mbr = mbr->next) {
+						if (!mbr->part)
+							continue;
+						//printf("%s [%llu MB] %u:%u\n", mbr->name, mbr->size / 1024, mbr->major, mbr->minor);
+						ptr = linebuf;
+						ptr = addcst(ptr, mbr->name);
+						ptr = addchr(ptr, ' ');
+						ptr = addchr(ptr, '[');
+						ptr = adduint(ptr, mbr->size / 1024);
+						ptr = addcst(ptr, " MB]\n");
+						print(linebuf);
+
+						for (part = mbr->part; part; part = part->next) {
+							blkdev_find_part_type(part);
+							//printf("%c- %s [%llu MB] %u:%u\n",
+							//       (part->next) ? '|' : '`',
+							//       part->name, part->size / 1024, part->major, part->minor);
+							ptr = linebuf;
+							ptr = addchr(ptr, part->next ? '|' : '`');
+							ptr = addchr(ptr, '-');
+							ptr = addchr(ptr, ' ');
+							ptr = addcst(ptr, part->name);
+							ptr = addchr(ptr, ' ');
+							ptr = addchr(ptr, '[');
+							ptr = adduint(ptr, part->size / 1024);
+							ptr = addcst(ptr, " MB]");
+							ptr = addchr(ptr, ' ');
+							ptr = addcst(ptr, part->type);
+							println(linebuf);
+						}
+					}
+					goto finish_cmd;
+				}
+
+				/* This is the "fp" command. It takes an image name
+				 * (possibly empty, defaulting to active), and an
+				 * optional list of FS types to limit to. We want to
+				 * find a device that has two consecutive parts of
+				 * the exact same size at at least 16 MB, located
+				 * somewhere after at least one ext2 partition of
+				 * at least 8MB (/flash). One of the partitions must
+				 * be of one of the specified types (defaulting to
+				 * squashfs). We'll first eliminate devices whose
+				 * partition layout doesn't match, then check the
+				 * FS types for remaining candidates, then pick the
+				 * first device in the table (since they are in
+				 * detection order). "best_pos" equals 0 when the
+				 * first (or default) choice is found.
+				 */
+				part = part1 = part2 = NULL;
+				for (mbr = blkdevs; mbr && best_pos; mbr = mbr->next) {
+					if (!mbr->part || (mbr->flags & BLKD_F_IGNORE))
+						continue;
+
+					for (part = mbr->part; part && best_pos; part = part->next) {
+						if (part->size < 8192)
+							continue;
+						/* we have one 8MB part, check what follows */
+						for (part1 = part->next; part1 && best_pos; part1 = part1->next) {
+							if (part1->size < 16384)
+								continue;
+							part2 = part1->next;
+							if (!part2 || part2->size < 16384)
+								continue;
+							if (part1->size != part2->size)
+								continue;
+							/* here we have one 8+MB part followed by two
+							 * equally sized parts or at least 16MB, that's
+							 * a good candidate.
+							 */
+							blkdev_find_part_type(part);
+							blkdev_find_part_type(part1);
+							blkdev_find_part_type(part2);
+							if (!streqlen(part->type, "ext", 3))
+								continue;
+							part->flags |= BLKD_F_FLASH; // part may be /flash
+							arg_pos = 0; // anticipate no args
+							if (cfg_args[2] && *cfg_args[2]) {
+								/* one or multiple FS type(s) were listed, only compare against these ones */
+								for (arg_pos = 0; cfg_args[arg_pos + 2]; arg_pos++) {
+									if (!streq(part1->type, cfg_args[arg_pos + 2]) &&
+									    !streq(part2->type, cfg_args[arg_pos + 2]))
+										continue;
+
+									part1->flags |= BLKD_F_IMAGE1;
+									part1->pref = arg_pos;
+									part2->flags |= BLKD_F_IMAGE2;
+									part2->pref = arg_pos;
+									if (arg_pos < best_pos)
+										best_pos = arg_pos;
+									break;
+								}
+							}
+							else if (streq(part1->type, "squashfs") || streq(part2->type, "squashfs")) {
+								/* default type is squashfs */
+								part1->flags |= BLKD_F_IMAGE1;
+								part1->pref = arg_pos;
+								part2->flags |= BLKD_F_IMAGE2;
+								part2->pref = arg_pos;
+								if (arg_pos < best_pos)
+									best_pos = arg_pos;
+							}
+						}
+					}
+				}
+
+				/* Now we've scanned all candidate partitions. If we've
+				 * found any, as reflected by best_pos being lower than
+				 * the max number of choices, we'll check which ones we've
+				 * marked as image1/image2 with that scrore, and based on
+				 * cfg_args[1], we'll set chosen_part or second_part to
+				 * point to one or the other. For now part1/part2 are
+				 * properly set.
+				 */
+				if (best_pos < MAX_CFG_ARGS) {
+					char *env_store, **new_envp, **env_tail;
+					int prev_env_bytes, prev_entries;
+					int alloc_sz;
+
+					part = part1 = part2 = NULL;
+					for (mbr = blkdevs; mbr && (!part1 || !part2); mbr = mbr->next) {
+						if (!mbr->part || (mbr->flags & BLKD_F_IGNORE))
+							continue;
+
+						for (part = mbr->part; part && (!part1 || !part2); part = part->next) {
+							if (part->pref != best_pos)
+								continue;
+							if (!part1 && (part->flags & BLKD_F_IMAGE1))
+								part1 = part;
+							else if (!part2 && (part->flags & BLKD_F_IMAGE2))
+								part2 = part;
+						}
+					}
+					/* Now part1 and part2 are set.
+					 * By convention we'll use part1 as chosen and part2 as second,
+					 * se we need to swap them if img==backup/image2.
+					 */
+					if (streq(cfg_args[1], "backup") || streq(cfg_args[1], "image2")) {
+						part = part1;
+						part1 = part2;
+						part2 = part;
+					}
+
+					//printf("setting chosen=%s(%s) second=%s(%s)\n", part1->name, part1->type, part2->name, part2->type);
+					/* Here by construction we cannot have part1 or part2 NULL.
+					 * We'll have to set chosen_part and second_part based on these
+					 * names, in the environment. We know that we'll set both
+					 * variables anyway so we can compute by how much we have to
+					 * extend the environment (2*"/dev/" + each part name + vars
+					 * names + "=" + "\0").
+					 */
+					alloc_sz  =
+						12 /* "chosen_part=" */ + 12 /* "second_part=" */ +
+						12 /* "chosen_type=" */ + 12 /* "second_type=" */ +
+						2 * (5 /* "/dev/" */ + 5 /* "/dev/" */ + 1 /* \0 */) +
+						2 /* \0 for types */ +
+						my_strlen(part1->name) + my_strlen(part2->name) +
+						my_strlen(part1->type) + my_strlen(part2->type);
+
+					/* check how much was allocated before dropping vars */
+					env_size(envp, &prev_env_bytes, &prev_entries);
+					my_getenv(envp, "chosen_part", 1);
+					my_getenv(envp, "chosen_type", 1);
+					my_getenv(envp, "second_part", 1);
+					my_getenv(envp, "second_type", 1);
+					env_size(envp, &env_bytes, &env_entries);
+					env_tail = env_get_tail(envp, &env_store);
+
+					if (env_bytes + alloc_sz > prev_env_bytes ||
+					    env_entries + 4 > prev_entries ||
+					    !env_store) {
+						/* need to expand the environment */
+						new_envp  = alloca((env_entries + 4) * sizeof(*new_envp));
+						env_store = alloca(env_bytes + alloc_sz);
+						env_tail  = env_dup(new_envp, envp, &env_store);
+						envp = new_envp;
+					}
+
+					addcst(addcst(tmp_path, "/dev/"), part1->name);
+					env_tail = env_append_var(env_tail, &env_store, "chosen_part", tmp_path);
+					env_tail = env_append_var(env_tail, &env_store, "chosen_type", part1->type);
+
+					addcst(addcst(tmp_path, "/dev/"), part2->name);
+					env_tail = env_append_var(env_tail, &env_store, "second_part", tmp_path);
+					env_tail = env_append_var(env_tail, &env_store, "second_type", part2->type);
+				}
+				goto finish_cmd;
+			}
+			case TOK_ML:
+				println("Module Size Used by State Address");
+				token = TOK_CA;
+				cfg_args[1] = "/proc/modules";
+				cfg_args[2] = NULL;
+				/* fall through TOK_CA to show modules */
 			case TOK_CA:
 			case TOK_CP: {
 				/* ca <src> : cat a file to stdout */
 				/* cp <src> <dst> : copy a file and its mode */
 				char buffer[4096];
 				int src, dst;
-				int len, mode, err;
+				int len, err;
 				struct stat stat_buf;
 
 				err = 1;
@@ -2193,6 +3153,11 @@ int main(int argc, char **argv, char **envp)
 				}
 				goto finish_cmd;
 			}
+			case TOK_RF: {
+				/* rf [file|dir]... : random feed from files/dirs */
+				feed_random_from_path(cfg_args + 1);
+				goto finish_cmd;
+			}
 			case TOK_RM: {
 				/* rm file... : unlink file or links */
 				int arg = 1;
@@ -2240,7 +3205,7 @@ int main(int argc, char **argv, char **envp)
 			} /* end of switch() */
 
 			/* other options are reserved for pid 1/linuxrc/prompt mode only */
-			if (!pid1 && !linuxrc && cmd_input != INPUT_KBD) {
+			if (!pid1 && !linuxrc && !single_cmd && cmd_input != INPUT_KBD) {
 				debug("Command ignored since pid not 1\n");
 				error = context[brace_level].error;
 				continue;
@@ -2251,6 +3216,7 @@ int main(int argc, char **argv, char **envp)
 			case TOK_RE: {
 				/* M dev[(major:minor)] mnt type [ {rw|ro} [ flags ] ]: (re)mount dev on mnt (read-only) */
 				char *maj, *min, *end;
+				const char *type;
 				char *mntdev;
 				int mntarg;
 		
@@ -2307,12 +3273,51 @@ int main(int argc, char **argv, char **envp)
 				if (token == TOK_RE)
 					mntarg |= MS_REMOUNT;
 
-				if (mount(mntdev, cfg_args[2], cfg_args[3], MS_MGC_VAL | mntarg, cfg_args[5]) == -1) {
-					error_num = errno;
-					error = 1;
-					debug("<M>ount : error during mount()\n");
-				}
+				type = cfg_args[3];
+				if (streq(type, "auto"))
+					type = find_fs_type(mntdev);
 
+				if (!type || mount(mntdev, cfg_args[2], type, MS_MGC_VAL | mntarg, cfg_args[5]) == -1) {
+					if (type)
+						error_num = errno;
+					error = 1;
+					if (type != cfg_args[3]) {
+						/* FS was set to "auto", let's check /proc/filesystems */
+						char fstypes[1024];
+						char *ptr, *next;
+						int len;
+
+						len = read_from_file("/proc/filesystems", fstypes, sizeof(fstypes));
+						if (len < 0)
+							fstypes[0] = 0;
+
+						for (ptr = fstypes; *ptr; ptr = next) {
+							/* put a zero at the end of the line */
+							for (next = ptr; *next; next++) {
+								if (*next == '\n') {
+									*(next++) = 0;
+									break;
+								}
+							}
+
+							if (*ptr == 'n') // "nodev"
+								continue;
+
+							while (*ptr == ' ' || *ptr == '\t')
+								ptr++;
+
+							/* now we have an FS type in <ptr> */
+							if (mount(mntdev, cfg_args[2], ptr, MS_MGC_VAL | mntarg, cfg_args[5]) != -1) {
+								error = 0;
+								break; // succeeded
+							}
+							if (!type) // only update errno if it was not set
+								error_num = errno;
+						}
+					}
+					if (error)
+						debug("<M>ount : error during mount()\n");
+				}
 				break;
 			}
 			case TOK_BR:
@@ -2409,6 +3414,70 @@ int main(int argc, char **argv, char **envp)
 				}
 				break;
 			}
+#ifdef __NR_finit_module
+			case TOK_MP: {
+				/* mp [-f] path [args...] : modprobe */
+				int flags = 0;
+				int skip = 0;
+				char buf[4];
+				int ret;
+				int fd;
+
+				if (cfg_args[1][0] == '-') {
+					if (cfg_args[1][1] == 'f')
+						flags |= MODULE_INIT_IGNORE_MODVERSIONS;
+					skip++;
+				}
+
+				fd = open(cfg_args[1 + skip], O_RDONLY, 0);
+				if (fd < 0) {
+					error_num = errno;
+					error = 1;
+					debug("ModProbe : open() failed\n");
+					break;
+				}
+
+				/* a module that doesn't present an ELF header is
+				 * likely compressed.
+				 */
+				if (read(fd, buf, sizeof(buf)) >= sizeof(buf) &&
+				    !streqlen(buf, "\x7f""ELF", 4))
+					flags |= MODULE_INIT_COMPRESSED_FILE;
+				lseek(fd, 0, SEEK_SET);
+
+				ret = my_syscall3(__NR_finit_module, fd, cfg_args[2 + skip] ? cfg_args[2 + skip] : "", flags);
+				if (ret != 0) {
+					error_num = errno = -ret;
+					error = 1;
+					debug("ModProbe : finit_module() failed\n");
+					break;
+				}
+				break;
+			}
+#endif
+#ifdef __NR_delete_module
+			case TOK_MR: {
+				/* mr [-f] name : modrm */
+				int flags = 0;
+				int skip = 0;
+				int ret;
+
+				if (cfg_args[1][0] == '-') {
+					if (cfg_args[1][1] == 'f')
+						flags |= O_NONBLOCK | O_TRUNC;
+					skip++;
+				}
+
+				ret = my_syscall2(__NR_delete_module, cfg_args[1 + skip], flags);
+				if (ret != 0) {
+					error_num = errno = -ret;
+					error = 1;
+					debug("ModRm : delete_module() failed\n");
+					break;
+				}
+				break;
+			}
+#endif
 			case TOK_MA:
 				/* U <umask> : change umask */
 				umask(base8_to_ul(cfg_args[1]));
@@ -2537,6 +3606,96 @@ int main(int argc, char **argv, char **envp)
 			case TOK_LS:
 				error = -list_dir(cfg_args[1], cfg_args[2]);
 				break;
+#if defined(__NR_kexec_file_load)
+			case TOK_KX: { /* kx: kexec kernel initrd [cmdline*] */
+				int retries = 2;
+				char *p;
+				int kfd, ifd;
+				int arg;
+
+				if ((kfd = open(cfg_args[1], O_RDONLY, 0)) < 0) {
+					error_num = errno;
+					error = 1;
+					debug("(kexec : cannot open kernel\n");
+					break;
+				}
+
+				if (streq(cfg_args[2], "-"))
+					ifd = -1; // no initrd provided
+				else if ((ifd = open(cfg_args[2], O_RDONLY, 0)) < 0) {
+					error_num = errno;
+					error = 1;
+					debug("(kexec : cannot open initrd\n");
+					close(kfd);
+					break;
+				}
+
+				/* cmdline could be:
+				 *   - empty: reuse /proc/cmdline
+				 *   - "-" : don't pass anything
+				 *    - something: pass this.
+				 */
+
+				/* cfg_args[] is made of pointers to cfg_data,
+				 * so all of them collectively fit into cfg_data
+				 * and may even perfectly match. Let's rebuild
+				 * the line from cfg_args[3+] into cfg_args[0].
+				 */
+
+				p = cfg_args[0];
+				if (!cfg_args[3]) {
+					/* Use cmdline, which is already filled for up to
+					 * cmdline_len chars, however it may have holes in
+					 * the middle that we must turn back to spaces. We
+					 * make cfg_args[0] point to it as well, and p point
+					 * to the final zero.
+					 */
+					find_arg(""); // make sure to load cmdline if not already.
+					for (p = cmdline; p < cmdline + cmdline_len - 1; p++) {
+						if (!*p)
+							*p = ' ';
+					}
+					cfg_args[0] = cmdline;
+				} else if (streq(cfg_args[3], "-")) {
+					/* do not pass args */
+					*p = 0;
+				} else {
+					/* recompose the line */
+					for (arg = 3; cfg_args[arg]; arg++) {
+						if (p != cfg_args[0])
+							*(p++) = ' ';
+						p += my_strlcpy(p, cfg_args[arg], cfg_data + sizeof(cfg_data) - p);
+					}
+				}
+
+				/* Here we prepare to try again because often the load
+				 * fails with EADDRNOTAVAIL on first try and succeeds on
+				 * second one.
+				 */
+				while (retries > 0) {
+					if (my_syscall5(__NR_kexec_file_load, kfd, ifd,
+					                p - cfg_args[0] + 1, cfg_args[0],
+					                KEXEC_ARCH_DEFAULT | (ifd < 0 ? KEXEC_FILE_NO_INITRAMFS : 0)) == 0) {
+						error = 0;
+						break;
+					}
+					error_num = errno;
+					error = 1;
+					debug("(kexec : cannot load files\n");
+					if (error_num != EADDRNOTAVAIL)
+						break;
+					retries--;
+				}
+
+				if (ifd >= 0)
+					close(ifd);
+				close(kfd);
+
+				if (error)
+					break;
+				/* fall through */
+			}
+#endif
 			case TOK_HA:  /* ha : halt */
 			case TOK_PO:  /* po : power off */
 			case TOK_RB:  /* rb : reboot */
@@ -2544,6 +3703,9 @@ int main(int argc, char **argv, char **envp)
 				error = reboot(token == TOK_HA ? LINUX_REBOOT_CMD_HALT :
 				               token == TOK_PO ? LINUX_REBOOT_CMD_POWER_OFF :
 				               token == TOK_RB ? LINUX_REBOOT_CMD_RESTART :
+#if defined(__NR_kexec_file_load)
+				               token == TOK_KX ? LINUX_REBOOT_CMD_KEXEC :
+#endif
 				               /* TOK_SP */      LINUX_REBOOT_CMD_SW_SUSPEND);
 				error_num = errno;
 				break;
@@ -2586,6 +3748,11 @@ int main(int argc, char **argv, char **envp)
 	else {
 		debug("init/info : error while opening configuration file : ");
 		debug(cfg_file); debug("\n");
+	}
+
+	if (single_cmd) {
+		debug("end of single_cmd\n");
+		return error;
 	}
 
 	if (rebuild) {
