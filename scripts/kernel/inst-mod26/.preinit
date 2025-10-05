@@ -39,31 +39,81 @@ ch 0600 0 0 10 135 rtc
 bl 0400 0 0 1 250 initrd
 }
 
-# copy the initrd if it exists, otherwise ignore the error
-# an go on with the root device.
+# 3 boot methods are supported:
+#  - initrd present: run it r/o and ignore $root
+#  - root specified: mount it ro or rw optionally with $rootfstype
+#  - kernel only with $img: try to locate the image and run it
+#  - otherwise drop to a shell
 cp /initrd.image /dev/ram0
-&rm /initrd.image
-|ec "Note: /initrd.image not found"
-
-# mount the root device with the ro/rw flags as specified on the cmdline
-# and if it fails, try to force load /dev/ram0 as squashfs
-mt ${root-/dev/ram0} /root ${rootfstype-squashfs3} ${ro+ro} ${rw+rw}
-|mt ${root-/dev/ram0} /root ${rootfstype-squashfs} ${ro+ro} ${rw+rw}
-|mt ${root-/dev/ram0} /root ext4 ${ro+ro} ${rw+rw}
-|mt ${root-/dev/ram0} /root ext3 ${ro+ro} ${rw+rw}
-|mt ${root-/dev/ram0} /root ext2 ${ro+ro} ${rw+rw}
-|mt ${root-/dev/ram0} /root xfs ${ro+ro} ${rw+rw}
-|mt ${root-/dev/ram0} /root reiserfs ${ro+ro}
-|mt /dev/ram0 /root squashfs3
-|mt /dev/ram0 /root squashfs
+&{
+  rm /initrd.image
+  ec "Mounting initrd image ..."
+  mt /dev/ram0 /root auto ro
+}
 |{
-  ec "An error was encountered while trying to mount ${root-/dev/ram0}."
-  ec "Maybe you want to try to mount root manually into /root ?"
-  ec "Trying to unpack an eventual /busybox and modules ..."
-  /busybox mkdir /tmp /bin /sbin /usr /usr/bin /usr/sbin /boot /lib /lib/modules
-  /busybox --install
-  ta x /modules.tar /lib/modules
-  rd "Syntax is: mt /dev/ram0 /root <fstype> [options]"
+  tn ${root}
+  &{
+    # mount the root device with the ro/rw flags as specified on the cmdline
+    # and if it fails, try to force load /dev/ram0 as squashfs
+    tn ${rootdelay}
+    &{
+      ec "Waiting "${rootdelay}" seconds for root to appear ..."
+      sl ${rootdelay}
+    }
+    ec "Mounting "${root}" on / ..."
+    mt ${root} /root ${rootfstype-auto} ${ro+ro} ${rw+rw}
+  }
+  |{
+    tn ${img}
+    &{
+      # try to load an XIP image (read-only)
+      tn ${rootdelay}
+      &{
+        ec "Waiting "${rootdelay}" seconds for root to appear ..."
+        sl ${rootdelay}
+      }
+      fp ${img} squashfs squashfs3 xfs ext4 ext3 ext2
+      tn ${chosen_type}
+      &ec "Mounting "${chosen_part}" on / ..."
+      &mt ${chosen_part} /root ${chosen_type} ro
+      |{
+        tn ${chosen_type}
+        &ec "Failed to mount "${chosen_part}" as type "${chosen_type}", falling back to "${second_part}
+        tn ${second_type}
+        &ec "Mounting "${second_part}" on / ..."
+        &mt ${second_part} /root ${second_type} ro
+      }
+    }
+  }
+}
+|{
+  ec "+-----------------------------------------------+"
+  ec "| Failed to mount any initrd or root device.    |"
+  ec "| Rebooting in 3 seconds unless Enter pressed.  |"
+  wk "+-----------------------------------------------+" 3
+  |rb
+  md /tmp
+  md /bin
+  md /boot
+  md /sbin
+  md /usr/bin
+  md /usr/sbin
+  md /lib/modules
+  st /modules.tar
+  &{
+    ec "Extracting modules into /lib/modules ..."
+    mt modules /lib/modules/. ramfs rw
+    ta x /modules.tar /lib/modules
+  }
+  st /busybox
+  &{
+    ec "Trying to unpack /busybox ..."
+    /busybox --install
+  }
+  ec "Entering interactive debugging, type 'help' for supported commands."
+  ec "Use 'lp' and 'fp' to find devices mountable into /root, 'en' for env."
+  rd "Mount using 'mt /dev/xxx /root <fstype>|auto [options]'."
+  um /lib/modules/.
 }
 
 st /modules.tar
@@ -85,7 +135,7 @@ st /modules.tar
   }
   rm /modules.tar
 }
-|ec "WARNING: no modules found in initramfs."
+|ec "No modules found in initramfs."
 
 te RDSHELL=1
 &rd "You have requested this prompt by appending RDSHELL=1 to the kernel command line."
@@ -96,15 +146,12 @@ rm /init
 um /proc
 rm /proc
 um /dev
-# rm /dev
 # only two entries left: /dev and /root
 
-ec "Switching to rootfs..."
+ec "Switching to rootfs ..."
 cd /root
 mv . /
 sw .
-
-in /sbin/init
 
 # check if we want to use $init, /sbin/init, /bin/init, /init or /linuxrc
 st ${init-/sbin/init}
@@ -121,13 +168,13 @@ st ${init-/sbin/init}
       |{
         st /linuxrc
         &in /linuxrc
-        |{
-          ec "No init or linuxrc found, falling back to /bin/sh."
-          br /bin/sh
-          ec "Failed to execute /bin/sh, falling back to init prompt."
-          rd
-        }
       }
     }
   }
+}
+|{
+  ec "No init or linuxrc found, falling back to /bin/sh."
+  br /bin/sh
+  ec "Failed to execute /bin/sh, falling back to init prompt."
+  rd
 }
