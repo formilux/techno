@@ -1,0 +1,183 @@
+#!/bin/bash
+
+#
+# mksp-tar - make a tarball from a raw FS - version 0.0.1 - 2025-10-26
+# This file is part of the Formilux project : http://formilux.ant-computing.com/
+#
+# Copyright (C) 2001-2025 Benoit Dolez & Willy Tarreau
+#       mailto: benoit@ant-computing.com,willy@ant-computing.com
+#
+# This program is licenced under GPLv2 ( http://www.gnu.org/licenses/gpl.txt )
+
+MYNAME="${0##*/}"
+CMDLINE="$*"
+
+# usage: displays script usage and returns no error.
+function usage {
+  echo "MKSP-TAR - package a root dir as a tarball - version 0.0.1 - 2025-10-26"
+  echo "Usage: ${myname##*/} -o <target_dir> { -i <in_dir> | -c } [ -d ] [ -ve ]"
+  echo "       [ -md dir ]* [ -rm file|dir ]* [ -ln src:dst ]*"
+  echo
+  echo "   The 'fs' directory will be deleted under <target_dir>, and the execution"
+  echo "   will end here if '-c' is set. Otherwise, an 'fs' directory will be created"
+  echo "   under <target_dir>, with a squashfs image built from <in_dir>. All"
+  echo "   paths are absolute. '-ve' creates a 'vetc' image by moving /etc to"
+  echo "   /usr/share/factory/base-etc. '-md' makes it possible to create new"
+  echo "   directories right before packaging, eg: mount points. '-rm' makes it"
+  echo "   possible to remove some files or dirs before packaging. '-ln' creates"
+  echo "   symlinks from 'src' to 'dst' at the end of the packaging (after -ve)."
+  echo "   Use '-d' for debug."
+}
+
+function die {
+  echo
+  echo "### ${MYNAME}: $@"
+  echo "Cmdline was $CMDLINE"
+  echo
+  exit 1
+}
+
+function do_clean {
+  rm -rf $OUT_DIR/{fs,base,temp} \
+  || die "There was an error cleaning the '$OUT_DIR' directory. Aborting."
+}
+
+shopt -s nullglob dotglob
+set -o pipefail
+umask 022
+
+myname=$0
+PRINTUSAGE=0
+CLEAN_ONLY=0
+DEBUG=0
+VETC=0
+
+unset IN_DIR OUT_DIR SIZE_MAX MKDIRS RMDIRS
+
+MKDIRS=( )
+RMDIRS=( )
+SYMLINKS=( )
+
+[ $# -gt 0 ] || PRINTUSAGE=1
+
+while [ $# -gt 0 ] ; do
+  case "$1" in 
+    -i) # -i in_dir
+      if [ -z "$2" -o ! -d "$2/." ]; then
+        die "-i argument '$2' point to something not a valid directory. Aborting."
+	PRINTUSAGE=1
+      fi
+      IN_DIR=$2
+      shift;
+      ;; 
+    -o) # -o out_dir : must be a directory or must not exist
+      [ -n "$2" -a \( -d "$2/." -o ! -e "$2" \) ] || PRINTUSAGE=1
+      OUT_DIR=$2
+      shift;
+      ;; 
+    -ln) # -ln src:dst : create symlinks from src to dst at the end.
+      [ -n "$2" ] || PRINTUSAGE=1
+      SYMLINKS=( "${SYMLINKS[@]}" "$2" )
+      shift;
+      ;; 
+    -md) # -md dir : directories we want to create.
+      [ -n "$2" ] || PRINTUSAGE=1
+      MKDIRS=( "${MKDIRS[@]}" "$2" )
+      shift;
+      ;; 
+    -rm) # -rm dir : directories or files we want to remove.
+      [ -n "$2" ] || PRINTUSAGE=1
+      if [ -z "${2##/*}" ]; then
+        die "For security reasons, -rm cannot specify an absolute path. Remove the leading /"
+      fi
+      RMDIRS=( "${RMDIRS[@]}" "$2" )
+      shift;
+      ;; 
+    -c) # -c = clean
+      CLEAN_ONLY=1
+      ;;
+    -d) # -d = clean
+      DEBUG=1
+      ;;
+    -ve) # -ve = virtual-etc
+      VETC=1
+      ;;
+    -h) # displays help
+      PRINTUSAGE=1
+      shift
+      ;;
+  esac
+  shift
+done
+
+if [ $PRINTUSAGE -gt 0 -o -z "$OUT_DIR" -o "$OUT_DIR" = "/" -o $CLEAN_ONLY = 0 -a -z "$IN_DIR" ]; then
+  usage
+  echo
+  exit 1
+fi
+
+mkdir -p $OUT_DIR || die "Cannot make directory '$OUT_DIR'. Aborting."
+
+[ -n "${OUT_DIR##/*}" ] && OUT_DIR=$PWD/$OUT_DIR
+OUT_DIR=${OUT_DIR//\/.\//\/}
+[ -n "${IN_DIR##/*}" ] && IN_DIR=$PWD/$IN_DIR
+IN_DIR=${IN_DIR//\/.\//\/}
+
+echo;echo "+++ Cleaning output dir +++";echo
+do_clean
+
+if [ $CLEAN_ONLY -gt 0 ]; then
+  echo "+++ Done ! +++";
+  echo "==> The '$OUT_DIR' directory has been cleaned."
+  echo
+  exit 0
+fi
+
+mkdir -p $OUT_DIR/fs || die "Cannot make directory '$OUT_DIR/fs'. Aborting."
+ln -s $IN_DIR $OUT_DIR/base || die "Cannot make link '$OUT_DIR/base'. Aborting."
+
+#===================================================================================
+
+mkdir -p $OUT_DIR/temp/root || die "Cannot make directory '$OUT_DIR/temp/root'. Aborting."
+
+# build squashfs root and boot image
+
+echo "Copying root filesystem image..."
+tar -C $IN_DIR --exclude=./boot -cf - . | tar -C $OUT_DIR/temp/root/ -xpf - \
+  || die "Error during file-system copy."
+
+# create at least the /boot directory
+mkdir -p $OUT_DIR/temp/root/boot
+
+echo;echo "+++ Building initrd +++";echo
+
+if [ "$VETC" = 1 ]; then
+  mv $OUT_DIR/temp/root/etc $OUT_DIR/temp/root/usr/share/factory/base-etc
+  mkdir -m 0755 -p $OUT_DIR/temp/root/etc
+fi
+
+# FIXME: it's not this script's role to delete those entries
+for dir in "${RMDIRS[@]}"; do
+  rm -rf "$OUT_DIR/temp/root/$dir"
+done
+
+# FIXME: it's not this script's role to create those entries
+for dir in "${MKDIRS[@]}"; do
+  mkdir -p "$OUT_DIR/temp/root/$dir"
+done
+
+# FIXME: it's not this script's role to create those entries
+for dir in "${SYMLINKS[@]}"; do
+  src="${dir%%:*}"
+  dst="${dir#*:}"
+  ln -s "$dst" "$OUT_DIR/temp/root/$src"
+done
+
+tar -C "$OUT_DIR/temp/root/" -cf - . > "$OUT_DIR/fs/rootfs.tar" || die "tar returned an error."
+
+[ $DEBUG -eq 0 ] && rm -rf $OUT_DIR/temp
+
+echo
+echo "+++ Done ! +++";
+echo "==> Tarball available as '$OUT_DIR/fs/rootfs.tar'."
+echo
