@@ -1639,7 +1639,7 @@ function post_prepack {
         rpath=${rpath#$ROOTDIR}
         mkdir -p "$DEBUGDIR/usr/lib/debug/$rpath/"
         # create directories in .debug
-        $OBJCOPY --only-keep-debug "$file" "$DEBUGDIR/usr/lib/debug/$rpath/$filename" > /dev/null 2>&1
+        $OBJCOPY --compress-debug-sections --only-keep-debug "$file" "$DEBUGDIR/usr/lib/debug/$rpath/$filename" > /dev/null 2>&1
     done
     return 0
 }
