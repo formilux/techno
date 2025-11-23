@@ -1626,11 +1626,11 @@ function do_unpack {
     return $RET
 }
 
-# strips symbols from executables before building the package.
-# Abort if ROOTDIR doesn't exist (thus needing prepack() first).
-function do_strip {
+# Locate executables and shared objects, and make a copy of their debug symbols
+# before strip is run on them.
+function post_prepack {
     if [ ! -d $ROOTDIR ] ; then
-        echo "Error: directory $ROOTDIR doesn't exist. Make sure you did 'prepack'."
+        echo "Error: directory $ROOTDIR doesn't exist. Most likely 'prepack' failed."
         exit 1
     fi
     find "$ROOTDIR/." -type f -print0 | xargs -r -0 file | grep ":.*ELF.*\(executable\|shared\).*stripped" | cut -f1 -d: | while read file; do
@@ -1640,6 +1640,20 @@ function do_strip {
         mkdir -p "$DEBUGDIR/$rpath/"
         # create directories in .debug
         $OBJCOPY --only-keep-debug "$file" "$DEBUGDIR/$rpath/$filename.$DBGSUFF" > /dev/null 2>&1
+    done
+    return 0
+}
+
+# strips symbols from executables before building the package.
+# Abort if ROOTDIR doesn't exist (thus needing prepack() first).
+# The operation might be performed multiple times, explicitly and implicitly
+# when called by pre_pack() for example. It must be idempotent.
+function do_strip {
+    if [ ! -d $ROOTDIR ] ; then
+        echo "Error: directory $ROOTDIR doesn't exist. Make sure you did 'prepack'."
+        exit 1
+    fi
+    find "$ROOTDIR/." -type f -print0 | xargs -r -0 file | grep ":.*ELF.*\(executable\|shared\).*stripped" | cut -f1 -d: | while read file; do
         # allow executable and shared (.so), but not relocatable (.o), both stripped or not stripped
         # recent binutils tend to remove the setuid bit so let's readjust the bits by hand
         test -u "$file"; uid=$?
